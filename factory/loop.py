@@ -61,7 +61,7 @@ def make_se_node(model):
             prior = "\n\nPrevious FAIL required_fixes:\n- " + "\n- ".join(fixes)
 
         user = f"""\
-WORK ORDER:
+WORK ORDER METADATA (dict):
 {wo.model_dump()}
 
 WORK ORDER BODY:

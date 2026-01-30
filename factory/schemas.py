@@ -6,11 +6,13 @@ from pydantic import BaseModel, Field
 
 class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
+    repo: str | None = None
     acceptance_commands: list[str] = Field(default_factory=list) 
     forbidden_paths: list[str] = Field(default_factory=list)
     allowed_paths: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     command_timeout_sec: int = 300
+    notes: str = Field(default="")
 
 
 class FileWrite(BaseModel):
