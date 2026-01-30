@@ -1,6 +1,6 @@
 """the po node evaluates results and decides pass or fail."""
 
-from schemas import POReport, ToolReport
+from .schemas import POReport, ToolReport
 
 
 def po_node(state: dict) -> dict:

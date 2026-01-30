@@ -1,15 +1,16 @@
 """
 entry point for the se -> tr -> po loop.
 
-nodes are now split into separate files: nodes_se.py, nodes_tr.py, nodes_po.py.
+now includes --apply-back option to apply changes back to product repo.
 """
 
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
-from graph import build_graph
-from llm import get_model
-from workspace import load_work_order, prepare_workspace
+from typing import Sequence
+from .graph import build_graph
+from .llm import get_model
+from .workspace import apply_changes_back, load_work_order, prepare_workspace
 
 
 def _resolve_repo(repo_arg: str | None, wo_repo: str | None, wo_path: Path) -> Path:
@@ -21,7 +22,10 @@ def _resolve_repo(repo_arg: str | None, wo_repo: str | None, wo_path: Path) -> P
     raise ValueError("No target repo provided. Use --repo or set repo: in work order front-matter.")
 
 
-def main():
+def main(argv: Sequence[str] | None = None) -> None:
+    """
+    entry point for `python -m factory`.
+    """
     parser = argparse.ArgumentParser(prog="python -m factory")
     parser.add_argument("--work-order", required=True, help="Path to work order markdown.")
     parser.add_argument("--repo", default=None, help="Path to product repo (overrides work order repo).")
@@ -31,8 +35,15 @@ def main():
         default=str(Path.home() / ".langgraph-prototype" / "workspaces"),
         help="Where to create per-run workspaces.",
     )
+    parser.add_argument(
+        "--apply-back",
+        dest="apply_back",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Copy changes back on PASS. Use --no-apply-back to disable.",
+    )
 
-    args = parser.parse_args()
+    args = parser.parse_args(list(argv) if argv is not None else None)
 
     wo, body = load_work_order(args.work_order)
     wo_path = Path(args.work_order).resolve()
@@ -55,10 +66,16 @@ def main():
     )
 
     po = result.get("po_report") or {}
-    print(f"\nFINAL: {po.get('decision')}")
+    decision = po.get("decision")
+
+    if decision == "PASS" and args.apply_back:
+        applied = result.get("tool_report").get("applied", [])
+        apply_changes_back(product_repo, workspace, applied)
+
+    print(f"\nFINAL: {decision}")
     print(f"Product repo: {product_repo}")
     print(f"Workspace:    {workspace}")
 
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     main()

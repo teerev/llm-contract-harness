@@ -1,10 +1,11 @@
-"""handles work order loading and workspace setup."""
+"""handles loading work orders and preparing workspaces."""
 
 import shutil
 from pathlib import Path
 from typing import Tuple
 import yaml
-from schemas import WorkOrder
+from .schemas import WorkOrder
+from .util import normalize_rel_path, safe_join
 
 
 def load_work_order(path: str) -> Tuple[WorkOrder, str]:
@@ -36,3 +37,32 @@ def prepare_workspace(product_repo: Path, workspace_root: Path, run_id: str) -> 
     workspace.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(product_repo, workspace, dirs_exist_ok=False)
     return workspace
+
+
+def apply_changes_back(product_repo: Path, workspace: Path, applied_changes: list[dict]) -> None:
+    """
+    Apply TR-reported changed paths back from workspace to product repo.
+
+    Each item: {"path": "<relative>", "action": "create|replace|delete"}.
+    """
+    product_repo = product_repo.resolve()
+    workspace = workspace.resolve()
+
+    for ch in applied_changes:
+        rel = normalize_rel_path(str(ch.get("path", "")))
+        action = str(ch.get("action", ""))
+
+        src = safe_join(workspace, rel)
+        dst = safe_join(product_repo, rel)
+
+        if action == "delete":
+            if dst.exists():
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                else:
+                    dst.unlink()
+            continue
+
+        # create / replace
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)

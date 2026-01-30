@@ -2,9 +2,9 @@
 
 from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
-from nodes_po import po_node
-from nodes_se import make_se_node
-from nodes_tr import tool_runner_node
+from .nodes_po import po_node
+from .nodes_se import make_se_node
+from .nodes_tr import tool_runner_node
 
 
 class PrototypeState(TypedDict, total=False):

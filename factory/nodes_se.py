@@ -1,8 +1,8 @@
 """the se node proposes code changes to satisfy the work order."""
 
 from pathlib import Path
-from schemas import SEPacket
-from util import strict_json_loads
+from .schemas import SEPacket
+from .util import strict_json_loads
 
 # directories and files to exclude from directory listing
 EXCLUDE_PATTERNS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv"}

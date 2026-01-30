@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from schemas import (
+from .schemas import (
     AppliedChange,
     CommandResult,
     CommandSpec,
@@ -12,7 +12,7 @@ from schemas import (
     ToolReport,
     WorkOrder,
 )
-from util import command_to_argv, matches_any_glob, normalize_rel_path, safe_join
+from .util import command_to_argv, matches_any_glob, normalize_rel_path, safe_join
 
 
 def _normalize_command_spec(item, default_timeout: int) -> CommandSpec:
