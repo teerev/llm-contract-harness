@@ -1,5 +1,3 @@
-"""graph-based state machine for the se -> tr -> po workflow."""
-
 from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from .nodes_po import po_node
@@ -9,7 +7,7 @@ from .nodes_tr import tool_runner_node
 
 class PrototypeState(TypedDict, total=False):
     # inputs
-    repo_path: str
+    repo_path: str  # workspace repo root (where TR runs commands)
     work_order: dict[str, Any]
     work_order_body: str
 
@@ -24,7 +22,7 @@ class PrototypeState(TypedDict, total=False):
 
 
 def build_graph(se_model):
-    """builds the state graph and returns it compiled."""
+
     g = StateGraph(PrototypeState)
 
     g.add_node("SE", make_se_node(se_model))
@@ -40,7 +38,7 @@ def build_graph(se_model):
 
 
 def conditional_route(state: dict):
-    """decides next step based on po result and iteration count."""
+
     po = state.get("po_report") or {}
     if po.get("decision") == "PASS":
         return END

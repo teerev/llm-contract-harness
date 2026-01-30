@@ -1,10 +1,7 @@
-"""the po node evaluates results and decides pass or fail."""
-
 from .schemas import POReport, ToolReport
 
 
 def po_node(state: dict) -> dict:
-    """evaluates the results and decides pass or fail."""
     tr = ToolReport.model_validate(state["tool_report"])
 
     reasons: list[str] = []

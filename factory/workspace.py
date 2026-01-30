@@ -1,5 +1,3 @@
-"""handles loading work orders and preparing workspaces."""
-
 import shutil
 from pathlib import Path
 from typing import Tuple
@@ -9,7 +7,6 @@ from .util import normalize_rel_path, safe_join
 
 
 def load_work_order(path: str) -> Tuple[WorkOrder, str]:
-    """loads a work order from markdown with yaml front-matter."""
     p = Path(path)
     text = p.read_text(encoding="utf-8")
 
@@ -27,9 +24,9 @@ def load_work_order(path: str) -> Tuple[WorkOrder, str]:
     return wo, body.strip() + "\n"
 
 
-
 def prepare_workspace(product_repo: Path, workspace_root: Path, run_id: str) -> Path:
-    """creates a workspace by copying the product repo."""
+    """
+    """
     workspace = (workspace_root / run_id).resolve()
     if workspace.exists():
         raise RuntimeError(f"Workspace already exists: {workspace}")

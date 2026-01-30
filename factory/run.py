@@ -1,9 +1,3 @@
-"""
-entry point for the se -> tr -> po loop.
-
-now includes --apply-back option to apply changes back to product repo.
-"""
-
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
@@ -75,7 +69,3 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"\nFINAL: {decision}")
     print(f"Product repo: {product_repo}")
     print(f"Workspace:    {workspace}")
-
-
-if __name__ == "__main__":
-    main()

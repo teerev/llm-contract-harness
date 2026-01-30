@@ -1,13 +1,11 @@
-"""wrapper for calling the langauge model."""
-
 import os
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 
 def get_model():
-    """returns an instance of the configured llm."""
-    model_name = os.getenv("OPENAI_MODEL", "gpt-4")
+
+    model_name = os.getenv("OPENAI_MODEL", "gpt-5.2")
 
     class OpenAIModel:
         def __init__(self) -> None:

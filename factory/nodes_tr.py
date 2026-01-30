@@ -1,5 +1,3 @@
-"""the tr node applies file changes and runs commands."""
-
 import os
 import shutil
 import subprocess
@@ -16,7 +14,7 @@ from .util import command_to_argv, matches_any_glob, normalize_rel_path, safe_jo
 
 
 def _normalize_command_spec(item, default_timeout: int) -> CommandSpec:
-    """normalizes a command spec, applying defaults as needed."""
+
     if isinstance(item, str):
         return CommandSpec(argv=command_to_argv(item), shell=False, timeout_sec=default_timeout)
 
@@ -27,7 +25,7 @@ def _normalize_command_spec(item, default_timeout: int) -> CommandSpec:
 
 
 def run_command(spec: CommandSpec, cwd: Path, env: dict[str, str]) -> CommandResult:
-    """runs teh given command and returns the result."""
+    
     try:
         if spec.shell:
             p = subprocess.run(
@@ -76,7 +74,7 @@ def run_command(spec: CommandSpec, cwd: Path, env: dict[str, str]) -> CommandRes
 
 
 def tool_runner_node(state: dict) -> dict:
-    """applies proposed changes and runs the acceptance commands."""
+
     repo_root = Path(state["repo_path"]).resolve()
     wo = WorkOrder.model_validate(state["work_order"])
     pkt = SEPacket.model_validate(state["se_packet"])
@@ -84,7 +82,7 @@ def tool_runner_node(state: dict) -> dict:
     applied: list[AppliedChange] = []
     blocked: list[str] = []
 
-    validated_writes: list[tuple] = []
+    validated_writes: list[tuple] = []  # (write, rel_path, abs_path)
 
     for w in pkt.writes:
         rel = normalize_rel_path(w.path)
