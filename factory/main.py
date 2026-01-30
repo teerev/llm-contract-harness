@@ -1,4 +1,8 @@
-"""entry point for running the se -> tr -> po loop."""
+"""
+entry point for the se -> tr -> po loop.
+
+nodes are now split into separate files: nodes_se.py, nodes_tr.py, nodes_po.py.
+"""
 
 import argparse
 from datetime import UTC, datetime
@@ -18,7 +22,7 @@ def _resolve_repo(repo_arg: str | None, wo_repo: str | None, wo_path: Path) -> P
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="prototype")
+    parser = argparse.ArgumentParser(prog="python -m factory")
     parser.add_argument("--work-order", required=True, help="Path to work order markdown.")
     parser.add_argument("--repo", default=None, help="Path to product repo (overrides work order repo).")
     parser.add_argument("--max-iterations", type=int, default=5)

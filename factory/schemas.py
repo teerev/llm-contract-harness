@@ -4,10 +4,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class CommandSpec(BaseModel):
+    # provide argv (preferred) or cmd string. shell=true enables shell syntax.
+    argv: list[str] | None = None
+    cmd: str | None = None
+    shell: bool = False
+    timeout_sec: int | None = None
+
+
 class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
     repo: str | None = None
-    acceptance_commands: list[str] = Field(default_factory=list) 
+    acceptance_commands: list[CommandSpec | str] = Field(default_factory=list)
     forbidden_paths: list[str] = Field(default_factory=list)
     allowed_paths: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
@@ -29,7 +37,7 @@ class SEPacket(BaseModel):
 
 
 class CommandResult(BaseModel):
-    command: str
+    spec: dict[str, Any]
     returncode: int
     stdout: str
     stderr: str

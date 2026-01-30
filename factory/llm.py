@@ -12,6 +12,7 @@ def get_model():
     class OpenAIModel:
         def __init__(self) -> None:
             self._llm = ChatOpenAI(model=model_name)
+            self._model_name = model_name
 
         def complete(self, system: str, user: str) -> str:
             response = self._llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])

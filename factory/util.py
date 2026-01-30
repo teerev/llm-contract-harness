@@ -2,6 +2,7 @@
 
 import fnmatch
 import json
+import shlex
 from pathlib import Path
 
 
@@ -31,3 +32,8 @@ def strict_json_loads(s: str) -> dict:
 def normalize_rel_path(p: str) -> str:
     """normalizes a relative path for consistent handling."""
     return p.replace("\\", "/").lstrip("/")
+
+
+def command_to_argv(cmd: str) -> list[str]:
+    """converts a shell command string into an argv list."""
+    return shlex.split(cmd)

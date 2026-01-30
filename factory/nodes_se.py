@@ -80,6 +80,17 @@ Constraints:
 def make_se_node(model):
     """
     Factory function that creates an SE (Software Engineer) node with an injected LLM.
+
+    LangGraph requires all nodes to have the signature (state: dict) -> dict, with no
+    additional parameters. This factory uses a closure to "bake in" the model dependency:
+    the returned se_node function captures `model` from this enclosing scope, allowing it
+    to use the LLM while still conforming to LangGraph's required signature.
+
+    Args:
+        model: The LLM instance to use for generating code change proposals.
+
+    Returns:
+        A node function (state: dict) -> dict that can be registered with StateGraph.add_node().
     """
 
     def se_node(state: dict) -> dict:
