@@ -161,7 +161,7 @@ def po_node(state: dict) -> dict:
             if cr.returncode != 0:
                 fixes.append(f"Fix failing command (exit={cr.returncode}): {cr.command}")
 
-    decision = "PASS" if (not reasons or tr.all_commands_ok) else "FAIL"
+    decision = "PASS" if (not reasons and tr.all_commands_ok) else "FAIL"
     if decision == "PASS":
         reasons.append("All acceptance commands passed and no constraints were violated.")
 
