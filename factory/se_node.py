@@ -1,7 +1,7 @@
 """the se node proposes code changes to satisfy the work order."""
 
 from pathlib import Path
-from schemas import SEPacket, WorkOrder
+from schemas import SEPacket
 from util import strict_json_loads
 
 # directories and files to exclude from directory listing

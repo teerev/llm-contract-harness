@@ -1,4 +1,4 @@
-"""pydantic models used throughout the pipeline."""
+"""pydantic schemas used throughout the pipeline."""
 
 from typing import Any, Literal
 from pydantic import BaseModel, Field

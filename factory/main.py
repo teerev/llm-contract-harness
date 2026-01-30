@@ -1,14 +1,10 @@
-"""
-entry point for the se -> tr -> po loop.
-
-se node now extracts file context from the workspace.
-"""
+"""entry point for running the se -> tr -> po loop."""
 
 import argparse
 from datetime import UTC, datetime
 from pathlib import Path
+from graph import build_graph
 from llm import get_model
-from loop import build_graph
 from workspace import load_work_order, prepare_workspace
 
 

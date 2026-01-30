@@ -1,4 +1,4 @@
-"""state machine that runs the se -> tr -> po loop."""
+"""graph-based state machine for the se -> tr -> po workflow."""
 
 import os
 import subprocess
@@ -149,7 +149,7 @@ def conditional_route(state: dict):
 
 
 def build_graph(se_model):
-    """builds and returns the compiled state graph."""
+    """builds the state graph and returns it compiled."""
     g = StateGraph(PrototypeState)
 
     g.add_node("SE", make_se_node(se_model))
