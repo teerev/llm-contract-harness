@@ -1,12 +1,12 @@
 """state machine that runs the se ->  tr -> po loop."""
 
-import json
 import os
 import subprocess
 from pathlib import Path
 from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from schemas import AppliedChange, POReport, SEPacket, ToolReport, WorkOrder
+from util import matches_any_glob, normalize_rel_path, safe_join, strict_json_loads
 
 
 class PrototypeState(TypedDict, total=False):
@@ -43,6 +43,7 @@ Constraints:
 - Never use absolute paths or '..' segments.
 - Do not modify files matching forbidden_paths.
 - If allowed_paths is non-empty, only write within allowed_paths.
+- Prefer smallest diffs: do not refactor unrelated code.
 """
 
 
@@ -53,6 +54,12 @@ def make_se_node(model):
         wo = WorkOrder.model_validate(state["work_order"])
         body = state["work_order_body"]
 
+        prior = ""
+        po = state.get("po_report") or {}
+        fixes = po.get("required_fixes") or []
+        if fixes:
+            prior = "\n\nPrevious FAIL required_fixes:\n- " + "\n- ".join(fixes)
+
         user = f"""\
 WORK ORDER:
 {wo.model_dump()}
@@ -62,11 +69,13 @@ WORK ORDER BODY:
 
 TARGET REPO PATH:
 {state["repo_path"]}
+
+Iteration: {state.get('iteration', 0)}{prior}
 """
         raw = model.complete(system=SE_SYSTEM, user=user)
 
         try:
-            data = json.loads(raw.strip())
+            data = strict_json_loads(raw)
             pkt = SEPacket.model_validate(data)
         except Exception as e:
             pkt = SEPacket(
@@ -89,17 +98,36 @@ def tool_runner_node(state: dict) -> dict:
     applied: list[AppliedChange] = []
     blocked: list[str] = []
 
+    validated_writes: list[tuple] = []
+
     for w in pkt.writes:
-        rel = w.path.replace("\\", "/").lstrip("/")
+        rel = normalize_rel_path(w.path)
 
-        # check path constraints
-        if wo.forbidden_paths:
-            if any(rel.startswith(p) for p in wo.forbidden_paths):
-                blocked.append(rel)
-                continue
+        if matches_any_glob(rel, wo.forbidden_paths):
+            blocked.append(rel)
+            continue
+        if wo.allowed_paths and (not matches_any_glob(rel, wo.allowed_paths)):
+            blocked.append(rel)
+            continue
 
-        abs_path = repo_root / rel
+        try:
+            abs_path = safe_join(repo_root, rel)
+        except Exception:
+            blocked.append(rel)
+            continue
 
+        validated_writes.append((w, rel, abs_path))
+
+    if blocked:
+        report = ToolReport(
+            applied=[],
+            blocked_writes=blocked,
+            command_results=[],
+            all_commands_ok=False,
+        )
+        return {"tool_report": report.model_dump()}
+
+    for w, rel, abs_path in validated_writes:
         if w.mode == "delete":
             if abs_path.exists():
                 abs_path.unlink()
