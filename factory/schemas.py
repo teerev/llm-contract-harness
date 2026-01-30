@@ -8,6 +8,9 @@ class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
     acceptance_commands: list[str] = Field(default_factory=list) 
     forbidden_paths: list[str] = Field(default_factory=list)
+    allowed_paths: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    command_timeout_sec: int = 300
 
 
 class FileWrite(BaseModel):
@@ -27,10 +30,16 @@ class CommandResult(BaseModel):
     returncode: int
     stdout: str
     stderr: str
+    timed_out: bool = False
+
+
+class AppliedChange(BaseModel):
+    path: str
+    action: Literal["create", "replace", "delete"]
 
 
 class ToolReport(BaseModel):
-    applied: list[dict] = Field(default_factory=list)
+    applied: list[AppliedChange] = Field(default_factory=list)
     blocked_writes: list[str] = Field(default_factory=list)
     command_results: list[CommandResult] = Field(default_factory=list)
     all_commands_ok: bool = False
