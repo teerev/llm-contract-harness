@@ -1,4 +1,4 @@
-"""state machine that runs the se ->  tr -> po loop."""
+"""state machine that runs the se -> tr -> po loop."""
 
 import os
 import subprocess
@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from schemas import AppliedChange, POReport, SEPacket, ToolReport, WorkOrder
-from util import matches_any_glob, normalize_rel_path, safe_join, strict_json_loads
+from se_node import make_se_node
+from util import matches_any_glob, normalize_rel_path, safe_join
 
 
 class PrototypeState(TypedDict, total=False):
@@ -23,70 +24,6 @@ class PrototypeState(TypedDict, total=False):
     se_packet: dict[str, Any]
     tool_report: dict[str, Any]
     po_report: dict[str, Any]
-
-
-SE_SYSTEM = """\
-You are the Software Engineer (SE).
-
-Goal: propose the MINIMAL set of repo file changes to satisfy the work order.
-
-Output contract (MANDATORY):
-- Output MUST be a single JSON object matching:
-  {
-    "summary": "string",
-    "writes": [{"path":"relative/path","content":"...","mode":"create|replace|delete"}, ...],
-    "assumptions": ["...", ...]
-  }
-- No markdown. No code fences. Only JSON.
-
-Constraints:
-- Never use absolute paths or '..' segments.
-- Do not modify files matching forbidden_paths.
-- If allowed_paths is non-empty, only write within allowed_paths.
-- Prefer smallest diffs: do not refactor unrelated code.
-"""
-
-
-def make_se_node(model):
-    """creates an se node with the given model."""
-
-    def se_node(state: dict) -> dict:
-        wo = WorkOrder.model_validate(state["work_order"])
-        body = state["work_order_body"]
-
-        prior = ""
-        po = state.get("po_report") or {}
-        fixes = po.get("required_fixes") or []
-        if fixes:
-            prior = "\n\nPrevious FAIL required_fixes:\n- " + "\n- ".join(fixes)
-
-        user = f"""\
-WORK ORDER METADATA (dict):
-{wo.model_dump()}
-
-WORK ORDER BODY:
-{body}
-
-TARGET REPO PATH:
-{state["repo_path"]}
-
-Iteration: {state.get('iteration', 0)}{prior}
-"""
-        raw = model.complete(system=SE_SYSTEM, user=user)
-
-        try:
-            data = strict_json_loads(raw)
-            pkt = SEPacket.model_validate(data)
-        except Exception as e:
-            pkt = SEPacket(
-                summary="Invalid SE JSON; emitting no-op.",
-                writes=[],
-                assumptions=[f"Parse error: {type(e).__name__}: {e}"],
-            )
-
-        return {"se_packet": pkt.model_dump()}
-
-    return se_node
 
 
 def tool_runner_node(state: dict) -> dict:

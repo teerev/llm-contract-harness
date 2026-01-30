@@ -1,5 +1,10 @@
-"""entry point for running the se -> tr -> po loop."""
+"""
+entry point for the se -> tr -> po loop.
 
+se node now extracts file context from the workspace.
+"""
+
+import argparse
 from datetime import UTC, datetime
 from pathlib import Path
 from llm import get_model
@@ -7,32 +12,45 @@ from loop import build_graph
 from workspace import load_work_order, prepare_workspace
 
 
+def _resolve_repo(repo_arg: str | None, wo_repo: str | None, wo_path: Path) -> Path:
+    if repo_arg:
+        return Path(repo_arg).expanduser().resolve()
+    if wo_repo:
+        p = Path(wo_repo).expanduser()
+        return p.resolve() if p.is_absolute() else (wo_path.parent / p).resolve()
+    raise ValueError("No target repo provided. Use --repo or set repo: in work order front-matter.")
+
+
 def main():
-    work_order_path = "work_order.md"
-    
-    if Path(work_order_path).exists():
-        wo, body = load_work_order(work_order_path)
-        repo_path = wo.repo or "."
-    else:
-        # fallback to hardcoded example
-        wo = {"title": "Test Work Order", "acceptance_commands": ["echo ok"]}
-        body = "Create a hello.txt file with 'Hello World'."
-        repo_path = "."
-    
-    product_repo = Path(repo_path).resolve()
-    
-    # create workspace
+    parser = argparse.ArgumentParser(prog="prototype")
+    parser.add_argument("--work-order", required=True, help="Path to work order markdown.")
+    parser.add_argument("--repo", default=None, help="Path to product repo (overrides work order repo).")
+    parser.add_argument("--max-iterations", type=int, default=5)
+    parser.add_argument(
+        "--workspace-root",
+        default=str(Path.home() / ".langgraph-prototype" / "workspaces"),
+        help="Where to create per-run workspaces.",
+    )
+
+    args = parser.parse_args()
+
+    wo, body = load_work_order(args.work_order)
+    wo_path = Path(args.work_order).resolve()
+    product_repo = _resolve_repo(args.repo, wo.repo, wo_path)
+
+    if not product_repo.is_dir():
+        raise ValueError(f"Product repo is not a directory: {product_repo}")
+
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    workspace_root = Path.home() / ".langgraph-prototype" / "workspaces"
-    workspace = prepare_workspace(product_repo, workspace_root, run_id)
+    workspace = prepare_workspace(product_repo, Path(args.workspace_root).expanduser().resolve(), run_id)
 
     result = build_graph(get_model()).invoke(
         {
             "repo_path": str(workspace),
-            "work_order": wo if isinstance(wo, dict) else wo.model_dump(),
+            "work_order": wo.model_dump(),
             "work_order_body": body,
             "iteration": 0,
-            "max_iterations": 5,
+            "max_iterations": args.max_iterations,
         }
     )
 

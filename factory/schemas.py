@@ -13,6 +13,7 @@ class WorkOrder(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     command_timeout_sec: int = 300
     notes: str = Field(default="")
+    context_files: list[str] = Field(default_factory=list)
 
 
 class FileWrite(BaseModel):
