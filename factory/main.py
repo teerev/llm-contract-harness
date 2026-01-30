@@ -1,53 +1,55 @@
 """
 prototype: se -> tr -> po loop for automated code changes.
-
-this is the initial skeleton - all logic in one file.
 """
+
+from schemas import POReport, SEPacket, ToolReport, WorkOrder
 
 
 def se_node(state: dict) -> dict:
     """proposes file changes to satisfy the work order."""
+    wo = WorkOrder.model_validate(state["work_order"])
+    
     # stub: just echo back a simple proposal
-    return {
-        "se_packet": {
-            "summary": "Stub SE response",
-            "writes": [],
-            "assumptions": [],
-        }
-    }
+    pkt = SEPacket(
+        summary=f"Stub SE response for: {wo.title}",
+        writes=[],
+        assumptions=[],
+    )
+    return {"se_packet": pkt.model_dump()}
 
 
 def tr_node(state: dict) -> dict:
     """applies the proposed changes and runs acceptance commands."""
+    pkt = SEPacket.model_validate(state["se_packet"])
+    
     # stub: report success
-    return {
-        "tool_report": {
-            "applied": [],
-            "blocked_writes": [],
-            "command_results": [],
-            "all_commands_ok": True,
-        }
-    }
+    report = ToolReport(
+        applied=[],
+        blocked_writes=[],
+        command_results=[],
+        all_commands_ok=True,
+    )
+    return {"tool_report": report.model_dump()}
 
 
 def po_node(state: dict) -> dict:
     """evaluates the results and decides pass or fail."""
-    tr = state.get("tool_report", {})
+    tr = ToolReport.model_validate(state["tool_report"])
     
-    if tr.get("all_commands_ok", False):
-        decision = "PASS"
-        reasons = ["All commands passed."]
+    if tr.all_commands_ok:
+        report = POReport(
+            decision="PASS",
+            reasons=["All commands passed."],
+            required_fixes=[],
+        )
     else:
-        decision = "FAIL"
-        reasons = ["Commands failed."]
+        report = POReport(
+            decision="FAIL",
+            reasons=["Commands failed."],
+            required_fixes=["Fix the failing commands."],
+        )
     
-    return {
-        "po_report": {
-            "decision": decision,
-            "reasons": reasons,
-            "required_fixes": [],
-        }
-    }
+    return {"po_report": report.model_dump()}
 
 
 def run_loop(work_order: dict, body: str, repo_path: str, max_iterations: int = 5):
@@ -88,5 +90,5 @@ def main():
     print(f"Final decision: {result['po_report']['decision']}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()
