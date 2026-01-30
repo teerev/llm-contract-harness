@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
-    acceptance_commands: list[str] = Field(default_factory=list)
+    acceptance_commands: list[str] = Field(default_factory=list) 
     forbidden_paths: list[str] = Field(default_factory=list)
 
 

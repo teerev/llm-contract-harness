@@ -1,1 +1,3 @@
 pydantic
+langchain-core
+langchain-openai
