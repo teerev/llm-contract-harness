@@ -69,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     decision = po.get("decision")
 
     if decision == "PASS" and args.apply_back:
-        applied = result.get("tool_report").get("applied", [])
+        applied = (result.get("tool_report") or {}).get("applied", [])
         apply_changes_back(product_repo, workspace, applied)
 
     print(f"\nFINAL: {decision}")
