@@ -91,3 +91,13 @@ class HealthResponse(BaseModel):
     """Response for health check endpoints."""
     status: str
     details: Optional[dict[str, Any]] = None
+
+
+class EventResponse(BaseModel):
+    """Response for GET /runs/{run_id}/events."""
+    id: int
+    ts: datetime
+    level: str
+    kind: str
+    iteration: Optional[int] = None
+    payload: Optional[dict[str, Any]] = None

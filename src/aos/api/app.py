@@ -6,19 +6,24 @@ Endpoints:
 - GET /readyz: Readiness check (can we handle requests?)
 - POST /runs: Create a new run
 - GET /runs/{run_id}: Get run status
+- GET /runs/{run_id}/events: Get run events
 """
 
+from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from sqlalchemy import text
 
-from ..db import get_session, get_engine, Run
+from ..db import get_session, get_engine, Run, Event
+from ..queue import enqueue_run
+from ..events import record_event, EventKind
 from .schemas import (
     CreateRunRequest,
     CreateRunResponse,
     RunResponse,
     HealthResponse,
+    EventResponse,
 )
 
 
@@ -94,7 +99,24 @@ def create_run(request: CreateRunRequest):
         session.add(run)
         session.flush()  # Assigns the ID
         
-        return CreateRunResponse(run_id=run.id, status=run.status)
+        # Record creation event
+        record_event(
+            session, run.id, EventKind.RUN_CREATED,
+            payload={
+                "repo_url": request.repo_url,
+                "ref": request.ref,
+                "params": request.params.model_dump(),
+                "writeback_mode": request.writeback.mode,
+            }
+        )
+        
+        run_id = run.id
+        status = run.status
+    
+    # Enqueue job for worker (outside the session)
+    enqueue_run(run_id)
+    
+    return CreateRunResponse(run_id=run_id, status=status)
 
 
 @app.get("/runs/{run_id}", response_model=RunResponse)
@@ -123,3 +145,40 @@ def get_run(run_id: UUID):
             result_summary=run.result_summary,
             error=run.error,
         )
+
+
+@app.get("/runs/{run_id}/events", response_model=list[EventResponse])
+def get_events(
+    run_id: UUID,
+    after_id: Optional[int] = Query(None, description="Return events after this ID (for tailing)"),
+):
+    """
+    Get events for a run.
+    
+    Use after_id to poll for new events (tailing).
+    """
+    with get_session() as session:
+        # Verify run exists
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        # Query events
+        query = session.query(Event).filter(Event.run_id == run_id)
+        
+        if after_id is not None:
+            query = query.filter(Event.id > after_id)
+        
+        events = query.order_by(Event.id).all()
+        
+        return [
+            EventResponse(
+                id=e.id,
+                ts=e.ts,
+                level=e.level,
+                kind=e.kind,
+                iteration=e.iteration,
+                payload=e.payload,
+            )
+            for e in events
+        ]
