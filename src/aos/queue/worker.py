@@ -5,7 +5,8 @@ This is the main job that workers execute. It:
 1. Loads the run from the database
 2. Clones the repository
 3. Runs the factory loop
-4. Records events and updates status
+4. Records events, saves artifacts
+5. Optionally pushes changes back to GitHub
 """
 
 import os
@@ -16,7 +17,8 @@ from uuid import UUID
 
 from ..db import get_session, Run
 from ..events import record_event, EventKind
-from ..git import clone_repo, get_head_sha
+from ..git import clone_repo, push_branch
+from ..artifacts import save_iteration_artifacts, save_run_summary
 
 
 # Where to store workspaces
@@ -56,6 +58,10 @@ def _execute_run(run_id: UUID) -> dict:
         if not run:
             raise ValueError(f"Run not found: {run_id}")
         
+        # Check if already canceled
+        if run.status == "CANCELED":
+            return {"status": "CANCELED", "decision": None}
+        
         if run.status != "PENDING":
             raise ValueError(f"Run is not PENDING: {run.status}")
         
@@ -68,6 +74,7 @@ def _execute_run(run_id: UUID) -> dict:
         work_order = dict(run.work_order)
         work_order_body = run.work_order_body
         max_iterations = run.params.get("max_iterations", 5)
+        writeback_config = run.writeback or {}
         
         record_event(
             session, run_id, EventKind.RUN_START,
@@ -97,11 +104,17 @@ def _execute_run(run_id: UUID) -> dict:
         run.git_sha = git_sha
         run.artifact_root = str(WORKSPACE_ROOT / str(run_id))
     
+    # Check for cancellation before starting factory
+    if _is_canceled(run_id):
+        _handle_cancellation(run_id)
+        return {"status": "CANCELED", "decision": None}
+    
     # Run the factory loop
     try:
         result = _run_factory(
             run_id=run_id,
             workspace_dir=workspace_dir,
+            artifact_dir=artifact_dir,
             work_order=work_order,
             work_order_body=work_order_body,
             max_iterations=max_iterations,
@@ -124,13 +137,49 @@ def _execute_run(run_id: UUID) -> dict:
     decision = po_report.get("decision", "FAIL")
     final_status = "SUCCEEDED" if decision == "PASS" else "FAILED"
     
+    # Handle writeback if enabled and PASS
+    pushed_branch = None
+    if decision == "PASS" and writeback_config.get("mode") == "push_branch":
+        try:
+            pushed_branch = _do_writeback(
+                run_id=run_id,
+                workspace_dir=workspace_dir,
+                writeback_config=writeback_config,
+                work_order=work_order,
+            )
+        except Exception as e:
+            # Writeback failure doesn't fail the run, just log it
+            with get_session() as session:
+                record_event(
+                    session, run_id, EventKind.ERROR_EXCEPTION,
+                    level="WARN",
+                    payload={
+                        "phase": "writeback",
+                        "error": str(e),
+                    }
+                )
+    
+    # Save final summary artifact
+    with get_session() as session:
+        save_run_summary(
+            session, run_id, artifact_dir,
+            {
+                "run_id": str(run_id),
+                "status": final_status,
+                "decision": decision,
+                "iterations": result.get("iteration", 0),
+                "git_sha": git_sha,
+                "pushed_branch": pushed_branch,
+            }
+        )
+    
     # Update run with final status
     with get_session() as session:
         run = session.query(Run).filter(Run.id == run_id).first()
         run.status = final_status
         run.finished_at = datetime.utcnow()
         run.iteration = result.get("iteration", 0)
-        run.result_summary = f"Decision: {decision}"
+        run.result_summary = f"Decision: {decision}" + (f", pushed to {pushed_branch}" if pushed_branch else "")
         
         record_event(
             session, run_id, EventKind.RUN_END,
@@ -138,15 +187,17 @@ def _execute_run(run_id: UUID) -> dict:
                 "status": final_status,
                 "decision": decision,
                 "iterations": result.get("iteration", 0),
+                "pushed_branch": pushed_branch,
             }
         )
     
-    return {"status": final_status, "decision": decision}
+    return {"status": final_status, "decision": decision, "pushed_branch": pushed_branch}
 
 
 def _run_factory(
     run_id: UUID,
     workspace_dir: Path,
+    artifact_dir: Path,
     work_order: dict,
     work_order_body: str,
     max_iterations: int,
@@ -175,21 +226,30 @@ def _run_factory(
     # In future, we could use streaming to capture per-node events
     result = graph.invoke(state)
     
-    # Record the final artifacts
-    _record_iteration_events(run_id, result)
+    # Record the final artifacts and events
+    _record_iteration_events(run_id, artifact_dir, result)
     
     return result
 
 
-def _record_iteration_events(run_id: UUID, result: dict) -> None:
+def _record_iteration_events(run_id: UUID, artifact_dir: Path, result: dict) -> None:
     """
-    Record events for the factory result.
+    Record events and save artifacts for the factory result.
     """
     with get_session() as session:
         iteration = result.get("iteration", 0)
         
-        # SE output
         se_packet = result.get("se_packet")
+        tool_report = result.get("tool_report")
+        po_report = result.get("po_report")
+        
+        # Save artifacts
+        save_iteration_artifacts(
+            session, run_id, artifact_dir,
+            iteration, se_packet, tool_report, po_report,
+        )
+        
+        # SE output event
         if se_packet:
             record_event(
                 session, run_id, EventKind.SE_OUTPUT,
@@ -201,8 +261,7 @@ def _record_iteration_events(run_id: UUID, result: dict) -> None:
                 }
             )
         
-        # TR apply
-        tool_report = result.get("tool_report")
+        # TR apply event
         if tool_report:
             record_event(
                 session, run_id, EventKind.TR_APPLY,
@@ -214,8 +273,7 @@ def _record_iteration_events(run_id: UUID, result: dict) -> None:
                 }
             )
         
-        # PO result
-        po_report = result.get("po_report")
+        # PO result event
         if po_report:
             record_event(
                 session, run_id, EventKind.PO_RESULT,
@@ -225,6 +283,63 @@ def _record_iteration_events(run_id: UUID, result: dict) -> None:
                     "reasons_count": len(po_report.get("reasons", [])),
                     "fixes_count": len(po_report.get("required_fixes", [])),
                 }
+            )
+
+
+def _do_writeback(
+    run_id: UUID,
+    workspace_dir: Path,
+    writeback_config: dict,
+    work_order: dict,
+) -> str:
+    """
+    Push changes to a new branch on GitHub.
+    
+    Returns the pushed branch name.
+    """
+    # Determine branch name
+    branch_name = writeback_config.get("branch_name")
+    if not branch_name:
+        # Auto-generate: aos/run-<run_id>
+        short_id = str(run_id)[:8]
+        branch_name = f"aos/run-{short_id}"
+    
+    # Commit message
+    title = work_order.get("title", "AOS run")
+    commit_message = f"AOS: {title} (run {run_id})"
+    
+    # Get author from env or use defaults
+    author_name = os.environ.get("GIT_AUTHOR_NAME", "AOS")
+    author_email = os.environ.get("GIT_AUTHOR_EMAIL", "aos@localhost")
+    
+    # Push
+    push_branch(
+        repo_dir=workspace_dir,
+        branch_name=branch_name,
+        commit_message=commit_message,
+        author_name=author_name,
+        author_email=author_email,
+    )
+    
+    return branch_name
+
+
+def _is_canceled(run_id: UUID) -> bool:
+    """Check if a run has been canceled."""
+    with get_session() as session:
+        run = session.query(Run).filter(Run.id == run_id).first()
+        return run and run.status == "CANCELED"
+
+
+def _handle_cancellation(run_id: UUID) -> None:
+    """Handle a canceled run."""
+    with get_session() as session:
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if run:
+            run.finished_at = datetime.utcnow()
+            record_event(
+                session, run_id, EventKind.RUN_CANCELED,
+                payload={"reason": "Canceled by user"}
             )
 
 

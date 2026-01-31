@@ -78,11 +78,14 @@ def push_branch(
     author_email: str = "aos@localhost",
 ) -> str:
     """
-    Create a new branch, commit all changes, and push.
+    Commit all changes and push to a branch.
+    
+    If the branch doesn't exist, creates it. If it does exist,
+    commits to it and pushes (handles sequential work orders to same branch).
     
     Args:
         repo_dir: Path to the git repository
-        branch_name: Name for the new branch
+        branch_name: Name for the branch
         commit_message: Commit message
         author_name: Git author name
         author_email: Git author email
@@ -97,14 +100,43 @@ def push_branch(
     env["GIT_COMMITTER_NAME"] = author_name
     env["GIT_COMMITTER_EMAIL"] = author_email
     
-    # Create and checkout new branch
-    subprocess.run(
-        ["git", "checkout", "-b", branch_name],
+    # Check current branch
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=repo_dir,
-        check=True,
         capture_output=True,
         text=True,
     )
+    current_branch = result.stdout.strip()
+    
+    # If not on the target branch, switch to it (create if needed)
+    if current_branch != branch_name:
+        # Check if branch exists locally
+        result = subprocess.run(
+            ["git", "show-ref", "--verify", f"refs/heads/{branch_name}"],
+            cwd=repo_dir,
+            capture_output=True,
+        )
+        branch_exists = result.returncode == 0
+        
+        if branch_exists:
+            # Checkout existing branch
+            subprocess.run(
+                ["git", "checkout", branch_name],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        else:
+            # Create new branch
+            subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
     
     # Stage all changes
     subprocess.run(
@@ -115,19 +147,28 @@ def push_branch(
         text=True,
     )
     
-    # Commit
-    subprocess.run(
-        ["git", "commit", "-m", commit_message],
+    # Check if there are changes to commit
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"],
         cwd=repo_dir,
-        check=True,
         capture_output=True,
-        text=True,
-        env=env,
     )
+    has_changes = result.returncode != 0
     
-    # Push
+    if has_changes:
+        # Commit
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    
+    # Push (force push to handle rebased/amended commits)
     subprocess.run(
-        ["git", "push", "origin", branch_name],
+        ["git", "push", "-u", "origin", branch_name, "--force-with-lease"],
         cwd=repo_dir,
         check=True,
         capture_output=True,

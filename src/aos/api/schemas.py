@@ -101,3 +101,20 @@ class EventResponse(BaseModel):
     kind: str
     iteration: Optional[int] = None
     payload: Optional[dict[str, Any]] = None
+
+
+class CancelResponse(BaseModel):
+    """Response for POST /runs/{run_id}/cancel."""
+    run_id: UUID
+    status: str
+    canceled: bool  # True if this request caused the cancellation
+
+
+class ArtifactResponse(BaseModel):
+    """Response for GET /runs/{run_id}/artifacts."""
+    id: int
+    name: str
+    content_type: Optional[str] = None
+    bytes: Optional[int] = None
+    sha256: Optional[str] = None
+    created_at: datetime

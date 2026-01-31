@@ -9,13 +9,15 @@ Endpoints:
 - GET /runs/{run_id}/events: Get run events
 """
 
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
-from ..db import get_session, get_engine, Run, Event
+from ..db import get_session, get_engine, Run, Event, Artifact
 from ..queue import enqueue_run
 from ..events import record_event, EventKind
 from .schemas import (
@@ -24,6 +26,8 @@ from .schemas import (
     RunResponse,
     HealthResponse,
     EventResponse,
+    ArtifactResponse,
+    CancelResponse,
 )
 
 
@@ -94,6 +98,7 @@ def create_run(request: CreateRunRequest):
             work_order=request.work_order,
             work_order_body=request.work_order_body,
             params=request.params.model_dump(),
+            writeback=request.writeback.model_dump(),
             idempotency_key=request.idempotency_key,
         )
         session.add(run)
@@ -182,3 +187,86 @@ def get_events(
             )
             for e in events
         ]
+
+
+@app.post("/runs/{run_id}/cancel", response_model=CancelResponse)
+def cancel_run(run_id: UUID):
+    """
+    Cancel a run.
+    
+    Cancellation is cooperative - the worker checks for cancellation
+    between iterations. If the run is already terminal, this is a no-op.
+    """
+    with get_session() as session:
+        run = session.query(Run).filter(Run.id == run_id).first()
+        
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        # Check if already terminal
+        terminal_statuses = {"SUCCEEDED", "FAILED", "CANCELED"}
+        if run.status in terminal_statuses:
+            return CancelResponse(run_id=run.id, status=run.status, canceled=False)
+        
+        # Mark as canceled
+        run.status = "CANCELED"
+        
+        return CancelResponse(run_id=run.id, status="CANCELED", canceled=True)
+
+
+# ============================================================
+# Artifact endpoints
+# ============================================================
+
+@app.get("/runs/{run_id}/artifacts", response_model=list[ArtifactResponse])
+def list_artifacts(run_id: UUID):
+    """
+    List artifacts for a run.
+    """
+    with get_session() as session:
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        artifacts = session.query(Artifact).filter(Artifact.run_id == run_id).all()
+        
+        return [
+            ArtifactResponse(
+                id=a.id,
+                name=a.name,
+                content_type=a.content_type,
+                bytes=a.bytes,
+                sha256=a.sha256,
+                created_at=a.created_at,
+            )
+            for a in artifacts
+        ]
+
+
+@app.get("/runs/{run_id}/artifacts/{name}")
+def get_artifact(run_id: UUID, name: str):
+    """
+    Download an artifact by name.
+    """
+    with get_session() as session:
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        artifact = session.query(Artifact).filter(
+            Artifact.run_id == run_id,
+            Artifact.name == name,
+        ).first()
+        
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        
+        file_path = Path(artifact.path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Artifact file not found on disk")
+        
+        return FileResponse(
+            path=file_path,
+            media_type=artifact.content_type or "application/octet-stream",
+            filename=artifact.name,
+        )

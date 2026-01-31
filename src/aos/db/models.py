@@ -63,6 +63,9 @@ class Run(Base):
     # Execution parameters
     params = Column(JSONB, nullable=False, default=dict)
     
+    # Writeback configuration
+    writeback = Column(JSONB, nullable=True, default=dict)
+    
     # Progress tracking
     iteration = Column(Integer, nullable=False, default=0)
     
