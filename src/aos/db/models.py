@@ -1,10 +1,9 @@
 """
 Database models for AOS.
 
-Four tables:
+Three tables:
 - runs: The main job record (one per API request)
 - events: Append-only audit log of everything that happens
-- steps: Per-iteration phase records (SE/TR/PO)
 - artifacts: Metadata for files created during a run
 """
 
@@ -76,7 +75,6 @@ class Run(Base):
     
     # Relationships
     events = relationship("Event", back_populates="run", cascade="all, delete-orphan")
-    steps = relationship("Step", back_populates="run", cascade="all, delete-orphan")
     artifacts = relationship("Artifact", back_populates="run", cascade="all, delete-orphan")
 
 
@@ -102,35 +100,6 @@ class Event(Base):
     
     __table_args__ = (
         Index("ix_events_run_id_id", "run_id", "id"),  # For tailing queries
-    )
-
-
-class Step(Base):
-    """
-    Per-iteration phase record.
-    
-    Each iteration has up to 3 steps: SE, TR, PO.
-    Useful for quick status queries without parsing events.
-    """
-    __tablename__ = "steps"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    run_id = Column(UUID(as_uuid=True), ForeignKey("runs.id"), nullable=False)
-    
-    iteration = Column(Integer, nullable=False)
-    phase = Column(String(10), nullable=False)  # SE/TR/PO
-    status = Column(String(20), nullable=False, default="STARTED")  # STARTED/SUCCEEDED/FAILED
-    
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    finished_at = Column(DateTime, nullable=True)
-    
-    summary = Column(Text, nullable=True)
-    payload = Column(JSONB, nullable=True)
-    
-    run = relationship("Run", back_populates="steps")
-    
-    __table_args__ = (
-        Index("ix_steps_run_id_iteration", "run_id", "iteration"),
     )
 
 
