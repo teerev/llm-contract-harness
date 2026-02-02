@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aos"
+version = "0.1.0"
+description = "Agent Orchestration Service"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Core dependencies (always installed)
+dependencies = [
+    "pydantic",
+    "langchain-core",
+    "langchain-openai",
+    "langgraph",
+    "pyyaml",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",  # for form/file uploads
+    "sqlalchemy",
+    "psycopg2-binary",
+    "alembic",
+    "redis",
+    "rq",
+    "requests",
+]
+
+[project.optional-dependencies]
+# Development tools: pip install -e ".[dev]"
+dev = [
+    "honcho",     # Process manager for running API + worker together
+    "black",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+# Testing: pip install -e ".[test]"
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "httpx",  # for testing FastAPI
+]
+
+# Everything: pip install -e ".[dev,test]"
+
+[project.scripts]
+aos = "src.aos.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "factory*"]
+
+# Tool configurations can also go here
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true

@@ -19,7 +19,8 @@ def get_redis_connection() -> Redis:
 
 def get_queue() -> Queue:
     """Get the RQ queue for AOS jobs."""
-    return Queue("aos", connection=get_redis_connection())
+    # Use "default" queue so workers can be started with just `rq worker`
+    return Queue("default", connection=get_redis_connection())
 
 
 def enqueue_run(run_id: UUID) -> str:

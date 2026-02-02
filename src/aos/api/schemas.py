@@ -32,19 +32,26 @@ class CreateRunRequest(BaseModel):
     """
     Request body for POST /runs.
     
-    Required: repo_url and work_order
-    Optional: everything else has sensible defaults
+    The work_order_md field accepts a markdown string with YAML frontmatter.
+    The repo URL is taken from the `repo:` field in the work order YAML.
+    
+    Example work order:
+        ---
+        title: Add feature
+        repo: https://github.com/user/repo
+        acceptance_commands:
+          - pytest
+        ---
+        Implement the feature.
+    
+    The optional repo_url parameter can override the work order's repo field.
     """
-    # Git source
-    repo_url: str = Field(..., description="GitHub clone URL")
+    # Work order as markdown (same format as .md files)
+    work_order_md: str = Field(..., description="Work order markdown with YAML frontmatter")
+    
+    # Git source (optional - defaults to repo field in work order)
+    repo_url: Optional[str] = Field(None, description="GitHub clone URL (overrides work order repo)")
     ref: str = Field(default="main", description="Branch or commit SHA")
-    
-    # Work order (the task)
-    work_order: dict[str, Any] = Field(..., description="Structured work order")
-    work_order_body: str = Field(default="", description="Work order body text")
-    
-    # Optional: markdown alternative (not implemented yet)
-    # work_order_md: Optional[str] = None
     
     # Execution config
     params: RunParams = Field(default_factory=RunParams)

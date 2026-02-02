@@ -18,6 +18,7 @@ import subprocess
 import time
 import sys
 import requests
+import yaml
 
 API_URL = "http://localhost:8000"
 REPO_URL = "https://github.com/teerev/dft-orch"
@@ -26,6 +27,20 @@ DEV_BRANCH = "aos/taskman-dev"  # All work orders push to this single branch
 
 # Track whether we've created the dev branch yet
 branch_created = False
+
+
+def work_order_to_markdown(wo: dict) -> str:
+    """
+    Convert a work order dict to markdown format with YAML frontmatter.
+    
+    This is the canonical format that both the factory CLI and AOS API expect.
+    """
+    frontmatter = wo["work_order"]
+    body = wo["work_order_body"].strip()
+    
+    yaml_str = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
+    
+    return f"---\n{yaml_str}---\n{body}\n"
 
 
 def delete_remote_branch():
@@ -65,11 +80,13 @@ def submit_work_order(wo: dict) -> str:
     # Subsequent work orders: base off dev branch, push to same dev branch
     ref = DEV_BRANCH if branch_created else BASE_BRANCH
     
+    # Convert to markdown format (single source of truth for work order parsing)
+    work_order_md = work_order_to_markdown(wo)
+    
     payload = {
         "repo_url": REPO_URL,
         "ref": ref,
-        "work_order": wo["work_order"],
-        "work_order_body": wo["work_order_body"],
+        "work_order_md": work_order_md,
         "params": {"max_iterations": 5},
         "writeback": {
             "mode": "push_branch",

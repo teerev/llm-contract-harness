@@ -9,14 +9,18 @@ Endpoints:
 - GET /runs/{run_id}/events: Get run events
 """
 
+import logging
 from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+logger = logging.getLogger(__name__)
+
+from fastapi import FastAPI, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 
+from factory.workspace import parse_work_order
 from ..db import get_session, get_engine, Run, Event, Artifact
 from ..queue import enqueue_run
 from ..events import record_event, EventKind
@@ -74,6 +78,31 @@ def readyz():
 # Run endpoints
 # ============================================================
 
+def _resolve_repo_url(work_order: dict, override_url: str | None) -> str:
+    """
+    Resolve the repo URL from work order or override.
+    
+    Priority: override_url > work_order['repo']
+    Validates that the result is a GitHub URL.
+    """
+    repo_url = override_url or work_order.get("repo")
+    
+    if not repo_url:
+        raise HTTPException(
+            status_code=400,
+            detail="No repo specified. Add 'repo: https://github.com/...' to your work order YAML."
+        )
+    
+    # Validate it's a GitHub URL
+    if not repo_url.startswith("https://github.com/"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid repo URL: must be a GitHub HTTPS URL (https://github.com/...), got: {repo_url}"
+        )
+    
+    return repo_url
+
+
 @app.post("/runs", response_model=CreateRunResponse, status_code=201)
 def create_run(request: CreateRunRequest):
     """
@@ -81,7 +110,23 @@ def create_run(request: CreateRunRequest):
     
     This is the main entry point for submitting jobs. The run
     starts in PENDING status and will be picked up by a worker.
+    
+    The repo URL is taken from the `repo:` field in the work order YAML.
+    You can optionally override it with the `repo_url` parameter.
     """
+    # Parse markdown using the same function as the factory CLI
+    try:
+        work_order_model, work_order_body = parse_work_order(request.work_order_md)
+        work_order = work_order_model.model_dump()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid work order format: {e}"
+        )
+    
+    # Resolve repo URL (from work order or override)
+    repo_url = _resolve_repo_url(work_order, request.repo_url)
+    
     with get_session() as session:
         # Check idempotency key if provided
         if request.idempotency_key:
@@ -91,12 +136,12 @@ def create_run(request: CreateRunRequest):
             if existing:
                 return CreateRunResponse(run_id=existing.id, status=existing.status)
         
-        # Create new run
+        # Create new run with parsed work order
         run = Run(
-            repo_url=request.repo_url,
+            repo_url=repo_url,
             repo_ref=request.ref,
-            work_order=request.work_order,
-            work_order_body=request.work_order_body,
+            work_order=work_order,
+            work_order_body=work_order_body,
             params=request.params.model_dump(),
             writeback=request.writeback.model_dump(),
             idempotency_key=request.idempotency_key,
@@ -108,8 +153,9 @@ def create_run(request: CreateRunRequest):
         record_event(
             session, run.id, EventKind.RUN_CREATED,
             payload={
-                "repo_url": request.repo_url,
+                "repo_url": repo_url,
                 "ref": request.ref,
+                "title": work_order.get("title", "Untitled"),
                 "params": request.params.model_dump(),
                 "writeback_mode": request.writeback.mode,
             }
@@ -121,6 +167,82 @@ def create_run(request: CreateRunRequest):
     # Enqueue job for worker (outside the session)
     enqueue_run(run_id)
     
+    return CreateRunResponse(run_id=run_id, status=status)
+
+
+@app.post("/runs/submit", response_model=CreateRunResponse, status_code=201)
+async def submit_run(
+    work_order_md: str = Form(None, description="Work order markdown (use this OR work_order_file)"),
+    work_order_file: UploadFile = File(None, description="Work order .md file upload"),
+    repo_url: str = Form(None, description="GitHub clone URL (optional, overrides work order repo)"),
+    ref: str = Form("main", description="Branch or commit SHA"),
+    max_iterations: int = Form(5, ge=1, le=20),
+    writeback_mode: str = Form("none", pattern="^(none|push_branch)$"),
+    branch_name: str = Form(None, description="Branch name for writeback"),
+):
+    """
+    Submit a run using form data (simpler than JSON for curl).
+    
+    The repo URL is taken from the `repo:` field in the work order YAML.
+    
+    Usage with file upload:
+        curl -X POST http://localhost:8000/runs/submit \\
+          -F "work_order_md=<task.md"
+    
+    Or override the repo from work order:
+        curl -X POST http://localhost:8000/runs/submit \\
+          -F "work_order_md=<task.md" \\
+          -F "repo_url=https://github.com/other/repo"
+    """
+    # Get markdown from either source
+    if work_order_file:
+        content = await work_order_file.read()
+        md_text = content.decode("utf-8")
+    elif work_order_md:
+        md_text = work_order_md
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either work_order_md or work_order_file"
+        )
+    
+    # Parse markdown
+    try:
+        work_order_model, work_order_body = parse_work_order(md_text)
+        work_order = work_order_model.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid work order format: {e}")
+    
+    # Resolve repo URL (from work order or override)
+    resolved_repo_url = _resolve_repo_url(work_order, repo_url)
+    
+    # Create run
+    with get_session() as session:
+        run = Run(
+            repo_url=resolved_repo_url,
+            repo_ref=ref,
+            work_order=work_order,
+            work_order_body=work_order_body,
+            params={"max_iterations": max_iterations},
+            writeback={"mode": writeback_mode, "branch_name": branch_name},
+        )
+        session.add(run)
+        session.flush()
+        
+        record_event(
+            session, run.id, EventKind.RUN_CREATED,
+            payload={
+                "repo_url": resolved_repo_url,
+                "ref": ref,
+                "title": work_order.get("title", "Untitled"),
+                "writeback_mode": writeback_mode,
+            }
+        )
+        
+        run_id = run.id
+        status = run.status
+    
+    enqueue_run(run_id)
     return CreateRunResponse(run_id=run_id, status=status)
 
 

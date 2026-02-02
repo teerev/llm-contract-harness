@@ -6,10 +6,24 @@ from .schemas import WorkOrder
 from .util import normalize_rel_path, safe_join
 
 
-def load_work_order(path: str) -> Tuple[WorkOrder, str]:
-    p = Path(path)
-    text = p.read_text(encoding="utf-8")
-
+def parse_work_order(text: str) -> Tuple[WorkOrder, str]:
+    """
+    Parse a work order from markdown text with YAML frontmatter.
+    
+    Format:
+        ---
+        title: My Task
+        acceptance_commands:
+          - pytest
+        ---
+        The actual work order instructions go here.
+    
+    Args:
+        text: Raw markdown string with optional YAML frontmatter
+        
+    Returns:
+        Tuple of (WorkOrder model, body text)
+    """
     meta = {}
     body = text
 
@@ -22,6 +36,23 @@ def load_work_order(path: str) -> Tuple[WorkOrder, str]:
 
     wo = WorkOrder.model_validate(meta)
     return wo, body.strip() + "\n"
+
+
+def load_work_order(path: str) -> Tuple[WorkOrder, str]:
+    """
+    Load and parse a work order from a markdown file.
+    
+    This is a convenience wrapper around parse_work_order() for file-based input.
+    
+    Args:
+        path: Path to the .md file
+        
+    Returns:
+        Tuple of (WorkOrder model, body text)
+    """
+    p = Path(path)
+    text = p.read_text(encoding="utf-8")
+    return parse_work_order(text)
 
 
 def prepare_workspace(product_repo: Path, workspace_root: Path, run_id: str) -> Path:
