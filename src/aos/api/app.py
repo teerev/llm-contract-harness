@@ -29,6 +29,8 @@ from .schemas import (
     CreateRunRequest,
     CreateRunResponse,
     RunResponse,
+    RunSummary,
+    RunListResponse,
     HealthResponse,
     EventResponse,
     ArtifactResponse,
@@ -286,6 +288,66 @@ async def submit_run(
     
     enqueue_run(run_id)
     return CreateRunResponse(run_id=run_id, status=status)
+
+
+@app.get("/runs", response_model=RunListResponse)
+def list_runs(
+    limit: int = Query(20, ge=1, le=100, description="Max runs to return"),
+    offset: int = Query(0, ge=0, description="Number of runs to skip"),
+    status: Optional[str] = Query(None, description="Filter by status (PENDING, RUNNING, SUCCEEDED, FAILED, CANCELED)"),
+):
+    """
+    List runs with pagination and optional filtering.
+    
+    Examples:
+        GET /runs                      # First 20 runs
+        GET /runs?limit=50             # First 50 runs
+        GET /runs?offset=20            # Skip first 20
+        GET /runs?status=RUNNING       # Only running jobs
+        GET /runs?status=FAILED&limit=10  # Last 10 failed runs
+    """
+    with get_session() as session:
+        # Build query
+        query = session.query(Run)
+        
+        # Apply status filter if provided
+        if status:
+            valid_statuses = {"PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED"}
+            if status.upper() not in valid_statuses:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"
+                )
+            query = query.filter(Run.status == status.upper())
+        
+        # Get total count (before pagination)
+        total = query.count()
+        
+        # Apply pagination and ordering (newest first)
+        runs = query.order_by(Run.created_at.desc()).offset(offset).limit(limit).all()
+        
+        # Build response
+        summaries = [
+            RunSummary(
+                run_id=r.id,
+                status=r.status,
+                created_at=r.created_at,
+                started_at=r.started_at,
+                finished_at=r.finished_at,
+                repo_url=r.repo_url,
+                title=r.work_order.get("title") if r.work_order else None,
+                iteration=r.iteration,
+                result_summary=r.result_summary,
+            )
+            for r in runs
+        ]
+        
+        return RunListResponse(
+            runs=summaries,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
 
 @app.get("/runs/{run_id}", response_model=RunResponse)

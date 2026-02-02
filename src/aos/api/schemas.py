@@ -76,6 +76,31 @@ class RunResponse(BaseModel):
     error: Optional[dict[str, Any]] = None
 
 
+class RunSummary(BaseModel):
+    """
+    Lightweight run summary for list endpoints.
+    """
+    run_id: UUID
+    status: str
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    repo_url: str
+    title: Optional[str] = None
+    iteration: int
+    result_summary: Optional[str] = None
+
+
+class RunListResponse(BaseModel):
+    """
+    Response for GET /runs (paginated list).
+    """
+    runs: list[RunSummary]
+    total: int  # Total count matching filters
+    limit: int
+    offset: int
+
+
 class HealthResponse(BaseModel):
     """Response for health check endpoints."""
     status: str

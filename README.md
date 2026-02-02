@@ -204,11 +204,26 @@ curl http://localhost:8000/runs/<run-id>/artifacts/summary.json
 | GET | `/readyz` | Readiness check (DB connected) |
 | POST | `/runs` | Create run (JSON body) |
 | POST | `/runs/submit` | Create run (form/file upload) |
+| GET | `/runs` | List runs (paginated) |
 | GET | `/runs/{id}` | Get run status |
 | GET | `/runs/{id}/events` | Get run events |
 | POST | `/runs/{id}/cancel` | Cancel a run |
 | GET | `/runs/{id}/artifacts` | List artifacts |
 | GET | `/runs/{id}/artifacts/{name}` | Download artifact |
+
+### List Runs
+
+```bash
+# List recent runs
+curl http://localhost:8000/runs
+
+# With pagination
+curl "http://localhost:8000/runs?limit=50&offset=20"
+
+# Filter by status
+curl "http://localhost:8000/runs?status=RUNNING"
+curl "http://localhost:8000/runs?status=FAILED&limit=10"
+```
 
 Interactive API docs: http://localhost:8000/docs
 
