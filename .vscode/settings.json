@@ -1,0 +1,44 @@
+{
+  // Python
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  // Testing
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": [
+    "-v"
+  ],
+  // Formatting
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  // Files
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true,
+    "**/aos.egg-info": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true
+  },
+  // Terminal
+  "terminal.integrated.env.osx": {
+    "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}"
+  },
+  // Search
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/aos.egg-info": true
+  }
+}

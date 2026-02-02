@@ -1,0 +1,310 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // =========================================================================
+    // API SERVER
+    // =========================================================================
+    {
+      "name": "API Server (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "src.aos.api.app:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://aos:aos_dev@localhost:5432/aos",
+        "REDIS_URL": "redis://localhost:6379"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "API Server (no reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "src.aos.api.app:app",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://aos:aos_dev@localhost:5432/aos",
+        "REDIS_URL": "redis://localhost:6379"
+      },
+      "justMyCode": false
+    },
+    // =========================================================================
+    // RQ WORKER
+    // =========================================================================
+    {
+      "name": "RQ Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "rq.cli",
+      "args": [
+        "worker",
+        "--with-scheduler"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://aos:aos_dev@localhost:5432/aos",
+        "REDIS_URL": "redis://localhost:6379",
+        "WORKSPACE_ROOT": "/tmp/aos/workspaces",
+        // macOS fork safety fix
+        "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES"
+      },
+      "justMyCode": false
+    },
+    // =========================================================================
+    // CLI COMMANDS
+    // =========================================================================
+    {
+      "name": "CLI: Submit task.md",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.aos.cli",
+      "args": [
+        "submit",
+        "task.md"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "CLI: Submit (select file)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.aos.cli",
+      "args": [
+        "submit",
+        "${input:workOrderFile}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "CLI: Status (enter run_id)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.aos.cli",
+      "args": [
+        "status",
+        "${input:runId}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "CLI: Logs (enter run_id)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.aos.cli",
+      "args": [
+        "logs",
+        "${input:runId}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "CLI: List Runs",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "src.aos.cli",
+      "args": [
+        "list"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    // =========================================================================
+    // DATABASE MIGRATIONS
+    // =========================================================================
+    {
+      "name": "Alembic: Upgrade Head",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "alembic",
+      "args": [
+        "upgrade",
+        "head"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://aos:aos_dev@localhost:5432/aos"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Alembic: Downgrade -1",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "alembic",
+      "args": [
+        "downgrade",
+        "-1"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://aos:aos_dev@localhost:5432/aos"
+      },
+      "justMyCode": false
+    },
+    // =========================================================================
+    // TESTING
+    // =========================================================================
+    {
+      "name": "Stress Test",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/stress_test.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "AOS_API_URL": "http://localhost:8000"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Pytest: All Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-v",
+        "--tb=short"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Pytest: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-v",
+        "--tb=short",
+        "${file}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    // =========================================================================
+    // FACTORY STANDALONE (for testing factory in isolation)
+    // =========================================================================
+    {
+      "name": "Factory: Run Standalone",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "factory",
+      "args": [
+        "${input:workOrderFile}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "justMyCode": false
+    }
+  ],
+  // ===========================================================================
+  // COMPOUND CONFIGURATIONS (run multiple configs together)
+  // ===========================================================================
+  "compounds": [
+    {
+      "name": "Full Stack (API + Worker)",
+      "configurations": [
+        "API Server (no reload)",
+        "RQ Worker"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "compound",
+        "order": 1
+      }
+    }
+  ],
+  // ===========================================================================
+  // INPUT PROMPTS
+  // ===========================================================================
+  "inputs": [
+    {
+      "id": "runId",
+      "type": "promptString",
+      "description": "Enter the run_id (UUID)",
+      "default": ""
+    },
+    {
+      "id": "workOrderFile",
+      "type": "promptString",
+      "description": "Path to work order .md file",
+      "default": "task.md"
+    }
+  ]
+}
