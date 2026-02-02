@@ -29,13 +29,20 @@ DEV_BRANCH = "aos/taskman-dev"  # All work orders push to this single branch
 branch_created = False
 
 
-def work_order_to_markdown(wo: dict) -> str:
+def work_order_to_markdown(wo: dict, clone_branch: str, push_branch: str) -> str:
     """
     Convert a work order dict to markdown format with YAML frontmatter.
     
-    This is the canonical format that both the factory CLI and AOS API expect.
+    Injects repo, clone_branch, push_branch, and max_iterations into the frontmatter.
     """
-    frontmatter = wo["work_order"]
+    frontmatter = wo["work_order"].copy()
+    
+    # Add configuration fields (work order is single source of truth)
+    frontmatter["repo"] = REPO_URL
+    frontmatter["clone_branch"] = clone_branch
+    frontmatter["push_branch"] = push_branch
+    frontmatter["max_iterations"] = 5
+    
     body = wo["work_order_body"].strip()
     
     yaml_str = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
@@ -78,23 +85,16 @@ def submit_work_order(wo: dict) -> str:
     
     # First work order: base off main, push to dev branch
     # Subsequent work orders: base off dev branch, push to same dev branch
-    ref = DEV_BRANCH if branch_created else BASE_BRANCH
+    clone_branch = DEV_BRANCH if branch_created else BASE_BRANCH
     
-    # Convert to markdown format (single source of truth for work order parsing)
-    work_order_md = work_order_to_markdown(wo)
+    # Convert to markdown format (work order is single source of truth)
+    work_order_md = work_order_to_markdown(wo, clone_branch, DEV_BRANCH)
     
-    payload = {
-        "repo_url": REPO_URL,
-        "ref": ref,
-        "work_order_md": work_order_md,
-        "params": {"max_iterations": 5},
-        "writeback": {
-            "mode": "push_branch",
-            "branch_name": DEV_BRANCH,
-        },
-    }
-    
-    resp = requests.post(f"{API_URL}/runs", json=payload)
+    # Submit using form endpoint - all config is in the work order
+    resp = requests.post(
+        f"{API_URL}/runs/submit",
+        data={"work_order_md": work_order_md}
+    )
     resp.raise_for_status()
     return resp.json()["run_id"]
 

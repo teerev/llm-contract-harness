@@ -26,12 +26,15 @@ To stop: `Ctrl+C`
 
 ## Submitting Work Orders
 
-Work orders are self-contained markdown files with YAML frontmatter:
+Work orders are self-contained markdown files with YAML frontmatter. **The work order is the single source of truth** - all configuration is in the file, not CLI flags.
 
 ```markdown
 ---
 title: Add calculator module
 repo: https://github.com/user/repo
+clone_branch: main
+push_branch: aos/calculator-feature
+max_iterations: 5
 acceptance_commands:
   - python -c "from calculator import add; assert add(2,3) == 5"
 allowed_paths:
@@ -43,30 +46,30 @@ Create a calculator.py module with an `add(a, b)` function.
 
 ### Work Order Fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `repo` | **Yes** | GitHub URL of the repository to work on |
-| `title` | No | Human-readable name for the task |
-| `acceptance_commands` | No | Commands that must pass for the task to succeed |
-| `allowed_paths` | No | Glob patterns for files the agent can modify |
-| `forbidden_paths` | No | Glob patterns for files the agent cannot modify |
-| `context_files` | No | Files to include as context for the LLM |
-| `env` | No | Environment variables to set when running commands |
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `repo` | **Yes** | — | GitHub URL of the repository to work on |
+| `clone_branch` | No | `main` | Branch or SHA to clone from |
+| `push_branch` | No | — | Branch to push results to (if set, enables writeback) |
+| `max_iterations` | No | `5` | Maximum factory loop iterations (1-20) |
+| `title` | No | — | Human-readable name for the task |
+| `acceptance_commands` | No | — | Commands that must pass for the task to succeed |
+| `allowed_paths` | No | — | Glob patterns for files the agent can modify |
+| `forbidden_paths` | No | — | Glob patterns for files the agent cannot modify |
+| `context_files` | No | — | Files to include as context for the LLM |
+| `env` | No | — | Environment variables to set when running commands |
 
 ### Using the CLI (recommended)
 
 ```bash
-# Submit a work order (repo is in the work order file)
+# Submit a work order (all config is in the file)
 aos submit task.md
 
-# Submit and push result to a branch
-aos submit task.md --writeback push_branch --branch feature/my-feature
-
 # Submit and wait for completion
-aos submit task.md --writeback push_branch --branch feature/my-feature --wait
+aos submit task.md --wait
 
-# Override the repo from work order
-aos submit task.md --repo https://github.com/other/repo
+# Submit with longer timeout
+aos submit task.md --wait --timeout 600
 
 # Check status
 aos status <run-id>
@@ -78,15 +81,9 @@ aos logs <run-id>
 ### Using curl
 
 ```bash
-# Submit via form (repo is in the work order file)
+# Submit (all config is in the work order file)
 curl -X POST http://localhost:8000/runs/submit \
   -F "work_order_md=<task.md"
-
-# With writeback
-curl -X POST http://localhost:8000/runs/submit \
-  -F "work_order_md=<task.md" \
-  -F "writeback_mode=push_branch" \
-  -F "branch_name=feature/my-feature"
 
 # Check status
 curl http://localhost:8000/runs/<run-id>

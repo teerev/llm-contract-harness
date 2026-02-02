@@ -3,10 +3,12 @@
 AOS CLI - Simple command-line interface for submitting work orders.
 
 Usage:
-    aos submit task.md                    # repo from work order
-    aos submit task.md --repo <url>       # override repo
-    aos status <run-id>
-    aos logs <run-id>
+    aos submit task.md           # Submit and return immediately
+    aos submit task.md --wait    # Submit and wait for completion
+    aos status <run-id>          # Check run status
+    aos logs <run-id>            # View run events
+
+All configuration is in the work order file - no flags needed.
 """
 
 import argparse
@@ -38,22 +40,12 @@ def cmd_submit(args):
     
     work_order_md = wo_path.read_text()
     
-    # Build form data
-    data = {
-        "work_order_md": work_order_md,
-        "ref": args.ref,
-        "max_iterations": args.max_iterations,
-        "writeback_mode": args.writeback,
-    }
-    # Only include repo_url if explicitly provided (otherwise use work order's repo)
-    if args.repo:
-        data["repo_url"] = args.repo
-    if args.branch:
-        data["branch_name"] = args.branch
-    
-    # Submit
+    # Submit - work order contains all configuration
     try:
-        resp = requests.post(f"{api}/runs/submit", data=data)
+        resp = requests.post(
+            f"{api}/runs/submit",
+            data={"work_order_md": work_order_md}
+        )
         resp.raise_for_status()
     except requests.RequestException as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -159,14 +151,12 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # submit
-    p_submit = subparsers.add_parser("submit", help="Submit a work order")
+    p_submit = subparsers.add_parser(
+        "submit", 
+        help="Submit a work order",
+        description="Submit a work order. All configuration is in the .md file.",
+    )
     p_submit.add_argument("work_order", help="Path to work order .md file")
-    p_submit.add_argument("--repo", "-r", help="GitHub repo URL (overrides work order repo)")
-    p_submit.add_argument("--ref", default="main", help="Branch or SHA (default: main)")
-    p_submit.add_argument("--max-iterations", "-n", type=int, default=5, help="Max iterations")
-    p_submit.add_argument("--writeback", "-w", default="none", 
-                          choices=["none", "push_branch"], help="Writeback mode")
-    p_submit.add_argument("--branch", "-b", help="Branch name for writeback")
     p_submit.add_argument("--wait", action="store_true", help="Wait for completion")
     p_submit.add_argument("--timeout", type=int, default=300, help="Wait timeout in seconds")
     p_submit.set_defaults(func=cmd_submit)

@@ -14,7 +14,16 @@ class CommandSpec(BaseModel):
 
 class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
-    repo: str | None = None
+    
+    # Repository configuration
+    repo: str | None = None  # GitHub URL (required for AOS)
+    clone_branch: str = Field(default="main")  # Branch/SHA to clone from
+    push_branch: str | None = None  # Branch to push results to (None = no push)
+    
+    # Execution limits
+    max_iterations: int = Field(default=5, ge=1, le=20)
+    
+    # Task specification
     acceptance_commands: list[CommandSpec | str] = Field(default_factory=list)
     forbidden_paths: list[str] = Field(default_factory=list)
     allowed_paths: list[str] = Field(default_factory=list)

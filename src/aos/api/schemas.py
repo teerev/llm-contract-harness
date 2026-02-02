@@ -9,78 +9,37 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
-
-from src.aos.validators import validate_repo_url, validate_branch_name, validate_ref
+from pydantic import BaseModel, Field
 
 
 # ============================================================
 # Request schemas (what clients send to us)
 # ============================================================
 
-class WritebackConfig(BaseModel):
-    """Configuration for pushing changes back to GitHub."""
-    mode: str = Field(default="none", pattern="^(none|push_branch)$")
-    branch_name: Optional[str] = None
-    
-    @field_validator("branch_name")
-    @classmethod
-    def validate_branch(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            validate_branch_name(v)
-        return v
-
-
-class RunParams(BaseModel):
-    """Execution parameters for a run."""
-    max_iterations: int = Field(default=5, ge=1, le=20)
-    # model_name removed per PR-4 (dead code)
-
-
 class CreateRunRequest(BaseModel):
     """
     Request body for POST /runs.
     
     The work_order_md field accepts a markdown string with YAML frontmatter.
-    The repo URL is taken from the `repo:` field in the work order YAML.
+    All configuration is taken from the work order - no other parameters needed.
     
     Example work order:
         ---
         title: Add feature
         repo: https://github.com/user/repo
+        clone_branch: main
+        push_branch: aos/feature-branch
+        max_iterations: 5
         acceptance_commands:
           - pytest
         ---
         Implement the feature.
-    
-    The optional repo_url parameter can override the work order's repo field.
     """
-    # Work order as markdown (same format as .md files)
+    # Work order as markdown (the single source of truth)
     work_order_md: str = Field(..., description="Work order markdown with YAML frontmatter")
     
-    # Git source (optional - defaults to repo field in work order)
-    repo_url: Optional[str] = Field(None, description="GitHub clone URL (overrides work order repo)")
-    ref: str = Field(default="main", description="Branch or commit SHA")
-    
-    # Execution config
-    params: RunParams = Field(default_factory=RunParams)
-    writeback: WritebackConfig = Field(default_factory=WritebackConfig)
-    
-    # Idempotency
+    # Idempotency (optional, for safe retries)
     idempotency_key: Optional[str] = None
-    
-    @field_validator("repo_url")
-    @classmethod
-    def validate_repo(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            validate_repo_url(v)
-        return v
-    
-    @field_validator("ref")
-    @classmethod
-    def validate_git_ref(cls, v: str) -> str:
-        validate_ref(v)
-        return v
 
 
 # ============================================================

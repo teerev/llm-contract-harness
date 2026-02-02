@@ -24,7 +24,7 @@ from factory.workspace import parse_work_order
 from ..db import get_session, get_engine, Run, Event, Artifact
 from ..queue import enqueue_run
 from ..events import record_event, EventKind
-from ..validators import validate_repo_url, validate_work_order, validate_ref, validate_branch_name
+from ..validators import validate_repo_url, validate_work_order, validate_branch_name
 from .schemas import (
     CreateRunRequest,
     CreateRunResponse,
@@ -79,28 +79,57 @@ def readyz():
 # Run endpoints
 # ============================================================
 
-def _resolve_repo_url(work_order: dict, override_url: str | None) -> str:
+def _extract_config_from_work_order(work_order: dict) -> dict:
     """
-    Resolve the repo URL from work order or override.
+    Extract and validate all configuration from the work order.
     
-    Priority: override_url > work_order['repo']
-    Validates that the result is a valid GitHub URL.
+    The work order is the single source of truth for:
+    - repo: GitHub URL to clone
+    - clone_branch: Branch/SHA to clone from (default: main)
+    - push_branch: Branch to push results to (None = no push)
+    - max_iterations: Max factory iterations (default: 5)
+    
+    Returns a dict with validated config values.
     """
-    repo_url = override_url or work_order.get("repo")
-    
+    # Repo URL (required)
+    repo_url = work_order.get("repo")
     if not repo_url:
         raise HTTPException(
             status_code=400,
             detail="No repo specified. Add 'repo: https://github.com/...' to your work order YAML."
         )
-    
-    # Validate using centralized validator
     try:
         validate_repo_url(repo_url)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    return repo_url
+    # Clone branch (default: main)
+    clone_branch = work_order.get("clone_branch", "main")
+    
+    # Push branch (optional - if set, enables writeback)
+    push_branch = work_order.get("push_branch")
+    if push_branch:
+        try:
+            validate_branch_name(push_branch)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid push_branch: {e}")
+    
+    # Max iterations (default: 5, clamped 1-20)
+    max_iterations = work_order.get("max_iterations", 5)
+    if not isinstance(max_iterations, int) or max_iterations < 1:
+        max_iterations = 5
+    max_iterations = min(max_iterations, 20)
+    
+    # Derive writeback mode from push_branch
+    writeback_mode = "push_branch" if push_branch else "none"
+    
+    return {
+        "repo_url": repo_url,
+        "clone_branch": clone_branch,
+        "push_branch": push_branch,
+        "max_iterations": max_iterations,
+        "writeback_mode": writeback_mode,
+    }
 
 
 @app.post("/runs", response_model=CreateRunResponse, status_code=201)
@@ -111,8 +140,11 @@ def create_run(request: CreateRunRequest):
     This is the main entry point for submitting jobs. The run
     starts in PENDING status and will be picked up by a worker.
     
-    The repo URL is taken from the `repo:` field in the work order YAML.
-    You can optionally override it with the `repo_url` parameter.
+    All configuration is taken from the work order YAML:
+    - repo: GitHub URL (required)
+    - clone_branch: Branch to clone from (default: main)
+    - push_branch: Branch to push results to (if set, enables writeback)
+    - max_iterations: Max factory iterations (default: 5)
     """
     # Parse markdown using the same function as the factory CLI
     try:
@@ -127,8 +159,8 @@ def create_run(request: CreateRunRequest):
     # Validate work order for security issues (logs warnings, doesn't reject)
     validate_work_order(work_order)
     
-    # Resolve repo URL (from work order or override)
-    repo_url = _resolve_repo_url(work_order, request.repo_url)
+    # Extract all config from work order (single source of truth)
+    config = _extract_config_from_work_order(work_order)
     
     with get_session() as session:
         # Check idempotency key if provided
@@ -141,12 +173,12 @@ def create_run(request: CreateRunRequest):
         
         # Create new run with parsed work order
         run = Run(
-            repo_url=repo_url,
-            repo_ref=request.ref,
+            repo_url=config["repo_url"],
+            repo_ref=config["clone_branch"],
             work_order=work_order,
             work_order_body=work_order_body,
-            params=request.params.model_dump(),
-            writeback=request.writeback.model_dump(),
+            params={"max_iterations": config["max_iterations"]},
+            writeback={"mode": config["writeback_mode"], "branch_name": config["push_branch"]},
             idempotency_key=request.idempotency_key,
         )
         session.add(run)
@@ -156,11 +188,11 @@ def create_run(request: CreateRunRequest):
         record_event(
             session, run.id, EventKind.RUN_CREATED,
             payload={
-                "repo_url": repo_url,
-                "ref": request.ref,
+                "repo_url": config["repo_url"],
+                "clone_branch": config["clone_branch"],
+                "push_branch": config["push_branch"],
                 "title": work_order.get("title", "Untitled"),
-                "params": request.params.model_dump(),
-                "writeback_mode": request.writeback.mode,
+                "max_iterations": config["max_iterations"],
             }
         )
         
@@ -177,25 +209,28 @@ def create_run(request: CreateRunRequest):
 async def submit_run(
     work_order_md: str = Form(None, description="Work order markdown (use this OR work_order_file)"),
     work_order_file: UploadFile = File(None, description="Work order .md file upload"),
-    repo_url: str = Form(None, description="GitHub clone URL (optional, overrides work order repo)"),
-    ref: str = Form("main", description="Branch or commit SHA"),
-    max_iterations: int = Form(5, ge=1, le=20),
-    writeback_mode: str = Form("none", pattern="^(none|push_branch)$"),
-    branch_name: str = Form(None, description="Branch name for writeback"),
 ):
     """
-    Submit a run using form data (simpler than JSON for curl).
+    Submit a run using form data (simpler for CLI and curl).
     
-    The repo URL is taken from the `repo:` field in the work order YAML.
+    All configuration is taken from the work order YAML - no other parameters needed.
     
-    Usage with file upload:
-        curl -X POST http://localhost:8000/runs/submit \\
-          -F "work_order_md=<task.md"
+    Usage:
+        aos submit task.md
+        
+        curl -X POST http://localhost:8000/runs/submit -F "work_order_md=<task.md"
     
-    Or override the repo from work order:
-        curl -X POST http://localhost:8000/runs/submit \\
-          -F "work_order_md=<task.md" \\
-          -F "repo_url=https://github.com/other/repo"
+    Work order example:
+        ---
+        title: Add feature
+        repo: https://github.com/user/repo
+        clone_branch: main
+        push_branch: aos/feature-branch
+        max_iterations: 5
+        acceptance_commands:
+          - pytest
+        ---
+        Implement the feature.
     """
     # Get markdown from either source
     if work_order_file:
@@ -219,31 +254,18 @@ async def submit_run(
     # Validate work order for security issues (logs warnings, doesn't reject)
     validate_work_order(work_order)
     
-    # Validate ref parameter
-    try:
-        validate_ref(ref)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    # Validate branch name if provided
-    if branch_name:
-        try:
-            validate_branch_name(branch_name)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    
-    # Resolve repo URL (from work order or override)
-    resolved_repo_url = _resolve_repo_url(work_order, repo_url)
+    # Extract all config from work order (single source of truth)
+    config = _extract_config_from_work_order(work_order)
     
     # Create run
     with get_session() as session:
         run = Run(
-            repo_url=resolved_repo_url,
-            repo_ref=ref,
+            repo_url=config["repo_url"],
+            repo_ref=config["clone_branch"],
             work_order=work_order,
             work_order_body=work_order_body,
-            params={"max_iterations": max_iterations},
-            writeback={"mode": writeback_mode, "branch_name": branch_name},
+            params={"max_iterations": config["max_iterations"]},
+            writeback={"mode": config["writeback_mode"], "branch_name": config["push_branch"]},
         )
         session.add(run)
         session.flush()
@@ -251,10 +273,11 @@ async def submit_run(
         record_event(
             session, run.id, EventKind.RUN_CREATED,
             payload={
-                "repo_url": resolved_repo_url,
-                "ref": ref,
+                "repo_url": config["repo_url"],
+                "clone_branch": config["clone_branch"],
+                "push_branch": config["push_branch"],
                 "title": work_order.get("title", "Untitled"),
-                "writeback_mode": writeback_mode,
+                "max_iterations": config["max_iterations"],
             }
         )
         
