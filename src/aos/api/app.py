@@ -24,6 +24,7 @@ from factory.workspace import parse_work_order
 from ..db import get_session, get_engine, Run, Event, Artifact
 from ..queue import enqueue_run
 from ..events import record_event, EventKind
+from ..validators import validate_repo_url, validate_work_order, validate_ref, validate_branch_name
 from .schemas import (
     CreateRunRequest,
     CreateRunResponse,
@@ -83,7 +84,7 @@ def _resolve_repo_url(work_order: dict, override_url: str | None) -> str:
     Resolve the repo URL from work order or override.
     
     Priority: override_url > work_order['repo']
-    Validates that the result is a GitHub URL.
+    Validates that the result is a valid GitHub URL.
     """
     repo_url = override_url or work_order.get("repo")
     
@@ -93,12 +94,11 @@ def _resolve_repo_url(work_order: dict, override_url: str | None) -> str:
             detail="No repo specified. Add 'repo: https://github.com/...' to your work order YAML."
         )
     
-    # Validate it's a GitHub URL
-    if not repo_url.startswith("https://github.com/"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid repo URL: must be a GitHub HTTPS URL (https://github.com/...), got: {repo_url}"
-        )
+    # Validate using centralized validator
+    try:
+        validate_repo_url(repo_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     return repo_url
 
@@ -123,6 +123,9 @@ def create_run(request: CreateRunRequest):
             status_code=400,
             detail=f"Invalid work order format: {e}"
         )
+    
+    # Validate work order for security issues (logs warnings, doesn't reject)
+    validate_work_order(work_order)
     
     # Resolve repo URL (from work order or override)
     repo_url = _resolve_repo_url(work_order, request.repo_url)
@@ -212,6 +215,22 @@ async def submit_run(
         work_order = work_order_model.model_dump()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid work order format: {e}")
+    
+    # Validate work order for security issues (logs warnings, doesn't reject)
+    validate_work_order(work_order)
+    
+    # Validate ref parameter
+    try:
+        validate_ref(ref)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Validate branch name if provided
+    if branch_name:
+        try:
+            validate_branch_name(branch_name)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     
     # Resolve repo URL (from work order or override)
     resolved_repo_url = _resolve_repo_url(work_order, repo_url)
