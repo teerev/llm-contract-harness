@@ -70,6 +70,7 @@ class RunResponse(BaseModel):
     git_sha: Optional[str] = None
     
     iteration: int
+    rq_job_id: Optional[str] = None  # RQ job ID for debugging
     
     result_summary: Optional[str] = None
     error: Optional[dict[str, Any]] = None

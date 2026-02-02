@@ -60,6 +60,7 @@ class EventKind:
     RUN_CANCELED = "RUN_CANCELED"
     
     # Iteration lifecycle
+    ITERATION_START = "ITERATION_START"  # Recorded at the start of each iteration
     STEP_START = "STEP_START"
     SE_OUTPUT = "SE_OUTPUT"
     TR_APPLY = "TR_APPLY"

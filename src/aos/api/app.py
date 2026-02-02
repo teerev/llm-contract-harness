@@ -311,6 +311,7 @@ def get_run(run_id: UUID):
             repo_ref=run.repo_ref,
             git_sha=run.git_sha,
             iteration=run.iteration,
+            rq_job_id=run.rq_job_id,
             result_summary=run.result_summary,
             error=run.error,
         )

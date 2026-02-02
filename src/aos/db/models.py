@@ -68,6 +68,9 @@ class Run(Base):
     # Progress tracking
     iteration = Column(Integer, nullable=False, default=0)
     
+    # RQ job tracking
+    rq_job_id = Column(String(100), nullable=True)  # RQ job ID for debugging
+    
     # Results
     result_summary = Column(Text, nullable=True)
     error = Column(JSONB, nullable=True)

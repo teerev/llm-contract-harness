@@ -9,6 +9,7 @@ This is the main job that workers execute. It:
 5. Optionally pushes changes back to GitHub
 """
 
+import logging
 import os
 import traceback
 from datetime import datetime
@@ -19,6 +20,9 @@ from ..db import get_session, Run
 from ..events import record_event, EventKind
 from ..git import clone_repo, push_branch
 from ..artifacts import save_iteration_artifacts, save_run_summary
+
+
+logger = logging.getLogger(__name__)
 
 
 # Where to store workspaces
@@ -221,10 +225,25 @@ def _run_factory(
         "max_iterations": max_iterations,
     }
     
+    # Record iteration start event
+    # Note: The factory handles iterations internally, so we record the start
+    # here and the per-iteration results after graph.invoke() returns
+    with get_session() as session:
+        record_event(
+            session, run_id, EventKind.ITERATION_START,
+            iteration=1,
+            payload={"max_iterations": max_iterations}
+        )
+    
+    logger.info(f"Starting factory for run {run_id} (max_iterations={max_iterations})")
+    
     # Run the graph
     # For now, we run it as a single invoke() call
     # In future, we could use streaming to capture per-node events
     result = graph.invoke(state)
+    
+    final_iteration = result.get("iteration", 0)
+    logger.info(f"Factory completed for run {run_id} at iteration {final_iteration}")
     
     # Record the final artifacts and events
     _record_iteration_events(run_id, artifact_dir, result)
@@ -347,6 +366,12 @@ def _mark_failed(run_id: UUID, error: Exception) -> None:
     """
     Mark a run as failed due to an exception.
     """
+    # Log the error before attempting to record it (in case DB write fails)
+    logger.error(
+        f"Run {run_id} failed with {type(error).__name__}: {error}",
+        exc_info=True
+    )
+    
     try:
         with get_session() as session:
             run = session.query(Run).filter(Run.id == run_id).first()
@@ -367,6 +392,9 @@ def _mark_failed(run_id: UUID, error: Exception) -> None:
                         "error_message": str(error),
                     }
                 )
-    except Exception:
-        # Don't let error recording cause another exception
-        pass
+    except Exception as record_error:
+        # Log the secondary error but don't let it propagate
+        logger.error(
+            f"Failed to record error for run {run_id}: {record_error}",
+            exc_info=True
+        )

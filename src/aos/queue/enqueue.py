@@ -4,11 +4,17 @@ Job enqueueing for AOS.
 This module handles putting jobs onto the Redis queue.
 """
 
+import logging
 import os
 from uuid import UUID
 
 from redis import Redis
 from rq import Queue
+
+from ..db import get_session, Run
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_redis_connection() -> Redis:
@@ -43,5 +49,16 @@ def enqueue_run(run_id: UUID) -> str:
         str(run_id),
         job_timeout="1h",  # Allow long-running jobs
     )
+    
+    # Store the RQ job ID in the database for observability
+    try:
+        with get_session() as session:
+            run = session.query(Run).filter(Run.id == run_id).first()
+            if run:
+                run.rq_job_id = job.id
+                logger.info(f"Enqueued run {run_id} as RQ job {job.id}")
+    except Exception as e:
+        # Don't fail the enqueue if we can't store the job ID
+        logger.warning(f"Failed to store RQ job ID for run {run_id}: {e}")
     
     return job.id
