@@ -94,11 +94,17 @@ def _execute_run(run_id: UUID) -> dict:
     try:
         git_sha = clone_repo(repo_url, workspace_dir, repo_ref)
     except Exception as e:
+        logger.error(f"Clone failed for run {run_id}: {e}", exc_info=True)
         with get_session() as session:
             record_event(
                 session, run_id, EventKind.ERROR_EXCEPTION,
                 level="ERROR",
-                payload={"phase": "clone", "error": str(e)}
+                payload={
+                    "phase": "clone",
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "traceback": traceback.format_exc(),
+                }
             )
         raise
     
@@ -124,13 +130,15 @@ def _execute_run(run_id: UUID) -> dict:
             max_iterations=max_iterations,
         )
     except Exception as e:
+        logger.error(f"Factory failed for run {run_id}: {e}", exc_info=True)
         with get_session() as session:
             record_event(
                 session, run_id, EventKind.ERROR_EXCEPTION,
                 level="ERROR",
                 payload={
                     "phase": "factory",
-                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
                     "traceback": traceback.format_exc(),
                 }
             )
@@ -153,13 +161,16 @@ def _execute_run(run_id: UUID) -> dict:
             )
         except Exception as e:
             # Writeback failure doesn't fail the run, just log it
+            logger.warning(f"Writeback failed for run {run_id}: {e}", exc_info=True)
             with get_session() as session:
                 record_event(
                     session, run_id, EventKind.ERROR_EXCEPTION,
                     level="WARN",
                     payload={
                         "phase": "writeback",
-                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "traceback": traceback.format_exc(),
                     }
                 )
     
