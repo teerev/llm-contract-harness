@@ -3,6 +3,9 @@
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
+# Shell policy options for M7
+ShellPolicy = Literal["forbidden", "warn", "allow"]
+
 
 class CommandSpec(BaseModel):
     # provide argv (preferred) or cmd string. shell=true enables shell syntax.
@@ -10,6 +13,30 @@ class CommandSpec(BaseModel):
     cmd: str | None = None
     shell: bool = False
     timeout_sec: int | None = None
+
+
+class AcceptanceCheck(BaseModel):
+    """
+    Enhanced acceptance command with structured assertions (M9).
+    
+    Allows verifying not just return code, but also stdout/stderr content.
+    This prevents SE from gaming acceptance by writing scripts that just `exit 0`.
+    
+    Example in work order:
+        acceptance_commands:
+          - command: "pytest -q"
+            expected_returncode: 0
+            stdout_contains: ["passed"]
+            stdout_not_contains: ["FAILED", "ERROR"]
+    """
+    command: CommandSpec | str
+    expected_returncode: int = 0
+    stdout_contains: list[str] | None = None      # All must appear in stdout
+    stdout_not_contains: list[str] | None = None  # None must appear in stdout
+    stdout_regex: str | None = None               # Stdout must match this regex
+    stderr_must_be_empty: bool = False            # Stderr must be empty
+    stderr_contains: list[str] | None = None      # All must appear in stderr
+    timeout_sec: int | None = None                # Override command timeout
 
 
 class WorkOrder(BaseModel):
@@ -23,14 +50,25 @@ class WorkOrder(BaseModel):
     # Execution limits
     max_iterations: int = Field(default=5, ge=1, le=20)
     
-    # Task specification
-    acceptance_commands: list[CommandSpec | str] = Field(default_factory=list)
+    # Task specification (M9: AcceptanceCheck adds structured assertions)
+    acceptance_commands: list[CommandSpec | str | AcceptanceCheck] = Field(default_factory=list)
     forbidden_paths: list[str] = Field(default_factory=list)
     allowed_paths: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     command_timeout_sec: int = 300
     notes: str = Field(default="")
     context_files: list[str] = Field(default_factory=list)
+    
+    # Quality gates (M5, M6, M11, M16, M19)
+    min_assertions: int = Field(default=1)  # M5: Minimum meaningful assertions required
+    coverage_threshold: int | None = None  # M6: e.g., 80 for 80% coverage (None = skip)
+    min_tests: int | None = None  # M11: Minimum number of tests required (None = skip)
+    max_test_failures: int = Field(default=0)  # M11: Maximum allowed test failures
+    require_hypothesis: bool = Field(default=False)  # M16: Require hypothesis property tests
+    require_type_check: bool = Field(default=False)  # M19: Require mypy type checking
+    
+    # Security policy (M7)
+    shell_policy: ShellPolicy = Field(default="warn")  # M7: forbidden/warn/allow for shell=True
 
 
 class FileWrite(BaseModel):
@@ -58,11 +96,28 @@ class AppliedChange(BaseModel):
     action: Literal["create", "replace", "delete"]
 
 
+class InvariantResult(BaseModel):
+    """Result of a single invariant check."""
+    passed: bool
+    check_name: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class InvariantReport(BaseModel):
+    """Report from all invariant checks."""
+    all_passed: bool = True
+    results: list[InvariantResult] = Field(default_factory=list)
+
+
 class ToolReport(BaseModel):
     applied: list[AppliedChange] = Field(default_factory=list)
     blocked_writes: list[str] = Field(default_factory=list)
     command_results: list[CommandResult] = Field(default_factory=list)
     all_commands_ok: bool = False
+    # Invariant check results (Layer 2 verification)
+    invariant_report: InvariantReport | None = None
+    all_invariants_ok: bool = True
 
 
 class POReport(BaseModel):

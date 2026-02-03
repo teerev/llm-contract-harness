@@ -121,9 +121,10 @@ def cmd_logs(args):
 
 
 def cmd_wait(run_id: str, timeout: int):
-    """Wait for run to complete."""
+    """Wait for run to complete, showing progress."""
     api = get_api_url()
     start = time.time()
+    last_event_count = 0
     
     while time.time() - start < timeout:
         resp = requests.get(f"{api}/runs/{run_id}")
@@ -131,16 +132,70 @@ def cmd_wait(run_id: str, timeout: int):
         status = run["status"]
         
         if status in ("SUCCEEDED", "FAILED", "CANCELED"):
-            print(f"\nCompleted: {status}")
+            print(f"Completed: {status}")
             if run.get("result_summary"):
                 print(f"Result: {run['result_summary']}")
             return status == "SUCCEEDED"
         
-        print(f"  {status} (iteration {run.get('iteration', 0)})...", end="\r")
+        # Fetch events to show progress
+        try:
+            events_resp = requests.get(f"{api}/runs/{run_id}/events")
+            events = events_resp.json()
+            
+            # Show new events since last check
+            new_events = events[last_event_count:]
+            for e in new_events:
+                _print_wait_event(e)
+            last_event_count = len(events)
+        except Exception:
+            # Fallback to simple status
+            print(f"  {status}...")
+        
         time.sleep(2)
     
-    print(f"\nTimeout after {timeout}s")
+    print(f"Timeout after {timeout}s")
     return False
+
+
+def _print_wait_event(event: dict):
+    """Print a single event during wait, with concise formatting."""
+    kind = event["kind"]
+    iteration = event.get("iteration")
+    payload = event.get("payload", {})
+    
+    # Skip less important events
+    if kind in ("RUN_CREATED", "RUN_START", "STEP_START", "STEP_END"):
+        return
+    
+    prefix = f"  [iter {iteration}]" if iteration else "  "
+    
+    if kind == "ITERATION_START":
+        max_iter = payload.get("max_iterations", "?")
+        print(f"{prefix} Starting iteration {iteration}/{max_iter}")
+    elif kind == "SE_OUTPUT":
+        writes = payload.get("writes_count", 0)
+        print(f"{prefix} SE: {writes} file write(s) planned")
+    elif kind == "TR_APPLY":
+        applied = payload.get("applied_count", 0)
+        ok = payload.get("commands_ok", False)
+        inv_ok = payload.get("invariants_ok", True)
+        status = "OK" if (ok and inv_ok) else "issues"
+        print(f"{prefix} TR: {applied} write(s) applied, {status}")
+    elif kind == "PO_RESULT":
+        decision = payload.get("decision", "?")
+        fixes = payload.get("fixes_count", 0)
+        reasons = payload.get("reasons_count", 0)
+        if decision == "PASS":
+            print(f"{prefix} PO: PASS")
+        else:
+            print(f"{prefix} PO: {decision} ({reasons} reason(s), {fixes} fix(es) requested)")
+    elif kind == "RUN_END":
+        status = payload.get("status", "?")
+        print(f"  Run ended: {status}")
+    elif kind == "ERROR_EXCEPTION":
+        error_type = payload.get("error_type", "Error")
+        error_msg = payload.get("error_message", "")[:60]
+        print(f"{prefix} ERROR: {error_type}: {error_msg}")
 
 
 def main():

@@ -237,6 +237,56 @@ Interactive API docs: http://localhost:8000/docs
 | `REDIS_URL` | No | `redis://localhost:6379` | Redis connection |
 | `WORKSPACE_ROOT` | No | `/tmp/aos/workspaces` | Where to store workspaces |
 
+## Testing Strategy & Context
+
+### Automatic Test Generation
+
+The SE (Software Engineer) agent is instructed to **always write tests** when creating or modifying Python code. This is a deliberate design choice:
+
+**Why not 2 iterations?** An alternative approach would be:
+1. SE writes code without tests
+2. Factory-owned invariant fails ("no tests found")
+3. SE receives feedback and writes tests in iteration 2
+
+While this provides cleaner separation of concerns, it burns an iteration on a predictable failure. Since nearly all AOS work involves Python code changes, we chose to instruct SE to write tests upfront, saving latency while the `tests_exist` invariant remains as a safety net.
+
+### Important: Always Include `pytest` in Acceptance Commands
+
+The pipeline assumes pytest-style testing (test file naming, SE prompt instructions), but **does not automatically run pytest**. The `tests_exist` invariant only verifies test files exist—it doesn't execute them.
+
+For reliable verification, always include pytest in your work order:
+
+```yaml
+acceptance_commands:
+  - "pytest -q"
+```
+
+Without this, SE will write tests and the invariant will confirm they exist, but the tests will never actually run—meaning bugs in the tests or code may go undetected.
+
+### Important: The `context_files` Field
+
+The SE agent sees the **directory structure** (file names) but only sees **file contents** for files matching `context_files` patterns. This has important implications:
+
+```yaml
+# SE can see that tests/test_calculator.py EXISTS
+# but cannot see WHAT'S INSIDE unless you specify:
+context_files:
+  - "tests/*.py"
+  - "calculator.py"
+```
+
+**For robust test modifications**, include existing test files in `context_files`:
+- Without context: SE knows tests exist but may write redundant or conflicting tests
+- With context: SE can update existing tests appropriately
+
+**Recommendation**: When modifying existing code that has tests, include both the source files and test files in `context_files`:
+
+```yaml
+context_files:
+  - "src/mymodule/*.py"      # Source files being modified
+  - "tests/test_mymodule.py" # Existing tests to update
+```
+
 ## Architecture
 
 ```
