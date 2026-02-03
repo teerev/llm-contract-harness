@@ -19,7 +19,7 @@ from uuid import UUID
 from ..db import get_session, Run
 from ..events import record_event, EventKind
 from ..git import clone_repo, push_branch
-from ..artifacts import save_iteration_artifacts, save_run_summary
+from ..artifacts import save_artifact, save_run_summary
 
 
 logger = logging.getLogger(__name__)
@@ -218,7 +218,10 @@ def _run_factory(
     max_iterations: int,
 ) -> dict:
     """
-    Run the factory graph and record events.
+    Run the factory graph and record events using streaming.
+    
+    Uses LangGraph streaming to capture artifacts and events for EVERY iteration,
+    not just the final one. This enables debugging why earlier iterations failed.
     """
     # Import factory here to avoid import issues
     from factory.graph import build_graph
@@ -236,84 +239,145 @@ def _run_factory(
         "max_iterations": max_iterations,
     }
     
+    logger.info(f"Starting factory for run {run_id} (max_iterations={max_iterations})")
+    
+    # Track current iteration (starts at 1 for human-readable naming)
+    current_iteration = 1
+    
     # Record iteration start event
-    # Note: The factory handles iterations internally, so we record the start
-    # here and the per-iteration results after graph.invoke() returns
     with get_session() as session:
         record_event(
             session, run_id, EventKind.ITERATION_START,
-            iteration=1,
+            iteration=current_iteration,
             payload={"max_iterations": max_iterations}
         )
     
-    logger.info(f"Starting factory for run {run_id} (max_iterations={max_iterations})")
-    
-    # Run the graph
-    # For now, we run it as a single invoke() call
-    # In future, we could use streaming to capture per-node events
-    result = graph.invoke(state)
-    
-    final_iteration = result.get("iteration", 0)
-    logger.info(f"Factory completed for run {run_id} at iteration {final_iteration}")
-    
-    # Record the final artifacts and events
-    _record_iteration_events(run_id, artifact_dir, result)
-    
-    return result
-
-
-def _record_iteration_events(run_id: UUID, artifact_dir: Path, result: dict) -> None:
-    """
-    Record events and save artifacts for the factory result.
-    """
-    with get_session() as session:
-        iteration = result.get("iteration", 0)
+    # Use streaming to capture each node's output as it happens
+    final_state = state
+    for event in graph.stream(state):
+        # Each event is a dict like {"SE": {...}} or {"TR": {...}} or {"PO": {...}}
+        node_name = list(event.keys())[0]
+        node_output = event[node_name]
         
-        se_packet = result.get("se_packet")
-        tool_report = result.get("tool_report")
-        po_report = result.get("po_report")
-        
-        # Save artifacts
-        save_iteration_artifacts(
-            session, run_id, artifact_dir,
-            iteration, se_packet, tool_report, po_report,
+        # Record event and save artifact based on node type
+        _record_node_output(
+            run_id=run_id,
+            artifact_dir=artifact_dir,
+            node_name=node_name,
+            node_output=node_output,
+            iteration=current_iteration,
         )
         
-        # SE output event
-        if se_packet:
-            record_event(
-                session, run_id, EventKind.SE_OUTPUT,
-                iteration=iteration,
-                payload={
-                    "summary": se_packet.get("summary", ""),
-                    "writes_count": len(se_packet.get("writes", [])),
-                    "assumptions_count": len(se_packet.get("assumptions", [])),
-                }
-            )
+        # Update state with node output
+        final_state = {**final_state, **node_output}
         
-        # TR apply event
-        if tool_report:
-            record_event(
-                session, run_id, EventKind.TR_APPLY,
-                iteration=iteration,
-                payload={
-                    "applied_count": len(tool_report.get("applied", [])),
-                    "blocked_count": len(tool_report.get("blocked_writes", [])),
-                    "commands_ok": tool_report.get("all_commands_ok", False),
-                }
-            )
+        # PO node: check if we're looping (decision != PASS means retry)
+        if node_name == "PO":
+            po_report = node_output.get("po_report", {})
+            decision = po_report.get("decision")
+            if decision != "PASS":
+                # We're about to loop back to SE for the next iteration
+                current_iteration += 1
+                with get_session() as session:
+                    record_event(
+                        session, run_id, EventKind.ITERATION_START,
+                        iteration=current_iteration,
+                        payload={"max_iterations": max_iterations}
+                    )
+                logger.info(f"Starting iteration {current_iteration} for run {run_id}")
+    
+    final_iteration = final_state.get("iteration", 0)
+    logger.info(f"Factory completed for run {run_id} at iteration {final_iteration}")
+    
+    return final_state
+
+
+def _record_node_output(
+    run_id: UUID,
+    artifact_dir: Path,
+    node_name: str,
+    node_output: dict,
+    iteration: int,
+) -> None:
+    """
+    Record event and save artifact for a single node output.
+    
+    This is called for each node as it completes during streaming,
+    enabling per-iteration artifact capture.
+    """
+    # Node output key mapping (extensible for future nodes like VF in M14)
+    NODE_OUTPUT_KEYS = {
+        "SE": "se_packet",
+        "TR": "tool_report",
+        "PO": "po_report",
+        # "VF": "verifier_report",  # Enable when M14 is implemented
+    }
+    
+    # Event kind mapping
+    NODE_EVENT_KINDS = {
+        "SE": EventKind.SE_OUTPUT,
+        "TR": EventKind.TR_APPLY,
+        "PO": EventKind.PO_RESULT,
+        # "VF": EventKind.VF_RESULT,  # Add EventKind when M14 is implemented
+    }
+    
+    if node_name not in NODE_OUTPUT_KEYS:
+        # Unknown node, skip
+        return
+    
+    output_key = NODE_OUTPUT_KEYS[node_name]
+    event_kind = NODE_EVENT_KINDS[node_name]
+    artifact_data = node_output.get(output_key)
+    
+    if not artifact_data:
+        return
+    
+    with get_session() as session:
+        # Save artifact
+        save_artifact(
+            session, run_id, artifact_dir,
+            f"{output_key}_iter_{iteration}.json",
+            artifact_data,
+        )
         
-        # PO result event
-        if po_report:
-            record_event(
-                session, run_id, EventKind.PO_RESULT,
-                iteration=iteration,
-                payload={
-                    "decision": po_report.get("decision"),
-                    "reasons_count": len(po_report.get("reasons", [])),
-                    "fixes_count": len(po_report.get("required_fixes", [])),
-                }
-            )
+        # Record event with appropriate payload
+        payload = _build_event_payload(node_name, artifact_data)
+        record_event(
+            session, run_id, event_kind,
+            iteration=iteration,
+            payload=payload,
+        )
+
+
+def _build_event_payload(node_name: str, data: dict) -> dict:
+    """Build event payload based on node type."""
+    if node_name == "SE":
+        return {
+            "summary": data.get("summary", ""),
+            "writes_count": len(data.get("writes", [])),
+            "assumptions_count": len(data.get("assumptions", [])),
+        }
+    elif node_name == "TR":
+        return {
+            "applied_count": len(data.get("applied", [])),
+            "blocked_count": len(data.get("blocked_writes", [])),
+            "commands_ok": data.get("all_commands_ok", False),
+            "invariants_ok": data.get("all_invariants_ok", True),
+        }
+    elif node_name == "PO":
+        return {
+            "decision": data.get("decision"),
+            "reasons_count": len(data.get("reasons", [])),
+            "fixes_count": len(data.get("required_fixes", [])),
+        }
+    # Future: VF node
+    # elif node_name == "VF":
+    #     return {
+    #         "decision": data.get("decision"),
+    #         "confidence": data.get("confidence", 0.0),
+    #         "coverage_gaps_count": len(data.get("coverage_gaps", [])),
+    #     }
+    return {}
 
 
 def _do_writeback(
