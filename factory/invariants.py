@@ -283,6 +283,88 @@ def _check_coverage(
         )
 
 
+def _check_tests_changed_with_src(se_packet: dict[str, Any]) -> InvariantResult:
+    """
+    Check that if source files changed, test files also changed.
+    
+    This prevents SE from modifying source code without updating or adding
+    corresponding tests. Uses the SE packet to determine what files were written.
+    
+    A file is considered a "test file" if its name matches pytest conventions:
+    - test_*.py
+    - *_test.py
+    - Located in a tests/ directory
+    
+    A file is considered a "source file" if it's a .py file that's NOT a test file.
+    
+    Args:
+        se_packet: The SE's output packet containing writes
+        
+    Returns:
+        InvariantResult indicating whether tests were updated with source
+    """
+    writes = se_packet.get("writes", [])
+    
+    src_files_changed: list[str] = []
+    test_files_changed: list[str] = []
+    
+    for w in writes:
+        path = w.get("path", "")
+        mode = w.get("mode", "")
+        
+        # Skip deletions - we only care about new/modified files
+        if mode == "delete":
+            continue
+        
+        # Skip non-Python files
+        if not path.endswith(".py"):
+            continue
+        
+        # Determine if it's a test file
+        filename = path.split("/")[-1]
+        is_test = (
+            filename.startswith("test_") or
+            filename.endswith("_test.py") or
+            "/tests/" in path or
+            path.startswith("tests/")
+        )
+        
+        if is_test:
+            test_files_changed.append(path)
+        else:
+            src_files_changed.append(path)
+    
+    # If source files changed but no test files changed, fail
+    if src_files_changed and not test_files_changed:
+        return InvariantResult(
+            passed=False,
+            check_name="tests_changed_with_src",
+            message=f"Source files were modified ({len(src_files_changed)}) but no test files were updated.",
+            details={
+                "src_files": src_files_changed,
+                "test_files": test_files_changed,
+            }
+        )
+    
+    # Determine result message based on what changed
+    if not src_files_changed and not test_files_changed:
+        msg = "No Python files modified."
+    elif not src_files_changed:
+        msg = f"Only test files modified ({len(test_files_changed)})."
+    else:
+        msg = f"Source files ({len(src_files_changed)}) and test files ({len(test_files_changed)}) both updated."
+    
+    return InvariantResult(
+        passed=True,
+        check_name="tests_changed_with_src",
+        message=msg,
+        details={
+            "src_files": src_files_changed,
+            "test_files": test_files_changed,
+        }
+    )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -322,8 +404,8 @@ def run_invariants(
     coverage_threshold = work_order.get("coverage_threshold")
     results.append(_check_coverage(workspace, threshold=coverage_threshold))
     
-    # Future invariant checks:
-    # - M8: _check_tests_changed_with_src
+    # M8: Check that source file changes include test file changes
+    results.append(_check_tests_changed_with_src(se_packet))
     
     # Compute overall pass/fail
     all_passed = all(r.passed for r in results) if results else True
