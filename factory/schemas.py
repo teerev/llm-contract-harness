@@ -59,11 +59,13 @@ class WorkOrder(BaseModel):
     notes: str = Field(default="")
     context_files: list[str] = Field(default_factory=list)
     
-    # Quality gates (M5, M6, M11)
+    # Quality gates (M5, M6, M11, M16, M19)
     min_assertions: int = Field(default=1)  # M5: Minimum meaningful assertions required
     coverage_threshold: int | None = None  # M6: e.g., 80 for 80% coverage (None = skip)
     min_tests: int | None = None  # M11: Minimum number of tests required (None = skip)
     max_test_failures: int = Field(default=0)  # M11: Maximum allowed test failures
+    require_hypothesis: bool = Field(default=False)  # M16: Require hypothesis property tests
+    require_type_check: bool = Field(default=False)  # M19: Require mypy type checking
     
     # Security policy (M7)
     shell_policy: ShellPolicy = Field(default="warn")  # M7: forbidden/warn/allow for shell=True

@@ -494,6 +494,210 @@ def _check_pytest_results(
         )
 
 
+def _check_hypothesis_tests(
+    workspace: Path,
+    require_hypothesis: bool = False,
+    timeout_sec: int = 300,
+) -> InvariantResult:
+    """
+    Check if property-based tests exist and run them (M16).
+    
+    Hypothesis tests are valuable because they're harder to game - they test
+    properties across many random inputs rather than specific examples that
+    SE could craft to match buggy code.
+    
+    Args:
+        workspace: Path to the workspace directory
+        require_hypothesis: If True, fail when no hypothesis tests found
+        timeout_sec: Timeout for hypothesis test execution (can be slow)
+        
+    Returns:
+        InvariantResult with hypothesis test status
+    """
+    # Look for hypothesis imports in test files
+    hypo_files: list[str] = []
+    for py_file in workspace.glob("**/*.py"):
+        # Skip non-test files for efficiency
+        if not ("test_" in py_file.name or "_test.py" in py_file.name):
+            continue
+        try:
+            content = py_file.read_text()
+            if "from hypothesis" in content or "import hypothesis" in content:
+                hypo_files.append(str(py_file.relative_to(workspace)))
+        except (OSError, UnicodeDecodeError):
+            pass
+    
+    if not hypo_files:
+        if require_hypothesis:
+            return InvariantResult(
+                passed=False,
+                check_name="hypothesis_tests",
+                message="No hypothesis tests found but require_hypothesis=True.",
+                details={"require_hypothesis": True}
+            )
+        return InvariantResult(
+            passed=True,  # Not required, just advisory
+            check_name="hypothesis_tests",
+            message="No hypothesis tests found (advisory - consider adding for robustness).",
+            details={"advisory": True, "files_checked": len(list(workspace.glob("**/test_*.py")))}
+        )
+    
+    # Run pytest - hypothesis tests will run as part of normal pytest
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-v", "--hypothesis-show-statistics"]
+            + hypo_files,
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        
+        if result.returncode != 0:
+            # Extract hypothesis-specific failure info if present
+            stdout_tail = result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout
+            stderr_tail = result.stderr[-500:] if len(result.stderr) > 500 else result.stderr
+            
+            return InvariantResult(
+                passed=False,
+                check_name="hypothesis_tests",
+                message=f"Hypothesis tests failed ({len(hypo_files)} files with hypothesis).",
+                details={
+                    "files": hypo_files,
+                    "stdout": stdout_tail,
+                    "stderr": stderr_tail,
+                }
+            )
+        
+        return InvariantResult(
+            passed=True,
+            check_name="hypothesis_tests",
+            message=f"Hypothesis tests passed ({len(hypo_files)} files).",
+            details={"files": hypo_files}
+        )
+        
+    except subprocess.TimeoutExpired:
+        return InvariantResult(
+            passed=False,
+            check_name="hypothesis_tests",
+            message=f"Hypothesis tests timed out after {timeout_sec}s.",
+            details={"timeout_sec": timeout_sec, "files": hypo_files}
+        )
+    except FileNotFoundError:
+        return InvariantResult(
+            passed=True,  # pytest not available, skip gracefully
+            check_name="hypothesis_tests",
+            message="pytest not available, skipping hypothesis check.",
+            details={"skipped": True}
+        )
+
+
+def _check_type_checking(
+    workspace: Path,
+    require_type_check: bool = False,
+    timeout_sec: int = 120,
+) -> InvariantResult:
+    """
+    Run mypy type checking on the workspace (M19).
+    
+    Type checking catches errors that tests might miss - incorrect types,
+    missing attributes, wrong number of arguments, etc. This is a valuable
+    deterministic check that SE cannot game.
+    
+    Args:
+        workspace: Path to the workspace directory
+        require_type_check: If True, type errors cause failure
+        timeout_sec: Timeout for mypy execution
+        
+    Returns:
+        InvariantResult with type checking status
+    """
+    if not require_type_check:
+        return InvariantResult(
+            passed=True,
+            check_name="type_checking",
+            message="Type checking not required, skipping.",
+            details={"skipped": True, "require_type_check": False}
+        )
+    
+    # Find Python files to check (exclude tests for cleaner output)
+    py_files = [
+        str(f.relative_to(workspace)) 
+        for f in workspace.glob("**/*.py")
+        if not ("test_" in f.name or "_test.py" in f.name or "/tests/" in str(f))
+    ]
+    
+    if not py_files:
+        return InvariantResult(
+            passed=True,
+            check_name="type_checking",
+            message="No Python source files to check.",
+            details={"files_found": 0}
+        )
+    
+    try:
+        # Run mypy with reasonable defaults
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "mypy",
+                "--ignore-missing-imports",  # Don't fail on missing stubs
+                "--no-error-summary",  # Cleaner output
+                "."
+            ],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        
+        if result.returncode != 0:
+            # Count errors
+            error_lines = [
+                line for line in result.stdout.split("\n")
+                if ": error:" in line
+            ]
+            error_count = len(error_lines)
+            
+            # Get first few errors for context
+            preview = "\n".join(error_lines[:5])
+            if error_count > 5:
+                preview += f"\n... and {error_count - 5} more errors"
+            
+            return InvariantResult(
+                passed=False,
+                check_name="type_checking",
+                message=f"Type checking failed: {error_count} error(s).",
+                details={
+                    "error_count": error_count,
+                    "preview": preview,
+                    "full_output": result.stdout[-2000:],
+                }
+            )
+        
+        return InvariantResult(
+            passed=True,
+            check_name="type_checking",
+            message="Type checking passed (mypy).",
+            details={"files_checked": len(py_files)}
+        )
+        
+    except subprocess.TimeoutExpired:
+        return InvariantResult(
+            passed=False,
+            check_name="type_checking",
+            message=f"Type checking timed out after {timeout_sec}s.",
+            details={"timeout_sec": timeout_sec}
+        )
+    except FileNotFoundError:
+        # mypy not installed
+        return InvariantResult(
+            passed=True,  # Don't fail if mypy isn't available
+            check_name="type_checking",
+            message="mypy not available, skipping type check.",
+            details={"skipped": True, "reason": "mypy_not_installed"}
+        )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -540,6 +744,14 @@ def run_invariants(
     min_tests = work_order.get("min_tests")
     max_failures = work_order.get("max_test_failures", 0)
     results.append(_check_pytest_results(workspace, min_tests=min_tests, max_failures=max_failures))
+    
+    # M16: Check hypothesis tests if present (or required)
+    require_hypothesis = work_order.get("require_hypothesis", False)
+    results.append(_check_hypothesis_tests(workspace, require_hypothesis=require_hypothesis))
+    
+    # M19: Run type checking if required
+    require_type_check = work_order.get("require_type_check", False)
+    results.append(_check_type_checking(workspace, require_type_check=require_type_check))
     
     # Compute overall pass/fail
     all_passed = all(r.passed for r in results) if results else True
