@@ -69,3 +69,17 @@ class POReport(BaseModel):
     decision: Literal["PASS", "FAIL"] = "FAIL"
     reasons: list[str] = Field(default_factory=list)
     required_fixes: list[str] = Field(default_factory=list)
+
+
+class InvariantResult(BaseModel):
+    """Result of a single invariant check."""
+    passed: bool
+    check_name: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class InvariantReport(BaseModel):
+    """Report from all invariant checks."""
+    all_passed: bool = True
+    results: list[InvariantResult] = Field(default_factory=list)
