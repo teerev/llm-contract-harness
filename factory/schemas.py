@@ -15,6 +15,30 @@ class CommandSpec(BaseModel):
     timeout_sec: int | None = None
 
 
+class AcceptanceCheck(BaseModel):
+    """
+    Enhanced acceptance command with structured assertions (M9).
+    
+    Allows verifying not just return code, but also stdout/stderr content.
+    This prevents SE from gaming acceptance by writing scripts that just `exit 0`.
+    
+    Example in work order:
+        acceptance_commands:
+          - command: "pytest -q"
+            expected_returncode: 0
+            stdout_contains: ["passed"]
+            stdout_not_contains: ["FAILED", "ERROR"]
+    """
+    command: CommandSpec | str
+    expected_returncode: int = 0
+    stdout_contains: list[str] | None = None      # All must appear in stdout
+    stdout_not_contains: list[str] | None = None  # None must appear in stdout
+    stdout_regex: str | None = None               # Stdout must match this regex
+    stderr_must_be_empty: bool = False            # Stderr must be empty
+    stderr_contains: list[str] | None = None      # All must appear in stderr
+    timeout_sec: int | None = None                # Override command timeout
+
+
 class WorkOrder(BaseModel):
     title: str = Field(default="Untitled Work Order")
     
@@ -26,8 +50,8 @@ class WorkOrder(BaseModel):
     # Execution limits
     max_iterations: int = Field(default=5, ge=1, le=20)
     
-    # Task specification
-    acceptance_commands: list[CommandSpec | str] = Field(default_factory=list)
+    # Task specification (M9: AcceptanceCheck adds structured assertions)
+    acceptance_commands: list[CommandSpec | str | AcceptanceCheck] = Field(default_factory=list)
     forbidden_paths: list[str] = Field(default_factory=list)
     allowed_paths: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)

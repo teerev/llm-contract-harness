@@ -1,9 +1,11 @@
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from .schemas import (
+    AcceptanceCheck,
     AppliedChange,
     CommandResult,
     CommandSpec,
@@ -57,6 +59,59 @@ def _enforce_shell_policy(spec: CommandSpec, policy: ShellPolicy) -> tuple[bool,
         return True, ""
     else:  # allow
         return True, ""
+
+
+def _check_assertions(result: CommandResult, check: AcceptanceCheck) -> tuple[bool, list[str]]:
+    """
+    Check structured assertions against command result (M10).
+    
+    This enables verification of command output content, not just return code.
+    Prevents SE from gaming acceptance by writing scripts that just `exit 0`.
+    
+    Args:
+        result: The command execution result
+        check: The AcceptanceCheck with assertion criteria
+        
+    Returns:
+        Tuple of (all_passed, list of failure messages)
+    """
+    failures: list[str] = []
+    
+    # Returncode check
+    if result.returncode != check.expected_returncode:
+        failures.append(
+            f"Expected returncode {check.expected_returncode}, got {result.returncode}"
+        )
+    
+    # stdout_contains - all strings must appear
+    if check.stdout_contains:
+        for expected in check.stdout_contains:
+            if expected not in result.stdout:
+                failures.append(f"stdout missing expected: '{expected}'")
+    
+    # stdout_not_contains - none of these strings should appear
+    if check.stdout_not_contains:
+        for forbidden in check.stdout_not_contains:
+            if forbidden in result.stdout:
+                failures.append(f"stdout contains forbidden: '{forbidden}'")
+    
+    # stdout_regex - stdout must match the pattern
+    if check.stdout_regex:
+        if not re.search(check.stdout_regex, result.stdout):
+            failures.append(f"stdout doesn't match regex: '{check.stdout_regex}'")
+    
+    # stderr_must_be_empty - stderr must be empty (after stripping whitespace)
+    if check.stderr_must_be_empty and result.stderr.strip():
+        stderr_preview = result.stderr[:100].replace('\n', '\\n')
+        failures.append(f"stderr must be empty but got: '{stderr_preview}'")
+    
+    # stderr_contains - all strings must appear in stderr
+    if check.stderr_contains:
+        for expected in check.stderr_contains:
+            if expected not in result.stderr:
+                failures.append(f"stderr missing expected: '{expected}'")
+    
+    return len(failures) == 0, failures
 
 
 def run_command(spec: CommandSpec, cwd: Path, env: dict[str, str]) -> CommandResult:
@@ -165,7 +220,24 @@ def tool_runner_node(state: dict) -> dict:
     all_ok = True
 
     for item in wo.acceptance_commands:
-        spec = _normalize_command_spec(item, wo.command_timeout_sec)
+        # M9/M10: Handle AcceptanceCheck with structured assertions
+        acceptance_check: AcceptanceCheck | None = None
+        
+        if isinstance(item, dict) and "command" in item:
+            # This is an AcceptanceCheck (has 'command' field, not 'cmd' or 'argv')
+            acceptance_check = AcceptanceCheck.model_validate(item)
+            # Extract the command to run
+            cmd_item = acceptance_check.command
+            timeout = acceptance_check.timeout_sec or wo.command_timeout_sec
+            spec = _normalize_command_spec(cmd_item, timeout)
+        elif isinstance(item, AcceptanceCheck):
+            acceptance_check = item
+            cmd_item = acceptance_check.command
+            timeout = acceptance_check.timeout_sec or wo.command_timeout_sec
+            spec = _normalize_command_spec(cmd_item, timeout)
+        else:
+            # Regular command (string or CommandSpec)
+            spec = _normalize_command_spec(item, wo.command_timeout_sec)
         
         # M7: Enforce shell policy before running command
         allowed, reason = _enforce_shell_policy(spec, wo.shell_policy)
@@ -181,9 +253,29 @@ def tool_runner_node(state: dict) -> dict:
             continue
         
         r = run_command(spec, cwd=repo_root, env=env)
+        
+        # M10: Check structured assertions if this is an AcceptanceCheck
+        if acceptance_check is not None:
+            passed, failures = _check_assertions(r, acceptance_check)
+            if not passed:
+                # Append assertion failures to stderr for visibility
+                assertion_msg = "Assertion failures:\n- " + "\n- ".join(failures)
+                r = CommandResult(
+                    spec=r.spec,
+                    returncode=r.returncode if r.returncode != 0 else 1,  # Force failure
+                    stdout=r.stdout,
+                    stderr=(r.stderr + "\n" + assertion_msg).strip(),
+                    timed_out=r.timed_out,
+                )
+                all_ok = False
+            elif r.returncode != 0:
+                all_ok = False
+        else:
+            # Regular command - just check returncode
+            if r.returncode != 0:
+                all_ok = False
+        
         results.append(r)
-        if r.returncode != 0:
-            all_ok = False
 
     # Run invariant checks (Layer 2 verification)
     inv_report = run_invariants(
