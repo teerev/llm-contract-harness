@@ -11,6 +11,8 @@ This module is the foundation for Layer 2 of the 3-layer verification gate:
 - Layer 3: Verifier LLM (high trust - independent adversarial review)
 """
 
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +60,50 @@ def _check_tests_exist(workspace: Path) -> InvariantResult:
     )
 
 
+def _check_compileall(workspace: Path, timeout_sec: int = 60) -> InvariantResult:
+    """
+    Check that all Python files compile without syntax errors.
+    
+    Uses Python's compileall module to verify syntax validity of all .py files.
+    This catches syntax errors before acceptance commands run, providing
+    early feedback on broken code.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "compileall", "-q", str(workspace)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        
+        if result.returncode != 0:
+            # Parse stderr to extract useful error info
+            error_output = result.stderr.strip() or result.stdout.strip()
+            return InvariantResult(
+                passed=False,
+                check_name="compileall",
+                message="Python syntax errors detected.",
+                details={
+                    "returncode": result.returncode,
+                    "stderr": error_output[:1000],
+                }
+            )
+        
+        return InvariantResult(
+            passed=True,
+            check_name="compileall",
+            message="All Python files compile successfully.",
+            details={}
+        )
+    except subprocess.TimeoutExpired:
+        return InvariantResult(
+            passed=False,
+            check_name="compileall",
+            message="Compileall timed out.",
+            details={"timeout_sec": timeout_sec}
+        )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -86,8 +132,10 @@ def run_invariants(
     # M2: Check that test files exist
     results.append(_check_tests_exist(workspace))
     
+    # M3: Check that all Python files compile (syntax check)
+    results.append(_check_compileall(workspace))
+    
     # Future invariant checks:
-    # - M3: _check_compileall
     # - M5: _check_tests_nontrivial
     # - M6: _check_coverage
     # - M8: _check_tests_changed_with_src
