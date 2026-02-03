@@ -12,6 +12,7 @@ This module is the foundation for Layer 2 of the 3-layer verification gate:
 """
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -181,6 +182,107 @@ def _check_tests_nontrivial(workspace: Path, min_assertions: int = 1) -> Invaria
     )
 
 
+def _check_coverage(
+    workspace: Path,
+    threshold: int | None,
+    timeout_sec: int = 120
+) -> InvariantResult:
+    """
+    Run pytest with coverage and check against threshold.
+    
+    Uses pytest-cov to measure test coverage and fails if coverage
+    is below the specified threshold. This prevents SE from writing
+    tests that don't actually exercise the code.
+    
+    Args:
+        workspace: Path to the workspace directory
+        threshold: Minimum coverage percentage required (None = skip check)
+        timeout_sec: Maximum time to wait for coverage check
+        
+    Returns:
+        InvariantResult indicating whether coverage meets threshold
+    """
+    if threshold is None:
+        return InvariantResult(
+            passed=True,
+            check_name="coverage",
+            message="No coverage threshold specified, skipping.",
+            details={"skipped": True}
+        )
+    
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-m", "pytest",
+                "--cov=.",
+                f"--cov-fail-under={threshold}",
+                "--cov-report=term-missing",
+                "-q",
+            ],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        
+        if result.returncode != 0:
+            # Parse coverage percentage from output
+            # Look for patterns like "TOTAL    100     25    75%" or "TOTAL                         75%"
+            match = re.search(r"TOTAL\s+[\d\s]+?(\d+)%", result.stdout)
+            actual = int(match.group(1)) if match else "unknown"
+            
+            # Check if it's a test failure vs coverage failure
+            if "FAILED" in result.stdout or "ERROR" in result.stdout:
+                return InvariantResult(
+                    passed=False,
+                    check_name="coverage",
+                    message=f"Tests failed during coverage check. Coverage: {actual}%.",
+                    details={
+                        "threshold": threshold,
+                        "actual": actual,
+                        "stdout": result.stdout[-1000:],
+                        "stderr": result.stderr[-500:] if result.stderr else "",
+                    }
+                )
+            
+            return InvariantResult(
+                passed=False,
+                check_name="coverage",
+                message=f"Coverage {actual}% is below threshold {threshold}%.",
+                details={
+                    "threshold": threshold,
+                    "actual": actual,
+                    "stdout": result.stdout[-500:],
+                }
+            )
+        
+        # Parse actual coverage from successful run
+        match = re.search(r"TOTAL\s+[\d\s]+?(\d+)%", result.stdout)
+        actual = int(match.group(1)) if match else threshold
+        
+        return InvariantResult(
+            passed=True,
+            check_name="coverage",
+            message=f"Coverage {actual}% meets threshold of {threshold}%.",
+            details={"threshold": threshold, "actual": actual}
+        )
+        
+    except subprocess.TimeoutExpired:
+        return InvariantResult(
+            passed=False,
+            check_name="coverage",
+            message="Coverage check timed out.",
+            details={"timeout_sec": timeout_sec}
+        )
+    except FileNotFoundError:
+        return InvariantResult(
+            passed=False,
+            check_name="coverage",
+            message="pytest-cov not available. Install with: pip install pytest-cov",
+            details={}
+        )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -216,8 +318,11 @@ def run_invariants(
     min_assertions = work_order.get("min_assertions", 1)
     results.append(_check_tests_nontrivial(workspace, min_assertions=min_assertions))
     
+    # M6: Check test coverage meets threshold (if specified)
+    coverage_threshold = work_order.get("coverage_threshold")
+    results.append(_check_coverage(workspace, threshold=coverage_threshold))
+    
     # Future invariant checks:
-    # - M6: _check_coverage
     # - M8: _check_tests_changed_with_src
     
     # Compute overall pass/fail

@@ -31,6 +31,10 @@ class WorkOrder(BaseModel):
     command_timeout_sec: int = 300
     notes: str = Field(default="")
     context_files: list[str] = Field(default_factory=list)
+    
+    # Quality gates (M5, M6)
+    min_assertions: int = Field(default=1)  # M5: Minimum meaningful assertions required
+    coverage_threshold: int | None = None  # M6: e.g., 80 for 80% coverage (None = skip)
 
 
 class FileWrite(BaseModel):
