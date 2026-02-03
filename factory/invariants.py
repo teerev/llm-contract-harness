@@ -11,6 +11,7 @@ This module is the foundation for Layer 2 of the 3-layer verification gate:
 - Layer 3: Verifier LLM (high trust - independent adversarial review)
 """
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -104,6 +105,82 @@ def _check_compileall(workspace: Path, timeout_sec: int = 60) -> InvariantResult
         )
 
 
+def _check_tests_nontrivial(workspace: Path, min_assertions: int = 1) -> InvariantResult:
+    """
+    Check that test files contain meaningful assertions, not just `assert True`.
+    
+    Uses AST parsing to count assert statements and detect trivial ones.
+    This prevents SE from gaming the tests_exist check by writing empty/trivial tests.
+    
+    Args:
+        workspace: Path to the workspace directory
+        min_assertions: Minimum number of meaningful assertions required
+        
+    Returns:
+        InvariantResult indicating whether tests are non-trivial
+    """
+    test_files = list(workspace.glob("**/test_*.py")) + list(workspace.glob("**/*_test.py"))
+    # Deduplicate
+    test_files = list(set(test_files))
+    
+    if not test_files:
+        return InvariantResult(
+            passed=False,
+            check_name="tests_nontrivial",
+            message="No test files to analyze.",
+            details={}
+        )
+    
+    total_asserts = 0
+    trivial_asserts = 0  # assert True, assert 1, etc.
+    files_analyzed = 0
+    
+    for tf in test_files:
+        try:
+            source = tf.read_text()
+            tree = ast.parse(source)
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assert):
+                    total_asserts += 1
+                    # Check for trivial assertions
+                    if isinstance(node.test, ast.Constant):
+                        if node.test.value in (True, 1, ""):
+                            trivial_asserts += 1
+            
+            files_analyzed += 1
+        except SyntaxError:
+            pass  # compileall check handles syntax errors
+    
+    meaningful_asserts = total_asserts - trivial_asserts
+    
+    if meaningful_asserts < min_assertions:
+        return InvariantResult(
+            passed=False,
+            check_name="tests_nontrivial",
+            message=f"Only {meaningful_asserts} meaningful assertions found (minimum: {min_assertions}). "
+                    f"Total: {total_asserts}, Trivial: {trivial_asserts}.",
+            details={
+                "total_asserts": total_asserts,
+                "trivial_asserts": trivial_asserts,
+                "meaningful_asserts": meaningful_asserts,
+                "min_required": min_assertions,
+                "files_analyzed": files_analyzed,
+            }
+        )
+    
+    return InvariantResult(
+        passed=True,
+        check_name="tests_nontrivial",
+        message=f"Found {meaningful_asserts} meaningful assertions across {files_analyzed} files.",
+        details={
+            "total_asserts": total_asserts,
+            "meaningful_asserts": meaningful_asserts,
+            "files_analyzed": files_analyzed,
+        }
+    )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -135,8 +212,11 @@ def run_invariants(
     # M3: Check that all Python files compile (syntax check)
     results.append(_check_compileall(workspace))
     
+    # M5: Check that tests contain meaningful assertions (not just `assert True`)
+    min_assertions = work_order.get("min_assertions", 1)
+    results.append(_check_tests_nontrivial(workspace, min_assertions=min_assertions))
+    
     # Future invariant checks:
-    # - M5: _check_tests_nontrivial
     # - M6: _check_coverage
     # - M8: _check_tests_changed_with_src
     

@@ -2,9 +2,10 @@
 title: "Example: Create Calculator Module"
 repo: https://github.com/teerev/dft-orch
 clone_branch: main
-push_branch: aos/calculator3
+push_branch: aos/calculator4
 max_iterations: 5
 context_files: []
+min_assertions: 2
 acceptance_commands:
   - "python -c 'from calculator import Calculator; c = Calculator(); print(c.add(2, 3))'"
   - "pytest -q"
