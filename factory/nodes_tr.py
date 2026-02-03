@@ -10,6 +10,7 @@ from .schemas import (
     ToolReport,
     WorkOrder,
 )
+from .invariants import run_invariants
 from .util import command_to_argv, matches_any_glob, normalize_rel_path, safe_join
 
 
@@ -136,10 +137,19 @@ def tool_runner_node(state: dict) -> dict:
         if r.returncode != 0:
             all_ok = False
 
+    # Run invariant checks (Layer 2 verification)
+    inv_report = run_invariants(
+        workspace=repo_root,
+        se_packet=pkt.model_dump(),
+        work_order=wo.model_dump(),
+    )
+
     report = ToolReport(
         applied=applied,
         blocked_writes=blocked,
         command_results=results,
         all_commands_ok=all_ok,
+        invariant_report=inv_report,
+        all_invariants_ok=inv_report.all_passed,
     )
     return {"tool_report": report.model_dump()}

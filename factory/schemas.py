@@ -58,19 +58,6 @@ class AppliedChange(BaseModel):
     action: Literal["create", "replace", "delete"]
 
 
-class ToolReport(BaseModel):
-    applied: list[AppliedChange] = Field(default_factory=list)
-    blocked_writes: list[str] = Field(default_factory=list)
-    command_results: list[CommandResult] = Field(default_factory=list)
-    all_commands_ok: bool = False
-
-
-class POReport(BaseModel):
-    decision: Literal["PASS", "FAIL"] = "FAIL"
-    reasons: list[str] = Field(default_factory=list)
-    required_fixes: list[str] = Field(default_factory=list)
-
-
 class InvariantResult(BaseModel):
     """Result of a single invariant check."""
     passed: bool
@@ -83,3 +70,19 @@ class InvariantReport(BaseModel):
     """Report from all invariant checks."""
     all_passed: bool = True
     results: list[InvariantResult] = Field(default_factory=list)
+
+
+class ToolReport(BaseModel):
+    applied: list[AppliedChange] = Field(default_factory=list)
+    blocked_writes: list[str] = Field(default_factory=list)
+    command_results: list[CommandResult] = Field(default_factory=list)
+    all_commands_ok: bool = False
+    # Invariant check results (Layer 2 verification)
+    invariant_report: InvariantReport | None = None
+    all_invariants_ok: bool = True
+
+
+class POReport(BaseModel):
+    decision: Literal["PASS", "FAIL"] = "FAIL"
+    reasons: list[str] = Field(default_factory=list)
+    required_fixes: list[str] = Field(default_factory=list)
