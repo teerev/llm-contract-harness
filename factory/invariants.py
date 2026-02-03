@@ -17,6 +17,51 @@ from typing import Any
 from .schemas import InvariantResult, InvariantReport
 
 
+# =============================================================================
+# Individual Invariant Checks
+# =============================================================================
+
+def _check_tests_exist(workspace: Path) -> InvariantResult:
+    """
+    Check that test files exist in the workspace.
+    
+    This prevents SE from submitting code without any tests at all.
+    Looks for standard pytest naming conventions: test_*.py and *_test.py
+    """
+    test_patterns = [
+        "tests/**/test_*.py",
+        "tests/**/*_test.py",
+        "**/test_*.py",
+        "**/*_test.py",
+    ]
+    
+    test_files: list[Path] = []
+    for pattern in test_patterns:
+        test_files.extend(workspace.glob(pattern))
+    
+    # Deduplicate (patterns may overlap)
+    test_files = list(set(test_files))
+    
+    if not test_files:
+        return InvariantResult(
+            passed=False,
+            check_name="tests_exist",
+            message="No test files found. Expected test_*.py or *_test.py files.",
+            details={"patterns_checked": test_patterns}
+        )
+    
+    return InvariantResult(
+        passed=True,
+        check_name="tests_exist",
+        message=f"Found {len(test_files)} test file(s).",
+        details={"test_files": [str(f.relative_to(workspace)) for f in sorted(test_files)[:10]]}
+    )
+
+
+# =============================================================================
+# Main Invariant Runner
+# =============================================================================
+
 def run_invariants(
     workspace: Path,
     se_packet: dict[str, Any],
@@ -38,8 +83,10 @@ def run_invariants(
     """
     results: list[InvariantResult] = []
     
-    # Invariant checks will be added in subsequent milestones:
-    # - M2: _check_tests_exist
+    # M2: Check that test files exist
+    results.append(_check_tests_exist(workspace))
+    
+    # Future invariant checks:
     # - M3: _check_compileall
     # - M5: _check_tests_nontrivial
     # - M6: _check_coverage
