@@ -365,6 +365,135 @@ def _check_tests_changed_with_src(se_packet: dict[str, Any]) -> InvariantResult:
     )
 
 
+def _parse_pytest_output(stdout: str) -> dict[str, Any]:
+    """
+    Parse pytest output for structured information (M11).
+    
+    Extracts test counts, pass/fail/skip/error statistics, and duration
+    from pytest's summary line output.
+    
+    Args:
+        stdout: The stdout from running pytest
+        
+    Returns:
+        Dict with parsed test results:
+        - passed: Number of passed tests
+        - failed: Number of failed tests
+        - skipped: Number of skipped tests
+        - errors: Number of errors
+        - warnings: Number of warnings
+        - total: Total test count
+        - duration: Test duration in seconds (float)
+    """
+    result: dict[str, Any] = {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "errors": 0,
+        "warnings": 0,
+        "total": 0,
+        "duration": None,
+    }
+    
+    # Match patterns like "5 passed, 2 failed, 1 skipped in 0.42s"
+    patterns = [
+        (r"(\d+) passed", "passed"),
+        (r"(\d+) failed", "failed"),
+        (r"(\d+) skipped", "skipped"),
+        (r"(\d+) error", "errors"),
+        (r"(\d+) warning", "warnings"),
+        (r"in ([\d.]+)s", "duration"),
+    ]
+    
+    for pattern, key in patterns:
+        match = re.search(pattern, stdout)
+        if match:
+            value = match.group(1)
+            result[key] = float(value) if key == "duration" else int(value)
+    
+    result["total"] = result["passed"] + result["failed"] + result["skipped"] + result["errors"]
+    
+    return result
+
+
+def _check_pytest_results(
+    workspace: Path,
+    min_tests: int | None = None,
+    max_failures: int = 0,
+    timeout_sec: int = 120,
+) -> InvariantResult:
+    """
+    Run pytest and verify results meet criteria (M11).
+    
+    This provides structured validation of test results beyond just
+    checking the return code. Useful for ensuring adequate test coverage
+    and no test failures.
+    
+    Args:
+        workspace: Path to the workspace directory
+        min_tests: Minimum number of tests required (None = skip check)
+        max_failures: Maximum allowed test failures (default: 0)
+        timeout_sec: Timeout for pytest execution
+        
+    Returns:
+        InvariantResult with parsed pytest statistics
+    """
+    if min_tests is None:
+        return InvariantResult(
+            passed=True,
+            check_name="pytest_results",
+            message="No minimum test count specified, skipping.",
+            details={"skipped": True}
+        )
+    
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-v", "--tb=short"],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        
+        parsed = _parse_pytest_output(result.stdout)
+        
+        failures: list[str] = []
+        if parsed["total"] < min_tests:
+            failures.append(f"Only {parsed['total']} tests found (minimum: {min_tests})")
+        if parsed["failed"] > max_failures:
+            failures.append(f"{parsed['failed']} tests failed (maximum allowed: {max_failures})")
+        
+        if failures:
+            return InvariantResult(
+                passed=False,
+                check_name="pytest_results",
+                message="; ".join(failures),
+                details=parsed,
+            )
+        
+        return InvariantResult(
+            passed=True,
+            check_name="pytest_results",
+            message=f"{parsed['passed']} tests passed, {parsed['total']} total.",
+            details=parsed,
+        )
+        
+    except subprocess.TimeoutExpired:
+        return InvariantResult(
+            passed=False,
+            check_name="pytest_results",
+            message=f"pytest timed out after {timeout_sec}s.",
+            details={"timeout_sec": timeout_sec}
+        )
+    except FileNotFoundError:
+        return InvariantResult(
+            passed=False,
+            check_name="pytest_results",
+            message="pytest not available.",
+            details={}
+        )
+
+
 # =============================================================================
 # Main Invariant Runner
 # =============================================================================
@@ -406,6 +535,11 @@ def run_invariants(
     
     # M8: Check that source file changes include test file changes
     results.append(_check_tests_changed_with_src(se_packet))
+    
+    # M11: Check pytest results meet criteria (if min_tests specified)
+    min_tests = work_order.get("min_tests")
+    max_failures = work_order.get("max_test_failures", 0)
+    results.append(_check_pytest_results(workspace, min_tests=min_tests, max_failures=max_failures))
     
     # Compute overall pass/fail
     all_passed = all(r.passed for r in results) if results else True
