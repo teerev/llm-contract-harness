@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import subprocess
@@ -7,11 +8,14 @@ from .schemas import (
     CommandResult,
     CommandSpec,
     SEPacket,
+    ShellPolicy,
     ToolReport,
     WorkOrder,
 )
 from .invariants import run_invariants
 from .util import command_to_argv, matches_any_glob, normalize_rel_path, safe_join
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_command_spec(item, default_timeout: int) -> CommandSpec:
@@ -23,6 +27,36 @@ def _normalize_command_spec(item, default_timeout: int) -> CommandSpec:
     if spec.timeout_sec is None:
         spec.timeout_sec = default_timeout
     return spec
+
+
+def _enforce_shell_policy(spec: CommandSpec, policy: ShellPolicy) -> tuple[bool, str]:
+    """
+    Enforce shell policy for a command.
+    
+    This is a critical security control that prevents shell injection attacks.
+    When shell=True is used, the command string is passed to the shell interpreter,
+    which allows shell metacharacters (|, ;, &&, $(), etc.) to be interpreted.
+    This can lead to command injection if the command contains user-controlled input.
+    
+    Args:
+        spec: The command specification to check
+        policy: One of "forbidden", "warn", or "allow"
+        
+    Returns:
+        Tuple of (allowed, reason). If not allowed, reason explains why.
+    """
+    if not spec.shell:
+        return True, ""
+    
+    cmd_preview = (spec.cmd or "")[:100]
+    
+    if policy == "forbidden":
+        return False, f"shell=True is forbidden by shell_policy. Command: {cmd_preview}"
+    elif policy == "warn":
+        logger.warning(f"shell=True used (policy=warn): {cmd_preview}")
+        return True, ""
+    else:  # allow
+        return True, ""
 
 
 def run_command(spec: CommandSpec, cwd: Path, env: dict[str, str]) -> CommandResult:
@@ -132,6 +166,20 @@ def tool_runner_node(state: dict) -> dict:
 
     for item in wo.acceptance_commands:
         spec = _normalize_command_spec(item, wo.command_timeout_sec)
+        
+        # M7: Enforce shell policy before running command
+        allowed, reason = _enforce_shell_policy(spec, wo.shell_policy)
+        if not allowed:
+            results.append(CommandResult(
+                spec=spec.model_dump(),
+                returncode=1,
+                stdout="",
+                stderr=reason,
+                timed_out=False,
+            ))
+            all_ok = False
+            continue
+        
         r = run_command(spec, cwd=repo_root, env=env)
         results.append(r)
         if r.returncode != 0:

@@ -3,6 +3,9 @@
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
+# Shell policy options for M7
+ShellPolicy = Literal["forbidden", "warn", "allow"]
+
 
 class CommandSpec(BaseModel):
     # provide argv (preferred) or cmd string. shell=true enables shell syntax.
@@ -35,6 +38,9 @@ class WorkOrder(BaseModel):
     # Quality gates (M5, M6)
     min_assertions: int = Field(default=1)  # M5: Minimum meaningful assertions required
     coverage_threshold: int | None = None  # M6: e.g., 80 for 80% coverage (None = skip)
+    
+    # Security policy (M7)
+    shell_policy: ShellPolicy = Field(default="warn")  # M7: forbidden/warn/allow for shell=True
 
 
 class FileWrite(BaseModel):
