@@ -1,0 +1,20 @@
+{
+  "id": "example-001",
+  "title": "Example: update README",
+  "intent": "Update the README in the product repo to clarify usage and constraints, without changing any other files.",
+  "allowed_files": [
+    "README.md"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies or fetch from the network."
+  ],
+  "acceptance_commands": [
+    "python -m compileall -q ."
+  ],
+  "context_files": [
+    "README.md"
+  ],
+  "notes": "This is an example work order. It must be adjusted to match the target product repo."
+}
+
