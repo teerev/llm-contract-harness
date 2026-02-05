@@ -1,15 +1,9 @@
 ---
 title: "P0.01 - Initialize project structure"
-repo: "~/repos/lsystem_plants"
+repo: "~/repos/lsystem-plants"
 acceptance_commands:
   - "pip install -e ."
   - "python -c 'import lsystem; print(lsystem.__version__)'"
-forbidden_paths: []
-allowed_paths: []
-env: 
-command_timeout_sec:
-notes: 
-context_files: []
 ---
 
 

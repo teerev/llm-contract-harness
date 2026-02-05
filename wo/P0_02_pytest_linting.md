@@ -1,21 +1,6 @@
 ---
 title: "P0.02 - Pytest and linting infrastructure"
-repo: https://github.com/teerev/lsystem-plants
-clone_branch: aos/lsystem
-push_branch: aos/lsystem
-max_iterations: 10
-context_files:
-  - "pyproject.toml"
-
-# Quality gates
-min_assertions: 2
-coverage_threshold: 60
-min_tests: 1
-max_test_failures: 0
-require_hypothesis: false
-require_type_check: true
-shell_policy: warn
-
+repo: "~/repos/lsystem-plants"
 acceptance_commands:
   - "pip install -e ."
   - "pytest -v"

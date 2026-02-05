@@ -22,6 +22,11 @@ class WorkOrder(BaseModel):
     command_timeout_sec: int = 300
     notes: str = Field(default="")
     context_files: list[str] = Field(default_factory=list)
+    # Rewrite budget / convergence guardrails
+    max_files_changed: int | None = Field(default=8, ge=1)
+    max_changed_lines_per_file: int | None = Field(default=200, ge=1)
+    max_total_changed_lines: int | None = Field(default=400, ge=1)
+    max_bytes_per_file: int | None = Field(default=200_000, ge=1)
 
 
 class FileWrite(BaseModel):
@@ -54,6 +59,7 @@ class ToolReport(BaseModel):
     blocked_writes: list[str] = Field(default_factory=list)
     command_results: list[CommandResult] = Field(default_factory=list)
     all_commands_ok: bool = False
+    commands_ran: bool = True
 
 
 class POReport(BaseModel):

@@ -1,21 +1,6 @@
 ---
 title: "P1.03 - Bounding box computation"
-repo: https://github.com/teerev/lsystem-plants
-clone_branch: aos/lsystem
-push_branch: aos/lsystem
-max_iterations: 10
-context_files:
-  - "src/lsystem/turtle.py"
-
-# Quality gates
-min_assertions: 5
-coverage_threshold: 80
-min_tests: 4
-max_test_failures: 0
-require_hypothesis: false
-require_type_check: true
-shell_policy: warn
-
+repo: "~/repos/lsystem-plants"
 acceptance_commands:
   - "pip install -e ."
   - "pytest tests/test_bounds.py -v"
