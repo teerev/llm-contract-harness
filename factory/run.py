@@ -12,6 +12,7 @@ from factory.util import (
     config_hash,
     ensure_outside_repo,
     run_id as compute_run_id,
+    run_command,
     stable_repo_tree_hash,
     truncate_output,
     utc_now_iso,
@@ -112,18 +113,53 @@ def run_cli(argv: list[str] | None = None) -> int:
         final_state: dict[str, Any] = graph.invoke(initial_state)  # type: ignore[assignment]
 
         verdict = str(final_state.get("verdict") or "FAIL")
+        ended_stage = str(final_state.get("ended_stage") or "exception")
+        attempt_records = list(final_state.get("attempt_records") or [])
 
         if verdict == "PASS":
-          # Remove untracked artifacts created by verify/acceptance (e.g. __pycache__/).
+            if not attempt_records:
+                raise RuntimeError("PASS but no attempt records were produced")
+
+            last_attempt = attempt_records[-1]
+            attempt_index = int(getattr(last_attempt, "attempt_index", 1))
+            touched_files = list(getattr(last_attempt, "touched_files", []) or [])
+            attempt_dir = run_dir / f"attempt_{attempt_index}"
+
+            # Persist successful changes: stage and commit only the touched files.
+            # This prevents `git clean -fd` from deleting newly created untracked files.
+            if touched_files:
+                add_res = run_command(
+                    command=["git", "add", "-A", "--", *touched_files],
+                    cwd=repo_root,
+                    timeout_seconds=int(args.timeout_seconds),
+                    log_dir=attempt_dir,
+                    log_name="git_add",
+                )
+                if add_res.exit_code != 0:
+                    raise RuntimeError(
+                        "git add failed: " + (add_res.stderr_trunc or add_res.stdout_trunc or "")
+                    )
+
+                commit_res = run_command(
+                    command=["git", "commit", "-m", str(work_order.title)],
+                    cwd=repo_root,
+                    timeout_seconds=int(args.timeout_seconds),
+                    log_dir=attempt_dir,
+                    log_name="git_commit",
+                )
+                if commit_res.exit_code != 0:
+                    raise RuntimeError(
+                        "git commit failed: "
+                        + (commit_res.stderr_trunc or commit_res.stdout_trunc or "")
+                    )
+
+            # Remove untracked artifacts created by verify/acceptance (e.g. __pycache__/).
             from factory.workspace import clean_untracked
             clean_untracked(
                 repo_root=repo_root,
                 timeout_seconds=int(args.timeout_seconds),
-                log_dir=(run_dir / "attempt_1"),
+                log_dir=attempt_dir,
             )
-
-        ended_stage = str(final_state.get("ended_stage") or "exception")
-        attempt_records = list(final_state.get("attempt_records") or [])
 
         repo_tree_hash_after = stable_repo_tree_hash(repo_root, out_dir=out_dir)
         ended_utc = utc_now_iso()
