@@ -1,0 +1,44 @@
+diff --git a/scripts/verify.sh b/scripts/verify.sh
+new file mode 100755
+index 0000000..b0a0b0a
+--- /dev/null
++++ b/scripts/verify.sh
+@@ -0,0 +1,44 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# Frozen global verification entrypoint.
++# Must be runnable from repo root, non-interactive, deterministic.
++
++cd "$(dirname "${BASH_SOURCE[0]}")/.."
++
++fail() {
++  echo "[verify] ERROR: $*" >&2
++  exit 1
++}
++
++run_if_exists() {
++  local cmd="$1"
++  if command -v "$cmd" >/dev/null 2>&1; then
++    shift
++    "$cmd" "$@"
++    return 0
++  fi
++  return 1
++}
++
++echo "[verify] repo: $(pwd)"
++
++# Ensure a clean, deterministic environment.
++export LC_ALL=C
++export LANG=C
++export TZ=UTC
++
++# Run checks that require no additional dependencies.
++if run_if_exists git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
++  echo "[verify] git: ok"
++else
++  fail "not a git repository"
++fi
++
++echo "[verify] done"

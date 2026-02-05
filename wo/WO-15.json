@@ -1,0 +1,21 @@
+{
+  "id": "WO-15",
+  "title": "WO-15: Verification hardening (run unit tests)",
+  "intent": "Extend scripts/verify.sh to run unit tests deterministically now that tests exist.",
+  "allowed_files": [
+    "scripts/verify.sh"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not add conditional logic or environment-dependent branching; keep verify.sh deterministic and non-interactive."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh"
+  ],
+  "context_files": [
+    "scripts/verify.sh"
+  ],
+  "notes": "Type: hardening. Contracts (preserved): scripts/verify.sh remains the frozen global verification entrypoint. Add one line to run tests using the correct unittest discovery form: `python -m unittest discover -q`. Keep compileall first. Compositionality: makes verification stricter only after tests exist, preserving earlier invariants."
+}
+

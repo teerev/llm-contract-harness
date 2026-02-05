@@ -1,0 +1,1 @@
+scripts/verify.sh: line 3: cd: "scripts/..: No such file or directory

@@ -1,0 +1,23 @@
+{
+  "id": "WO-13",
+  "title": "WO-13: CLI render implementation",
+  "intent": "Implement the CLI render subcommand so it reads a JSON spec file and writes a deterministic PNG to the requested output path.",
+  "allowed_files": [
+    "lsysviz/cli.py"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not change the frozen CLI flags or subcommand names.",
+    "Do not change rendering semantics in this step; only wire CLI to the existing render pipeline."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh",
+    "python -c \"import json, tempfile, os, subprocess; d=tempfile.mkdtemp(); spec=os.path.join(d,'spec.json'); out=os.path.join(d,'out.png'); json.dump({'axiom':'F','rules':{'F':'F+F'},'iterations':1,'angle_degrees':90,'step':5,'width':32,'height':32}, open(spec,'w')); subprocess.check_call(['python','-m','lsysviz','render','--spec',spec,'--out',out]); assert open(out,'rb').read(8)==b'\\x89PNG\\r\\n\\x1a\\n'\""
+  ],
+  "context_files": [
+    "lsysviz/cli.py"
+  ],
+  "notes": "Type: additive-feature. Contracts (preserved): CLI remains `python -m lsysviz render --spec <path> --out <path>`. This step must implement file IO only: load JSON, call parse_spec, call render_png_bytes, write bytes to the output path. It must not introduce new flags, config formats, or rendering options. Compositionality: isolates IO adapter wiring to a single module and leaves core rendering logic unchanged."
+}
+

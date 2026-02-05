@@ -1,0 +1,11 @@
+diff --git a/scripts/verify.sh b/scripts/verify.sh
+new file mode 100755
+index 0000000..c0d0fb0
+--- /dev/null
++++ b/scripts/verify.sh
+@@ -0,0 +1,5 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname \"$0\")/.."
++python -m compileall -q .
++python -m unittest -q discover

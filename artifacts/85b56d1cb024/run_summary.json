@@ -1,0 +1,56 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.03222574992105365,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/85b56d1cb024/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/85b56d1cb024/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "apply_ok": true,
+      "attempt_index": 1,
+      "baseline_commit": "68ec3e77a3a817ac9bd49c43ceaf0c1dc49efb77",
+      "failure_brief": null,
+      "patch_path": "/Users/user/repos/aos/artifacts/85b56d1cb024/attempt_1/proposed_patch.diff",
+      "touched_files": [
+        "lsysviz/__init__.py",
+        "lsysviz/__main__.py",
+        "lsysviz/cli.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.04347849986515939,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/85b56d1cb024/attempt_1/verify_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/85b56d1cb024/attempt_1/verify_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ]
+    }
+  ],
+  "ended_stage": "success",
+  "ended_utc": "2026-02-05T19:27:45+00:00",
+  "max_attempts": 2,
+  "repo_baseline_commit": "68ec3e77a3a817ac9bd49c43ceaf0c1dc49efb77",
+  "repo_path": "/Users/user/repos/lsystem-plants",
+  "repo_tree_hash_after": "2c0c1cadb4b5c374e0e902273c72bcf7b3d71b058347b164e43d9d289b016ab1",
+  "repo_tree_hash_before": "47d8c78155a51a4f8accc70d6ffd6a171dbbf205ba8e26e79200e222c114a5f6",
+  "run_id": "85b56d1cb024",
+  "started_utc": "2026-02-05T19:27:36+00:00",
+  "verdict": "PASS",
+  "work_order_hash": "c8142ae3b56a0792b567383e7069d55eef834f962cc279094f47912eb9daf969",
+  "work_order_path": "/Users/user/repos/aos/wo/WO-02.json"
+}

@@ -1,0 +1,104 @@
+diff --git a/lsysviz/spec.py b/lsysviz/spec.py
+index e69de29..b7c2a1f 100644
+--- a/lsysviz/spec.py
++++ b/lsysviz/spec.py
+@@ -0,0 +1,109 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Any, Dict, Mapping
++
++
++@dataclass(frozen=True)
++class Spec:
++    axiom: str
++    rules: Dict[str, str]
++    iterations: int
++    angle_degrees: float
++    step: float
++    width: int
++    height: int
++
++
++_REQUIRED_KEYS = {
++    "axiom",
++    "rules",
++    "iterations",
++    "angle_degrees",
++    "step",
++    "width",
++    "height",
++}
++
++
++def _fail(msg: str) -> None:
++    raise ValueError(msg)
++
++
++def _require_type(name: str, value: Any, typ: type) -> None:
++    if type(value) is not typ:
++        _fail(f"{name} must be {typ.__name__}")
++
++
++def parse_spec(obj: Any) -> Spec:
++    if type(obj) is not dict:
++        _fail("spec must be a JSON object")
++
++    keys = set(obj.keys())
++    missing = _REQUIRED_KEYS - keys
++    if missing:
++        _fail(f"missing required keys: {', '.join(sorted(missing))}")
++    unknown = keys - _REQUIRED_KEYS
++    if unknown:
++        _fail(f"unknown keys: {', '.join(sorted(unknown))}")
++
++    axiom = obj["axiom"]
++    _require_type("axiom", axiom, str)
++
++    rules = obj["rules"]
++    if type(rules) is not dict:
++        _fail("rules must be an object")
++    parsed_rules: Dict[str, str] = {}
++    for k, v in rules.items():
++        if type(k) is not str or len(k) != 1:
++            _fail("rules keys must be single-character strings")
++        if type(v) is not str:
++            _fail("rules values must be strings")
++        parsed_rules[k] = v
++
++    iterations = obj["iterations"]
++    _require_type("iterations", iterations, int)
++    if iterations < 0:
++        _fail("iterations must be >= 0")
++
++    angle_degrees = obj["angle_degrees"]
++    if type(angle_degrees) not in (int, float):
++        _fail("angle_degrees must be a number")
++    angle_degrees_f = float(angle_degrees)
++
++    step = obj["step"]
++    if type(step) not in (int, float):
++        _fail("step must be a number")
++    step_f = float(step)
++    if step_f <= 0:
++        _fail("step must be > 0")
++
++    width = obj["width"]
++    _require_type("width", width, int)
++    if width <= 0:
++        _fail("width must be > 0")
++
++    height = obj["height"]
++    _require_type("height", height, int)
++    if height <= 0:
++        _fail("height must be > 0")
++
++    return Spec(
++        axiom=axiom,
++        rules=parsed_rules,
++        iterations=iterations,
++        angle_degrees=angle_degrees_f,
++        step=step_f,
++        width=width,
++        height=height,
++    )

@@ -1,0 +1,20 @@
+{
+  "id": "WO-01",
+  "title": "WO-01: Freeze global verification command",
+  "intent": "Add and freeze a global verification command runnable from repo root.",
+  "allowed_files": [
+    "scripts/verify.sh"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not add conditional tool-based logic (no checking for npm, git, etc.). Keep scripts/verify.sh minimal and always-run.",
+    "Do not attempt to run unit tests in this step. Tests do not exist yet and unittest discovery may exit nonzero when no tests are present."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh"
+  ],
+  "context_files": [],
+  "notes": "Type: scaffold. Contracts: scripts/verify.sh is the frozen global verification entrypoint and must be included in every future work order's acceptance commands. It must be non-interactive and deterministic, and it must run all automated checks without manual inspection. Implement scripts/verify.sh as exactly 3 lines (no extra blank lines): (1) #!/usr/bin/env bash (2) set -euo pipefail (3) python -m compileall -q . Make it executable (100755). Do NOT include any cd command; the harness runs this script from the repo root. Patch formatting requirement: for the new-file hunk use @@ -0,0 +1,3 @@ and ensure the count matches exactly 3 added '+' lines (no truncation). Compositionality: later work orders may strengthen verification by adding tests and then extending verify.sh to run them, but the command path and non-interactive deterministic behavior must remain."
+}
+

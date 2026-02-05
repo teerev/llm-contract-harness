@@ -1,0 +1,20 @@
+{
+  "id": "WO-05",
+  "title": "WO-05: Deterministic L-system expansion core",
+  "intent": "Implement deterministic L-system string expansion from axiom and rules for a fixed number of iterations.",
+  "allowed_files": [
+    "lsysviz/expand.py"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not implement turtle interpretation, rasterization, PNG encoding, or CLI changes in this step."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh",
+    "python -c \"from lsysviz.expand import expand; assert expand('F', {'F':'FF'}, 2) == 'FFFF'\""
+  ],
+  "context_files": [],
+  "notes": "Type: additive-feature. Contracts (frozen): expansion applies replacement rules simultaneously per iteration; symbols without a rule are copied through unchanged; iterations=0 returns the axiom unchanged. The function must be deterministic and free of side effects. Patch formatting requirement: keep the diff valid for git apply; ensure hunk header line counts match actual changes. Compositionality: this isolates the core rewrite logic so later steps can build rendering on top without reinterpreting expansion semantics."
+}
+

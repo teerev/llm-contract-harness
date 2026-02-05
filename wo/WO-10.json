@@ -1,0 +1,23 @@
+{
+  "id": "WO-10",
+  "title": "WO-10: PNG encoder v1 (deterministic, stdlib)",
+  "intent": "Create a minimal deterministic PNG encoder that converts an RGBA buffer into PNG bytes using only the Python standard library.",
+  "allowed_files": [
+    "lsysviz/png.py"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not implement render pipeline wiring or CLI changes in this step.",
+    "Do not write any nondeterministic metadata chunks (e.g. no tIME).",
+    "Keep lsysviz/png.py small (aim for <= 200 lines)."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh",
+    "python -c \"from lsysviz.png import encode_png; b=encode_png(1,1,bytes([255,0,0,255])); assert b[:8]==b'\\x89PNG\\r\\n\\x1a\\n'\"",
+    "python -c \"from lsysviz.png import encode_png; px=bytes([1,2,3,4])*4; b1=encode_png(2,2,px); b2=encode_png(2,2,px); assert b1==b2\""
+  ],
+  "context_files": [],
+  "notes": "Type: additive-feature. Contracts (frozen): encode_png(width:int,height:int,rgba_bytes:bytes)->bytes returns a valid PNG for color type 6 (RGBA, 8-bit). The output must be byte-for-byte deterministic for identical inputs and must not include time-dependent metadata. Use only stdlib (e.g. zlib, struct, binascii) and a fixed scanline filter (filter type 0) with fixed compression settings. Compositionality: isolates file-format concerns so the renderer can treat PNG encoding as a pure deterministic function."
+}
+

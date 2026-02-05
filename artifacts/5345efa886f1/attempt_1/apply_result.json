@@ -1,0 +1,13 @@
+{
+  "apply_ok": true,
+  "command": [
+    "git",
+    "apply",
+    "--whitespace=nowarn",
+    "/Users/user/repos/aos/artifacts/5345efa886f1/attempt_1/proposed_patch.diff"
+  ],
+  "exit_code": 0,
+  "touched_files": [
+    "scripts/verify.sh"
+  ]
+}

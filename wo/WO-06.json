@@ -1,0 +1,22 @@
+{
+  "id": "WO-06",
+  "title": "WO-06: Turtle interpreter v1 (no stack)",
+  "intent": "Create a minimal deterministic turtle interpreter that converts an expanded L-system string into an ordered list of 2D line segments.",
+  "allowed_files": [
+    "lsysviz/turtle.py"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not implement bracket stack handling ([ and ]) or the non-drawing move command (f) in this step (defer to WO-07).",
+    "Do not implement rasterization, PNG encoding, render pipeline wiring, or CLI changes in this step.",
+    "Keep lsysviz/turtle.py small (aim for <= 150 lines)."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh",
+    "python -c \"from lsysviz.turtle import to_segments; segs = to_segments('F+F', angle_degrees=90, step=10); assert len(segs) == 2\""
+  ],
+  "context_files": [],
+  "notes": "Type: additive-feature. Contracts (frozen): segment output format is a list of ((x0,y0),(x1,y1)) float tuples in world coordinates. Deterministic semantics in this step: 'F' draws forward by step (adds one segment), '+' turns left by angle_degrees, '-' turns right by angle_degrees; all other symbols are ignored (no-op). Heading convention is frozen: start at (0.0, 0.0) with heading_degrees=0 pointing up (+Y). Compositionality: isolates geometry interpretation; stack/branching is added later without changing the v1 command semantics."
+}
+

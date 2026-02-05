@@ -1,0 +1,54 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.033410083036869764,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/8bcddfd71b80/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/8bcddfd71b80/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "apply_ok": true,
+      "attempt_index": 1,
+      "baseline_commit": "23214ce1349bde3d814c1b4cb52271b4d4865215",
+      "failure_brief": null,
+      "patch_path": "/Users/user/repos/aos/artifacts/8bcddfd71b80/attempt_1/proposed_patch.diff",
+      "touched_files": [
+        "scripts/verify.sh"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.04065262502990663,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/8bcddfd71b80/attempt_1/verify_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/8bcddfd71b80/attempt_1/verify_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ]
+    }
+  ],
+  "ended_stage": "success",
+  "ended_utc": "2026-02-05T19:25:21+00:00",
+  "max_attempts": 2,
+  "repo_baseline_commit": "23214ce1349bde3d814c1b4cb52271b4d4865215",
+  "repo_path": "/Users/user/repos/lsystem-plants",
+  "repo_tree_hash_after": "47d8c78155a51a4f8accc70d6ffd6a171dbbf205ba8e26e79200e222c114a5f6",
+  "repo_tree_hash_before": "09b9e6351d7075162def7edbf31455bd2fc4395559d40a7b182536d3e191a48e",
+  "run_id": "8bcddfd71b80",
+  "started_utc": "2026-02-05T19:25:15+00:00",
+  "verdict": "PASS",
+  "work_order_hash": "48bdf4f93e879829fa2f7db2e6ca6dd3688775244bb4065e17d93af626e2ab60",
+  "work_order_path": "/Users/user/repos/aos/wo/WO-01.json"
+}

@@ -1,0 +1,3 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+AttributeError: 'NoneType' object has no attribute 'axiom'

@@ -1,0 +1,19 @@
+{
+  "id": "WO-16",
+  "title": "WO-16: Minimal documentation",
+  "intent": "Add minimal documentation describing the frozen CLI and JSON spec schema and how determinism is enforced.",
+  "allowed_files": [
+    "README.md"
+  ],
+  "forbidden": [
+    "Do not modify files outside allowed_files.",
+    "Do not add new dependencies.",
+    "Do not change any code behavior in this step (documentation only)."
+  ],
+  "acceptance_commands": [
+    "bash scripts/verify.sh"
+  ],
+  "context_files": [],
+  "notes": "Type: documentation. Contracts (preserved): CLI remains `python -m lsysviz render --spec <path> --out <path>`. The JSON spec schema remains frozen as defined in lsysviz/spec.py (required keys only). Determinism is enforced by unit tests and global verification. Compositionality: documentation reduces ambiguity without changing semantics."
+}
+
