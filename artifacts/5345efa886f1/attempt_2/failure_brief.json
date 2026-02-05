@@ -1,7 +1,0 @@
-{
-  "command": "bash scripts/verify.sh",
-  "constraints_reminder": "Global verification must run before acceptance. Global verify is EXACTLY: if scripts/verify.sh exists run `bash scripts/verify.sh`, else run `python -m compileall -q .`, `python -m pip --version`, `python -m pytest -q`. Acceptance commands must be run via shlex.split() with no shell, and changes must be limited to allowed_files.",
-  "exit_code": 2,
-  "primary_error_excerpt": "usage: python -m unittest [-h] [-v] [-q] [--locals] [--durations N] [-f] [-c]\n                          [-b] [-k TESTNAMEPATTERNS]\n                          [tests ...]\npython -m unittest: error: unrecognized arguments: -s .",
-  "stage": "verify_failed"
-}

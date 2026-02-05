@@ -1,20 +1,19 @@
-# PROMPT.md — One-shot code generation prompt
+# PROMPT.md — Cursor one-shot generation wrapper
 
 You are an expert Python engineer.
 
-**You MUST read `AGENTS.md` fully first and follow it exactly.**
-Do not begin implementing until you have read AGENTS.md.
+You MUST:
+1) Read `AGENTS.md` fully before writing any code.
+2) Implement the repository EXACTLY as specified in `AGENTS.md`.
+3) Do not invent requirements, files, commands, stages, schemas, or behaviors not explicitly required by `AGENTS.md`.
+4) If anything is ambiguous, choose the simplest valid interpretation and document it in `README.md` under “Assumptions”.
 
-Now generate the complete codebase described in AGENTS.md, implementing the deterministic SE → TR → PO factory harness with in-situ git-based rollback and the exact global verification rules.
+Strict compliance:
+- Follow the required package tree and file-creation boundary exactly.
+- Follow the CLI contract exactly.
+- Follow the determinism, preflight, rollback, and verification rules exactly.
+- Follow the LLM I/O contract exactly.
+- Follow artifacts + JSON requirements exactly.
 
-Critical reminders (must comply):
-- Git repos only + clean working tree preflight; refuse otherwise.
-- LLM outputs JSON with keys `{unified_diff, summary}` only; strict parsing; unified diff must be applyable by `git apply`.
-- No `shell=True` anywhere; deterministic command runner with timeouts.
-- Patch scope enforced from diff headers; only `allowed_files`.
-- On failure after patch apply: rollback to baseline using `git reset --hard <baseline>` then `git clean -fd`.
-- Global verify is EXACTLY: if scripts/verify.sh exists run `bash scripts/verify.sh`, else run:
-  1) python -m compileall -q .
-  2) python -m pip --version
-  3) python -m pytest -q
-- Output must follow the Output Contract in AGENTS.md (files only, no extra commentary).
+When finished, follow the Output Contract in `AGENTS.md` exactly:
+- Output ONLY the requested file list and full file contents, with no extra commentary.

@@ -3,8 +3,8 @@
 ## 0) Mission (what you are building)
 Build a minimal, deterministic **factory harness** in Python that runs a strict **SE → TR → PO** loop using LangGraph:
 
-- **SE (Software Engineer)**: an LLM proposes a **direct-write plan** (structured JSON) containing *complete file contents* for the files it wants to change.
-- **TR (Tool Runner / Applier)**: deterministically validates + applies those writes **in-situ** to a product repo (no patch application).
+- **SE (Software Engineer)**: an LLM proposes **DIRECT FILE WRITES** (full new contents for each touched file), as strict JSON.
+- **TR (Tool Runner / Applier)**: deterministically validates scope + preconditions and performs **in-situ atomic writes** to the product repo.
 - **PO (Verifier / Judge)**: deterministically runs **global verification** + **acceptance commands** and returns PASS/FAIL.
 - The harness (not the LLM) controls retries, rollback, routing, artifacts, and termination.
 
@@ -39,13 +39,13 @@ No workspace copying in this minimal version.
 
 - Record `baseline_commit = git rev-parse HEAD` at preflight.
 - Each attempt must start from `baseline_commit`.
-- On any failure after applying changes, rollback deterministically:
+- On any failure after applying writes, rollback deterministically:
   - `git reset --hard <baseline_commit>`
   - `git clean -fd`
 - WARNING: `git clean -fd` is destructive. This is why clean-tree preflight is mandatory.
 
 ### 2.4 Sharp boundary: LLM proposes, harness decides
-- The LLM may only propose a **direct-write plan** + brief summary.
+- The LLM may only propose **direct writes** + brief summary.
 - The LLM never runs commands and never decides whether failures matter.
 - Routing/termination decisions are deterministic and implemented in the harness.
 
@@ -55,22 +55,30 @@ For every attempt:
 2) Then run `acceptance_commands` from the work order (in order).
 Any nonzero exit code is failure.
 
-### 2.6 Write scope enforcement (computed from plan, not LLM intent)
+### 2.6 Write scope enforcement (computed from proposal, not LLM “claims”)
 - Work orders provide `allowed_files` as explicit relative paths (no globs).
-- The harness must enforce:
-  - `touched_files` (derived from plan keys) ⊆ `allowed_files`
+- The harness must compute touched files from the proposal and enforce:
+  - proposed file paths ⊆ allowed_files
 - If violation: reject with stage `write_scope_violation`.
 
-### 2.7 Structured failure feedback (bounded)
+### 2.7 Stale-context protection (precondition hashes; MANDATORY)
+Direct writes are dangerous without a precondition.
+
+- For every file the LLM proposes to write, it must include `base_sha256` of the file content it *believes* it is editing.
+- TR must compute the current file SHA256 in the repo before writing.
+- If mismatch: reject with stage `stale_context` and do NOT write anything.
+- This prevents “LLM edited an older version and overwrote a newer one”.
+
+### 2.8 Structured failure feedback (bounded)
 - Convert failures into a bounded `FailureBrief` for SE retries.
 - Never paste full logs into the LLM prompt.
 - Store full logs to files; pass only a short excerpt.
 
-### 2.8 Minimal dependencies
+### 2.9 Minimal dependencies
 - Dependencies: stdlib + `pydantic` + `langgraph` + whatever is strictly required to call the LLM.
 - No DB, no queue, no remote VM logic.
 
-### 2.9 Required package tree (MUST MATCH EXACTLY)
+### 2.10 Required package tree (MUST MATCH EXACTLY)
 Create exactly these files under `factory/` (no extra Python modules unless absolutely required; if required, justify in README):
 
 factory/
@@ -83,15 +91,15 @@ factory/
 - run.py
 - schemas.py
 - util.py
-- workspace.py  (repurposed: git helpers + rollback; NOT a temp workspace copier)
+- workspace.py  (git helpers + rollback; NOT a temp workspace copier)
 
-### 2.10 File creation boundary (strict)
+### 2.11 File creation boundary (strict)
 - Do not create any files outside `factory/` except:
   - `README.md`
   - `example_work_order.json`
 - Do not create: `requirements.txt`, `pyproject.toml`, lockfiles, additional docs, CI configs, or extra folders.
 
-### 2.11 LLM client contract (strict)
+### 2.12 LLM client contract (strict)
 - Implement `factory/llm.py` using the official `openai` Python package only.
 - Use **Chat Completions** (not Responses API).
 - Call `client.chat.completions.create(...)` and return `choices[0].message.content` as raw string.
@@ -140,19 +148,24 @@ Validation rules:
 - Simplest rule for subset:
   - require `context_files ⊆ allowed_files` (strict and safe). Document in README.
 
-### 4.2 WritePlan (REPLACES PatchProposal)
-The SE must output a JSON object with keys exactly:
-- `writes: { "<relpath>": "<utf8_text_contents>" }`
+### 4.2 WriteProposal (DIRECT WRITES)
+Define:
+
 - `summary: str`
+- `writes: list[FileWrite]`
+
+Where `FileWrite` has:
+- `path: str`  (relative, normalized)
+- `base_sha256: str`  (hex sha256 of the current file content; for new files use sha256 of empty bytes)
+- `content: str`  (full new file content; text only)
 
 Rules:
 - `writes` must be non-empty.
-- Every key in `writes` must be a normalized relative path.
-- All writes are **full-file replaces** (not partial edits).
-- Only UTF-8 text is supported in this minimal version (no binary).
+- No binary writes.
+- Enforce size limits deterministically (suggested: max 200 KB per file, max 500 KB total) and document in README.
 
 ### 4.3 FailureBrief
-- `stage: str`  (one of stages below)
+- `stage: str` (one of stages below)
 - `command: str | None`
 - `exit_code: int | None`
 - `primary_error_excerpt: str`
@@ -162,7 +175,8 @@ Allowed stages:
 - `preflight`
 - `llm_output_invalid`
 - `write_scope_violation`
-- `write_apply_failed`
+- `stale_context`
+- `write_failed`
 - `verify_failed`
 - `acceptance_failed`
 - `exception`
@@ -179,69 +193,23 @@ Allowed stages:
 ### 4.5 AttemptRecord
 - `attempt_index: int`
 - `baseline_commit: str`
-- `write_plan_path: str`
+- `proposal_path: str`
 - `touched_files: list[str]`
-- `apply_ok: bool`
+- `write_ok: bool`
 - `verify: list[CmdResult]`
 - `acceptance: list[CmdResult]`
 - `failure_brief: FailureBrief | None`
 
 ### 4.6 RunSummary
-- `run_id: str`
-- `repo_path: str`
-- `work_order_path: str`
-- `work_order_hash: str`
-- `repo_baseline_commit: str`
-- `repo_tree_hash_before: str`
-- `repo_tree_hash_after: str`
-- `max_attempts: int`
-- `attempts: list[AttemptRecord]`
-- `verdict: str`  (`"PASS"` or `"FAIL"`)
-- `ended_stage: str`
-- `started_utc: str`
-- `ended_utc: str`
+Same as before, but record `repo_tree_hash_after` only on PASS (or always if you prefer; must be deterministic).
 
 ## 5) Deterministic IDs and hashing (must implement)
-(unchanged from previous design)
-
-### 5.1 Canonical JSON hashing for work orders
-- Load the work order JSON.
-- Re-serialize to canonical JSON bytes:
-  - sorted keys
-  - no whitespace (separators=(",", ":"))
-  - UTF-8 encoding
-- `work_order_hash = sha256(canonical_bytes).hexdigest()`
-
-### 5.2 Stable repo tree hash (before/after)
-Implement stable tree hashing:
-- Walk repo root recursively and include regular files only.
-- Exclude directories: `.git`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.venv`, `venv`, `env`, `node_modules`.
-- Exclude the outdir if it is inside repo (but preflight must prevent that anyway).
-- Sort all relative file paths.
-- Hash bytes of: `relpath + b"\0" + file_bytes + b"\0"` for each file in order.
-
-### 5.3 config_hash
-Compute `config_hash = sha256(f"{llm_model}|{llm_temperature}|{max_attempts}|{timeout_seconds}".encode("utf-8")).hexdigest()`
-
-### 5.4 run_id
-Compute:
-`run_id = sha256((work_order_hash + repo_tree_hash_before + config_hash).encode("utf-8")).hexdigest()[:12]`
-
-No timestamps in run_id.
+(unchanged from prior spec)
 
 ## 6) Core behavior spec (MUST FOLLOW)
 
 ### 6.1 Preflight steps
-Given `repo_path`, `work_order_path`, `out_dir`:
-- Resolve and validate paths.
-- Ensure out_dir exists (create).
-- Ensure out_dir is NOT inside repo (hard error if it is).
-- Verify repo is a git repo (e.g., `git rev-parse --is-inside-work-tree`).
-- Verify working tree is clean:
-  - `git status --porcelain` must be empty.
-- Record:
-  - baseline_commit = `git rev-parse HEAD`
-  - repo_tree_hash_before
+(unchanged from prior spec)
 
 ### 6.2 Attempt loop
 For attempt_index in 1..max_attempts:
@@ -253,26 +221,28 @@ For attempt_index in 1..max_attempts:
      - forbidden list
      - context_files contents (bounded)
      - FailureBrief if present
-     - explicit instruction: output JSON with keys `writes` and `summary` only (no markdown).
+     - explicit instruction: output JSON with keys `writes` and `summary` only
+     - explicit instruction: include `base_sha256` for every write
    - Call LLM via `llm.complete()`.
    - Strictly parse output:
-     - must parse to WritePlan
-     - `writes` must be non-empty
-     - all write keys must be normalized relative paths
+     - must parse to WriteProposal
+     - writes must be non-empty
    - If parse fails: FailureBrief(stage="llm_output_invalid") and this attempt is a FAIL with no repo changes.
 
 2) **TR node**:
-   - Derive `touched_files = sorted(writes.keys())`.
-   - Normalize touched file paths and enforce:
-     - touched_files ⊆ allowed_files
-   - If violation: FailureBrief(stage="write_scope_violation") and FAIL.
-   - Apply writes deterministically:
-     - For each file in touched_files, write bytes `content.encode("utf-8")` to `<repo_root>/<path>`.
-     - Create parent directories if needed ONLY if the target path is in allowed_files.
-     - Write via a safe deterministic function:
-       - write to `.<name>.factory_tmp` then `os.replace(...)` to target (atomic replace).
-   - If any write fails: FailureBrief(stage="write_apply_failed") and FAIL.
-   - Record apply_result.json.
+   - Compute touched files from `writes[*].path`.
+   - Normalize touched file paths.
+   - Enforce touched_files ⊆ allowed_files.
+     - If violation: FailureBrief(stage="write_scope_violation") and FAIL.
+   - For each write:
+     - Read current file bytes if exists else empty bytes.
+     - Compute sha256 and compare to `base_sha256`.
+     - If mismatch: FailureBrief(stage="stale_context") and FAIL (do not write anything).
+   - Apply writes atomically:
+     - Write to a temp file in the same directory, fsync if simplest, then rename/replace.
+     - Ensure parent dirs exist only if the file path is allowed and inside repo.
+   - If any write fails: FailureBrief(stage="write_failed") and FAIL.
+   - Record write_result.json.
 
 3) **PO node**:
    - Run global verification commands (see §6.5).
@@ -280,60 +250,23 @@ For attempt_index in 1..max_attempts:
    - If verify passes, run acceptance commands in order.
    - If any acceptance command fails: FailureBrief(stage="acceptance_failed") and FAIL.
    - If all pass: PASS.
-   - OPTIONAL BUT RECOMMENDED HYGIENE: after PASS, remove untracked junk created by verification (e.g. `__pycache__/`) by running deterministic `git clean -fd` OR a narrower clean policy. If you do this, log it as an artifact.
 
-4) **On FAIL after any apply attempt begins**:
+4) **On FAIL after any writes**:
    - Roll back deterministically:
      - `git reset --hard <baseline_commit>`
      - `git clean -fd`
    - Continue if attempts remain.
-   - On any FAIL after the attempt starts (including scope violation or apply failure), run rollback commands to guarantee baseline state.
 
 5) **On PASS**:
-   - Leave changes in repo (no auto-commit in this minimal version).
+   - Leave changes in repo (no auto-commit).
    - Compute `repo_tree_hash_after`.
    - End success.
 
-### 6.3 Termination
-- PASS only if verify + all acceptance commands succeed in an attempt.
-- Otherwise FAIL after max attempts.
-- ended_stage for RunSummary should be:
-  - `"success"` on PASS
-  - else the final FailureBrief.stage (or `"exception"`)
-
-### 6.4 Deterministic command runner requirements
-(unchanged)
-
-Implement one runner used everywhere:
-- Takes `command: list[str]`, `cwd: Path`, `timeout_seconds: int`.
-- Uses `subprocess.run` with:
-  - `text=True`, `encoding="utf-8"`, `errors="replace"`,
-  - `capture_output=True`,
-  - `timeout=...`,
-  - `check=False`
-- Writes full stdout/stderr to files (paths returned in CmdResult).
-- Stores truncated versions in CmdResult:
-  - truncation rule: last 200 lines OR last 8000 chars.
-- Measures duration using monotonic clock.
-
 ### 6.5 EXACT global verification command rules (NO AMBIGUITY)
-Global verification is defined as:
-
-- If `<repo>/scripts/verify.sh` exists and is a file:
-  - Run it as: `["bash", "scripts/verify.sh"]`
-- Else run this fixed fallback list, in order:
-
-1) `["python", "-m", "compileall", "-q", "."]`
-2) `["python", "-m", "pip", "--version"]`
-3) `["python", "-m", "pytest", "-q"]`
+(unchanged from prior spec)
 
 ### 6.6 Acceptance command execution rules
-- Each acceptance command is provided as a string in WorkOrder.
-- Convert each command string into argv deterministically:
-  - Use `shlex.split()` (POSIX mode) to create `list[str]`.
-  - Never run through a shell.
-- Run each with the deterministic runner in repo root.
-- Any nonzero exit code => acceptance_failed.
+(unchanged from prior spec)
 
 ## 7) Artifacts spec (minimal, exact)
 Write artifacts under:
@@ -341,74 +274,38 @@ Write artifacts under:
 `<out>/<run_id>/attempt_<N>/`
 
 Per attempt:
-- `write_plan.json` (the exact SE output JSON or the parsed canonical version)
-- `apply_result.json` (whether apply succeeded, touched_files, write errors if any)
-- `verify_result.json` (list[CmdResult] from global verify)
-- `acceptance_result.json` (list[CmdResult] from acceptance commands)
+- `proposed_writes.json` (exact WriteProposal JSON)
+- `write_result.json` (write_ok, touched_files, any errors)
+- `verify_result.json`
+- `acceptance_result.json`
 - `failure_brief.json` (if fail)
-- Full logs: for each command, write stdout/stderr files (paths referenced in CmdResult)
+- Full logs for each command (stdout/stderr files)
 
 At end write:
 - `<out>/<run_id>/run_summary.json`
 
-JSON requirements:
-- UTF-8
-- pretty-printed
-- stable keys ordering where feasible
-
 ## 8) LangGraph requirements (graph structure)
-Define a LangGraph that encodes the loop. The harness must be readable and boring.
-
-State should include at least:
-- repo_path, out_dir, work_order, work_order_path
-- attempt_index, max_attempts
-- baseline_commit
-- failure_brief (optional)
-- write_plan (optional)
-- attempt_records (list)
-- verdict (optional)
-
-Flow:
-START → SE → TR → PO
-- If PO PASS → END success
-- If PO FAIL and attempts remain → SE (with failure_brief)
-- If PO FAIL and attempts exhausted → END failure
-
-Routing decisions are deterministic and based only on state.
+Same structure, but state fields align to direct writes:
+- proposal (WriteProposal) not diff
+- write_ok not apply_ok
 
 ## 9) File responsibilities (must follow)
 - `schemas.py`: pydantic models + load/save helpers.
-- `util.py`: hashing, truncation, json IO, canonical json bytes, command runner, path validation helpers, safe atomic write helper.
+- `util.py`: hashing, truncation, json IO, canonical json bytes, command runner, path validation helpers.
 - `workspace.py`: git helpers (is_git_repo, is_clean, baseline, rollback).
-- `llm.py`: thin LLM wrapper (instantiate model, complete()) + strict parsing helper.
-- `nodes_se.py`: SE prompt construction + LLM call + parse to WritePlan.
-- `nodes_tr.py`: derive touched_files from WritePlan keys + scope checks + apply writes + apply_result emission.
-- `nodes_po.py`: run verify + acceptance + FailureBrief extraction + rollback on FAIL.
+- `llm.py`: thin LLM wrapper + strict parsing helper.
+- `nodes_se.py`: SE prompt construction + LLM call + parse to WriteProposal.
+- `nodes_tr.py`: scope checks + base hash checks + atomic file writes + write_result emission.
+- `nodes_po.py`: run verify + acceptance + FailureBrief extraction.
 - `graph.py`: LangGraph definition and routing.
-- `run.py`: CLI entry logic (invoked by __main__), orchestrates run, artifact dirs, run_summary.
+- `run.py`: CLI entry logic, orchestrates run, artifact dirs, run_summary.
 - `__main__.py`: argparse wiring, calls run.run_cli().
 
 ## 10) Implementation order (MANDATORY)
-Implement in this order:
-1) schemas.py
-2) util.py
-3) workspace.py
-4) llm.py
-5) nodes_se.py
-6) nodes_tr.py
-7) nodes_po.py
-8) graph.py
-9) run.py + __main__.py
-10) README.md + example work order JSON
+(unchanged)
 
 ## 11) Output contract (MANDATORY)
-When you finish, output ONLY:
-1) A file list
-2) Full contents of each file under `factory/` (exactly)
-3) A minimal README.md
-4) A minimal example work order JSON
-
-No extra commentary.
+(unchanged)
 
 ## 12) Compliance checklist (self-check before final output)
 - [ ] Only required `factory/` files were created (plus README + example JSON).
@@ -416,9 +313,8 @@ No extra commentary.
 - [ ] No `shell=True` anywhere.
 - [ ] Git repo + clean-tree preflight enforced.
 - [ ] Rollback uses baseline commit + `git clean -fd`.
-- [ ] WritePlan parsing is strict; JSON keys must be exactly {writes, summary}.
-- [ ] Scope enforcement uses touched_files from writes.keys() ⊆ allowed_files.
-- [ ] Writes use deterministic UTF-8 and atomic replace (temp file + os.replace).
+- [ ] Scope enforcement uses writes[*].path ⊆ allowed_files.
+- [ ] Stale-context enforced via base_sha256 checks.
 - [ ] Global verify command rules match §6.5 exactly.
 - [ ] Acceptance commands use shlex.split and never a shell.
 - [ ] Artifacts emitted to the specified paths.

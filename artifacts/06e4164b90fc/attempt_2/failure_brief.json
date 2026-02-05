@@ -1,7 +1,0 @@
-{
-  "command": "git apply --whitespace=nowarn /Users/user/repos/aos/artifacts/06e4164b90fc/attempt_2/proposed_patch.diff",
-  "constraints_reminder": "Patch must be a unified diff applyable by `git apply --whitespace=nowarn` and must only touch allowed_files (scope is enforced from diff headers).",
-  "exit_code": 128,
-  "primary_error_excerpt": "error: corrupt patch at line 216",
-  "stage": "patch_apply_failed"
-}

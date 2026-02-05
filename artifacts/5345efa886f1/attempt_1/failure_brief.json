@@ -1,7 +1,0 @@
-{
-  "command": "bash scripts/verify.sh",
-  "constraints_reminder": "Global verification must run before acceptance. Global verify is EXACTLY: if scripts/verify.sh exists run `bash scripts/verify.sh`, else run `python -m compileall -q .`, `python -m pip --version`, `python -m pytest -q`. Acceptance commands must be run via shlex.split() with no shell, and changes must be limited to allowed_files.",
-  "exit_code": 1,
-  "primary_error_excerpt": "======================================================================\nERROR: discover (unittest.loader._FailedTest.discover)\n----------------------------------------------------------------------\nImportError: Failed to import test module: discover\nTraceback (most recent call last):\n  File \"/Users/user/.pyenv/versions/3.12.12/lib/python3.12/unittest/loader.py\", line 137, in loadTestsFromName\n    module = __import__(module_name)\n             ^^^^^^^^^^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'discover'\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)",
-  "stage": "verify_failed"
-}

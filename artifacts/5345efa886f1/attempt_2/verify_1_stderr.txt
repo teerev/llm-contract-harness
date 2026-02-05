@@ -1,4 +1,0 @@
-usage: python -m unittest [-h] [-v] [-q] [--locals] [--durations N] [-f] [-c]
-                          [-b] [-k TESTNAMEPATTERNS]
-                          [tests ...]
-python -m unittest: error: unrecognized arguments: -s .

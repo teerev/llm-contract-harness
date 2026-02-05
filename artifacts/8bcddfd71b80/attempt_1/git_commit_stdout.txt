@@ -1,3 +1,0 @@
-[main 68ec3e7] WO-01: Freeze global verification command
- 1 file changed, 3 insertions(+)
- create mode 100755 scripts/verify.sh
