@@ -1,5 +1,0 @@
-pydantic
-langchain-core
-langchain-openai
-langgraph
-pyyaml
