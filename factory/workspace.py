@@ -118,3 +118,18 @@ def cmdresult_to_failure_excerpt(res: CmdResult) -> str:
 def format_cmd(res: CmdResult) -> str:
     return cmd_to_string(res.command)
 
+
+def clean_untracked(repo_root: Path, timeout_seconds: int, log_dir: Path) -> None:
+    """
+    Remove untracked files/dirs. Safe because preflight requires a clean tree.
+    This is used to remove __pycache__/ and other artifacts created by verify/acceptance.
+    """
+    res = run_command(
+        command=["git", "clean", "-fd"],
+        cwd=repo_root,
+        timeout_seconds=timeout_seconds,
+        log_dir=log_dir,
+        log_name="git_clean",
+    )
+    if res.exit_code != 0:
+        raise RuntimeError(f"git clean -fd failed: {res.stderr_trunc or res.stdout_trunc}")

@@ -112,6 +112,16 @@ def run_cli(argv: list[str] | None = None) -> int:
         final_state: dict[str, Any] = graph.invoke(initial_state)  # type: ignore[assignment]
 
         verdict = str(final_state.get("verdict") or "FAIL")
+
+        if verdict == "PASS":
+          # Remove untracked artifacts created by verify/acceptance (e.g. __pycache__/).
+            from factory.workspace import clean_untracked
+            clean_untracked(
+                repo_root=repo_root,
+                timeout_seconds=int(args.timeout_seconds),
+                log_dir=(run_dir / "attempt_1"),
+            )
+
         ended_stage = str(final_state.get("ended_stage") or "exception")
         attempt_records = list(final_state.get("attempt_records") or [])
 
