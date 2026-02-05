@@ -86,6 +86,22 @@ factory/
 - util.py
 - workspace.py  (repurposed: git helpers + rollback; NOT a temp workspace copier)
 
+### 2.10 File creation boundary (strict)
+- Do not create any files outside `factory/` except:
+  - `README.md`
+  - `example_work_order.json`
+- Do not create: `requirements.txt`, `pyproject.toml`, lockfiles, additional docs, CI configs, or extra folders.
+
+### 2.11 LLM client contract (strict)
+- Implement `factory/llm.py` using the official `openai` Python package only.
+- Use **Chat Completions** (not Responses API).
+- Call `client.chat.completions.create(...)` and return `choices[0].message.content` as raw string.
+- No streaming, no tool calls, no multi-message handling.
+- Read `OPENAI_API_KEY` from environment (your .env is fine as long as the shell loads it); fail fast if missing.
+- If the `openai` package cannot be imported: raise RuntimeError with a clear message.
+- Use model name from `--llm-model`, temperature from `--llm-temperature`.
+
+
 ## 3) CLI requirements (must implement)
 Command:
 
@@ -263,6 +279,8 @@ For attempt_index in 1..max_attempts:
      - `git reset --hard <baseline_commit>`
      - `git clean -fd`
    - Continue if attempts remain.
+   - On any FAIL after the attempt starts (including scope violation or apply failure), run rollback commands to guarantee baseline state.
+
 
 5) **On PASS**:
    - Leave changes in repo (no auto-commit in this minimal version).
@@ -366,6 +384,8 @@ Routing decisions are deterministic and based only on state.
 - `graph.py`: LangGraph definition and routing.
 - `run.py`: CLI entry logic (invoked by __main__), orchestrates run, artifact dirs, run_summary.
 - `__main__.py`: argparse wiring, calls run.run_cli().
+- `llm.py`: thin LLM wrapper (instantiate model, complete()) + strict parsing helper.
+
 
 ## 10) Implementation order (MANDATORY)
 Implement in this order:
