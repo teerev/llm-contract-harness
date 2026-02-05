@@ -3,8 +3,8 @@
 ## 0) Mission (what you are building)
 Build a minimal, deterministic **factory harness** in Python that runs a strict **SE → TR → PO** loop using LangGraph:
 
-- **SE (Software Engineer)**: an LLM proposes a **unified diff patch** only.
-- **TR (Tool Runner / Applier)**: deterministically validates + applies the patch **in-situ** to a product repo.
+- **SE (Software Engineer)**: an LLM proposes a **direct-write plan** (structured JSON) containing *complete file contents* for the files it wants to change.
+- **TR (Tool Runner / Applier)**: deterministically validates + applies those writes **in-situ** to a product repo (no patch application).
 - **PO (Verifier / Judge)**: deterministically runs **global verification** + **acceptance commands** and returns PASS/FAIL.
 - The harness (not the LLM) controls retries, rollback, routing, artifacts, and termination.
 
@@ -39,13 +39,13 @@ No workspace copying in this minimal version.
 
 - Record `baseline_commit = git rev-parse HEAD` at preflight.
 - Each attempt must start from `baseline_commit`.
-- On any failure after applying a patch, rollback deterministically:
+- On any failure after applying changes, rollback deterministically:
   - `git reset --hard <baseline_commit>`
   - `git clean -fd`
 - WARNING: `git clean -fd` is destructive. This is why clean-tree preflight is mandatory.
 
 ### 2.4 Sharp boundary: LLM proposes, harness decides
-- The LLM may only propose a unified diff patch + brief summary.
+- The LLM may only propose a **direct-write plan** + brief summary.
 - The LLM never runs commands and never decides whether failures matter.
 - Routing/termination decisions are deterministic and implemented in the harness.
 
@@ -55,12 +55,11 @@ For every attempt:
 2) Then run `acceptance_commands` from the work order (in order).
 Any nonzero exit code is failure.
 
-### 2.6 Patch scope enforcement (computed from diff, not LLM)
+### 2.6 Write scope enforcement (computed from plan, not LLM intent)
 - Work orders provide `allowed_files` as explicit relative paths (no globs).
-- The harness must compute touched files from the diff headers and enforce:
-  - touched files ⊆ allowed_files
-- If violation: reject with stage `patch_scope_violation`.
-- Do not trust any file list produced by the LLM.
+- The harness must enforce:
+  - `touched_files` (derived from plan keys) ⊆ `allowed_files`
+- If violation: reject with stage `write_scope_violation`.
 
 ### 2.7 Structured failure feedback (bounded)
 - Convert failures into a bounded `FailureBrief` for SE retries.
@@ -97,10 +96,9 @@ factory/
 - Use **Chat Completions** (not Responses API).
 - Call `client.chat.completions.create(...)` and return `choices[0].message.content` as raw string.
 - No streaming, no tool calls, no multi-message handling.
-- Read `OPENAI_API_KEY` from environment (your .env is fine as long as the shell loads it); fail fast if missing.
+- Read `OPENAI_API_KEY` from environment; fail fast if missing.
 - If the `openai` package cannot be imported: raise RuntimeError with a clear message.
 - Use model name from `--llm-model`, temperature from `--llm-temperature`.
-
 
 ## 3) CLI requirements (must implement)
 Command:
@@ -142,9 +140,16 @@ Validation rules:
 - Simplest rule for subset:
   - require `context_files ⊆ allowed_files` (strict and safe). Document in README.
 
-### 4.2 PatchProposal
-- `unified_diff: str`
+### 4.2 WritePlan (REPLACES PatchProposal)
+The SE must output a JSON object with keys exactly:
+- `writes: { "<relpath>": "<utf8_text_contents>" }`
 - `summary: str`
+
+Rules:
+- `writes` must be non-empty.
+- Every key in `writes` must be a normalized relative path.
+- All writes are **full-file replaces** (not partial edits).
+- Only UTF-8 text is supported in this minimal version (no binary).
 
 ### 4.3 FailureBrief
 - `stage: str`  (one of stages below)
@@ -156,8 +161,8 @@ Validation rules:
 Allowed stages:
 - `preflight`
 - `llm_output_invalid`
-- `patch_scope_violation`
-- `patch_apply_failed`
+- `write_scope_violation`
+- `write_apply_failed`
 - `verify_failed`
 - `acceptance_failed`
 - `exception`
@@ -174,7 +179,7 @@ Allowed stages:
 ### 4.5 AttemptRecord
 - `attempt_index: int`
 - `baseline_commit: str`
-- `patch_path: str`
+- `write_plan_path: str`
 - `touched_files: list[str]`
 - `apply_ok: bool`
 - `verify: list[CmdResult]`
@@ -197,6 +202,7 @@ Allowed stages:
 - `ended_utc: str`
 
 ## 5) Deterministic IDs and hashing (must implement)
+(unchanged from previous design)
 
 ### 5.1 Canonical JSON hashing for work orders
 - Load the work order JSON.
@@ -221,7 +227,7 @@ Compute `config_hash = sha256(f"{llm_model}|{llm_temperature}|{max_attempts}|{ti
 Compute:
 `run_id = sha256((work_order_hash + repo_tree_hash_before + config_hash).encode("utf-8")).hexdigest()[:12]`
 
-No timestamps in run_id. Timestamps may be used only for human-readable logs.
+No timestamps in run_id.
 
 ## 6) Core behavior spec (MUST FOLLOW)
 
@@ -247,24 +253,25 @@ For attempt_index in 1..max_attempts:
      - forbidden list
      - context_files contents (bounded)
      - FailureBrief if present
-     - explicit instruction: output JSON with keys `unified_diff` and `summary` only
+     - explicit instruction: output JSON with keys `writes` and `summary` only (no markdown).
    - Call LLM via `llm.complete()`.
    - Strictly parse output:
-     - must parse to PatchProposal
-     - unified_diff must be non-empty and contain diff headers
+     - must parse to WritePlan
+     - `writes` must be non-empty
+     - all write keys must be normalized relative paths
    - If parse fails: FailureBrief(stage="llm_output_invalid") and this attempt is a FAIL with no repo changes.
 
 2) **TR node**:
-   - Compute touched files from diff headers (must implement robustly):
-     - accept `diff --git a/<path> b/<path>` lines
-     - accept `+++ b/<path>` lines as fallback
-   - Normalize touched file paths.
-   - Enforce touched files ⊆ allowed_files.
-   - If violation: FailureBrief(stage="patch_scope_violation") and FAIL.
-   - Apply patch using git (no shell=True):
-     - Prefer: `git apply --whitespace=nowarn --unsafe-paths` is NOT allowed. Do NOT use unsafe-paths.
-     - Use: `git apply --whitespace=nowarn`
-   - If apply fails: FailureBrief(stage="patch_apply_failed") and FAIL.
+   - Derive `touched_files = sorted(writes.keys())`.
+   - Normalize touched file paths and enforce:
+     - touched_files ⊆ allowed_files
+   - If violation: FailureBrief(stage="write_scope_violation") and FAIL.
+   - Apply writes deterministically:
+     - For each file in touched_files, write bytes `content.encode("utf-8")` to `<repo_root>/<path>`.
+     - Create parent directories if needed ONLY if the target path is in allowed_files.
+     - Write via a safe deterministic function:
+       - write to `.<name>.factory_tmp` then `os.replace(...)` to target (atomic replace).
+   - If any write fails: FailureBrief(stage="write_apply_failed") and FAIL.
    - Record apply_result.json.
 
 3) **PO node**:
@@ -273,14 +280,14 @@ For attempt_index in 1..max_attempts:
    - If verify passes, run acceptance commands in order.
    - If any acceptance command fails: FailureBrief(stage="acceptance_failed") and FAIL.
    - If all pass: PASS.
+   - OPTIONAL BUT RECOMMENDED HYGIENE: after PASS, remove untracked junk created by verification (e.g. `__pycache__/`) by running deterministic `git clean -fd` OR a narrower clean policy. If you do this, log it as an artifact.
 
-4) **On FAIL after patch apply**:
+4) **On FAIL after any apply attempt begins**:
    - Roll back deterministically:
      - `git reset --hard <baseline_commit>`
      - `git clean -fd`
    - Continue if attempts remain.
    - On any FAIL after the attempt starts (including scope violation or apply failure), run rollback commands to guarantee baseline state.
-
 
 5) **On PASS**:
    - Leave changes in repo (no auto-commit in this minimal version).
@@ -295,6 +302,8 @@ For attempt_index in 1..max_attempts:
   - else the final FailureBrief.stage (or `"exception"`)
 
 ### 6.4 Deterministic command runner requirements
+(unchanged)
+
 Implement one runner used everywhere:
 - Takes `command: list[str]`, `cwd: Path`, `timeout_seconds: int`.
 - Uses `subprocess.run` with:
@@ -304,7 +313,7 @@ Implement one runner used everywhere:
   - `check=False`
 - Writes full stdout/stderr to files (paths returned in CmdResult).
 - Stores truncated versions in CmdResult:
-  - truncation rule: last 200 lines OR last 8000 chars (choose simplest deterministic method).
+  - truncation rule: last 200 lines OR last 8000 chars.
 - Measures duration using monotonic clock.
 
 ### 6.5 EXACT global verification command rules (NO AMBIGUITY)
@@ -312,17 +321,11 @@ Global verification is defined as:
 
 - If `<repo>/scripts/verify.sh` exists and is a file:
   - Run it as: `["bash", "scripts/verify.sh"]`
-- Else run this fixed fallback list, in order (each as list[str]):
+- Else run this fixed fallback list, in order:
 
 1) `["python", "-m", "compileall", "-q", "."]`
 2) `["python", "-m", "pip", "--version"]`
 3) `["python", "-m", "pytest", "-q"]`
-
-Important notes:
-- Do NOT try to “detect” whether pytest exists. Just run it.
-- If pytest is not installed and this command fails, the harness reports verify_failed.
-- This is intentional: the product repo must provide a sane verify path (prefer scripts/verify.sh).
-- Document this in README clearly.
 
 ### 6.6 Acceptance command execution rules
 - Each acceptance command is provided as a string in WorkOrder.
@@ -338,8 +341,8 @@ Write artifacts under:
 `<out>/<run_id>/attempt_<N>/`
 
 Per attempt:
-- `proposed_patch.diff` (write exactly the unified diff)
-- `apply_result.json` (whether apply succeeded, touched_files, git apply stderr excerpt if failed)
+- `write_plan.json` (the exact SE output JSON or the parsed canonical version)
+- `apply_result.json` (whether apply succeeded, touched_files, write errors if any)
 - `verify_result.json` (list[CmdResult] from global verify)
 - `acceptance_result.json` (list[CmdResult] from acceptance commands)
 - `failure_brief.json` (if fail)
@@ -361,7 +364,7 @@ State should include at least:
 - attempt_index, max_attempts
 - baseline_commit
 - failure_brief (optional)
-- patch_proposal (optional)
+- write_plan (optional)
 - attempt_records (list)
 - verdict (optional)
 
@@ -375,17 +378,15 @@ Routing decisions are deterministic and based only on state.
 
 ## 9) File responsibilities (must follow)
 - `schemas.py`: pydantic models + load/save helpers.
-- `util.py`: hashing, truncation, json IO, canonical json bytes, command runner, path validation helpers.
+- `util.py`: hashing, truncation, json IO, canonical json bytes, command runner, path validation helpers, safe atomic write helper.
 - `workspace.py`: git helpers (is_git_repo, is_clean, baseline, rollback).
 - `llm.py`: thin LLM wrapper (instantiate model, complete()) + strict parsing helper.
-- `nodes_se.py`: SE prompt construction + LLM call + parse to PatchProposal.
-- `nodes_tr.py`: diff touched-file parsing + scope checks + git apply + apply_result emission.
-- `nodes_po.py`: run verify + acceptance + FailureBrief extraction.
+- `nodes_se.py`: SE prompt construction + LLM call + parse to WritePlan.
+- `nodes_tr.py`: derive touched_files from WritePlan keys + scope checks + apply writes + apply_result emission.
+- `nodes_po.py`: run verify + acceptance + FailureBrief extraction + rollback on FAIL.
 - `graph.py`: LangGraph definition and routing.
 - `run.py`: CLI entry logic (invoked by __main__), orchestrates run, artifact dirs, run_summary.
 - `__main__.py`: argparse wiring, calls run.run_cli().
-- `llm.py`: thin LLM wrapper (instantiate model, complete()) + strict parsing helper.
-
 
 ## 10) Implementation order (MANDATORY)
 Implement in this order:
@@ -415,7 +416,9 @@ No extra commentary.
 - [ ] No `shell=True` anywhere.
 - [ ] Git repo + clean-tree preflight enforced.
 - [ ] Rollback uses baseline commit + `git clean -fd`.
-- [ ] Diff touched-file parsing implemented; scope enforcement uses it.
+- [ ] WritePlan parsing is strict; JSON keys must be exactly {writes, summary}.
+- [ ] Scope enforcement uses touched_files from writes.keys() ⊆ allowed_files.
+- [ ] Writes use deterministic UTF-8 and atomic replace (temp file + os.replace).
 - [ ] Global verify command rules match §6.5 exactly.
 - [ ] Acceptance commands use shlex.split and never a shell.
 - [ ] Artifacts emitted to the specified paths.
