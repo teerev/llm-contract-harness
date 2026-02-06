@@ -1,0 +1,45 @@
+[
+  {
+    "command": [
+      "python",
+      "-m",
+      "compileall",
+      "-q",
+      "."
+    ],
+    "duration_seconds": 0.05,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-m",
+      "pip",
+      "--version"
+    ],
+    "duration_seconds": 0.161,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_1_stdout.txt",
+    "stdout_trunc": "pip 25.0.1 from /Users/user/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pip (python 3.12)\n"
+  },
+  {
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q"
+    ],
+    "duration_seconds": 1.118,
+    "exit_code": 5,
+    "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_2_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_2_stdout.txt",
+    "stdout_trunc": "\nno tests ran in 0.39s\n"
+  }
+]

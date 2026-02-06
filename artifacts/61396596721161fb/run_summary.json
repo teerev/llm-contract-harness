@@ -1,0 +1,50 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from hello import greet; assert greet() == 'Hello, World!'"
+          ],
+          "duration_seconds": 0.024,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/61396596721161fb/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/61396596721161fb/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "5497c497ad33ac07027ef029f14d53f029ca3ab7",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts/61396596721161fb/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "hello.py",
+        "scripts/verify.sh"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.053,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/61396596721161fb/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/61396596721161fb/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "5497c497ad33ac07027ef029f14d53f029ca3ab7",
+  "repo_tree_hash_after": "6ecde535bd9036905e4e9bde6d4e706fe5ba56fd",
+  "run_id": "61396596721161fb",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-01"
+}

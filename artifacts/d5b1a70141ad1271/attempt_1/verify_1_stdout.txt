@@ -1,0 +1,1 @@
+pip 25.0.1 from /Users/user/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pip (python 3.12)

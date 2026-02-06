@@ -1,0 +1,18 @@
+{
+  "id": "WO-03",
+  "title": "Add a math_utils module",
+  "intent": "Create math_utils.py with two pure functions: add(a, b) returning a + b, and multiply(a, b) returning a * b.",
+  "allowed_files": [
+    "math_utils.py"
+  ],
+  "forbidden": [
+    "Do not modify any existing files"
+  ],
+  "acceptance_commands": [
+    "python -c \"from math_utils import add, multiply; assert add(2, 3) == 5; assert multiply(4, 5) == 20\""
+  ],
+  "context_files": [
+    "math_utils.py"
+  ],
+  "notes": null
+}

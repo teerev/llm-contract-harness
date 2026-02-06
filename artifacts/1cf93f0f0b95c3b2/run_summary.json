@@ -1,0 +1,49 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from math_utils import add, multiply; assert add(2, 3) == 5; assert multiply(4, 5) == 20"
+          ],
+          "duration_seconds": 0.023,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/1cf93f0f0b95c3b2/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/1cf93f0f0b95c3b2/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "b49e3d7c0d6d491f9068dab671e1e2e7511dc918",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts/1cf93f0f0b95c3b2/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "math_utils.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.058,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/1cf93f0f0b95c3b2/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/1cf93f0f0b95c3b2/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "b49e3d7c0d6d491f9068dab671e1e2e7511dc918",
+  "repo_tree_hash_after": "d9fee68dbdad8d6ab12f4e8842a7c70d73efd6bb",
+  "run_id": "1cf93f0f0b95c3b2",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-03"
+}

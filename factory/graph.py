@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -12,6 +12,37 @@ from factory.nodes_se import se_node
 from factory.nodes_tr import tr_node
 from factory.util import save_json
 from factory.workspace import get_tree_hash, rollback
+
+
+# ---------------------------------------------------------------------------
+# State schema — each key becomes its own LastValue channel so partial
+# node returns only overwrite the keys they explicitly include.
+# ---------------------------------------------------------------------------
+
+
+class FactoryState(TypedDict, total=False):
+    # Configuration (set once at start)
+    work_order: dict
+    repo_root: str
+    baseline_commit: str
+    max_attempts: int
+    timeout_seconds: int
+    llm_model: str
+    llm_temperature: float
+    out_dir: str
+    run_id: str
+    # Per-attempt (reset by finalize between attempts)
+    attempt_index: int
+    proposal: Any          # dict | None
+    touched_files: list
+    write_ok: bool
+    failure_brief: Any     # dict | None
+    verify_results: list
+    acceptance_results: list
+    # Accumulated across attempts
+    attempts: list
+    verdict: str
+    repo_tree_hash_after: Any  # str | None
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +150,7 @@ def _finalize_node(state: dict) -> dict:
 
 def build_graph():
     """Construct and compile the LangGraph factory graph (SE → TR → PO loop)."""
-    graph = StateGraph(dict)
+    graph = StateGraph(FactoryState)
 
     graph.add_node("se", se_node)
     graph.add_node("tr", tr_node)

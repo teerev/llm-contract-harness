@@ -1,0 +1,20 @@
+{
+  "id": "WO-02",
+  "title": "Add farewell function to hello module",
+  "intent": "Edit hello.py to add a farewell() function that returns the string 'Goodbye, World!' while keeping the existing greet() function unchanged.",
+  "allowed_files": [
+    "hello.py"
+  ],
+  "forbidden": [
+    "Do not modify scripts/verify.sh",
+    "Do not create new files",
+    "Do not remove or alter the existing greet() function"
+  ],
+  "acceptance_commands": [
+    "python -c \"from hello import greet, farewell; assert greet() == 'Hello, World!'; assert farewell() == 'Goodbye, World!'\""
+  ],
+  "context_files": [
+    "hello.py"
+  ],
+  "notes": "This edits an existing file. The greet() function must remain exactly as-is. Add farewell() below it."
+}

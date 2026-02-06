@@ -1,0 +1,134 @@
+{
+  "attempts": [
+    {
+      "acceptance": [],
+      "attempt_index": 1,
+      "baseline_commit": "5497c497ad33ac07027ef029f14d53f029ca3ab7",
+      "failure_brief": {
+        "command": "python -m pytest -q",
+        "constraints_reminder": "Global verification must pass before acceptance.",
+        "exit_code": 5,
+        "primary_error_excerpt": "\nno tests ran in 0.39s\n",
+        "stage": "verify_failed"
+      },
+      "proposal_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "hello.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "python",
+            "-m",
+            "compileall",
+            "-q",
+            "."
+          ],
+          "duration_seconds": 0.05,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "pip",
+            "--version"
+          ],
+          "duration_seconds": 0.161,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_1_stdout.txt",
+          "stdout_trunc": "pip 25.0.1 from /Users/user/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pip (python 3.12)\n"
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "pytest",
+            "-q"
+          ],
+          "duration_seconds": 1.118,
+          "exit_code": 5,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_1/verify_2_stdout.txt",
+          "stdout_trunc": "\nno tests ran in 0.39s\n"
+        }
+      ],
+      "write_ok": true
+    },
+    {
+      "acceptance": [],
+      "attempt_index": 2,
+      "baseline_commit": "5497c497ad33ac07027ef029f14d53f029ca3ab7",
+      "failure_brief": {
+        "command": "python -m pytest -q",
+        "constraints_reminder": "Global verification must pass before acceptance.",
+        "exit_code": 5,
+        "primary_error_excerpt": "\nno tests ran in 0.38s\n",
+        "stage": "verify_failed"
+      },
+      "proposal_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/proposed_writes.json",
+      "touched_files": [
+        "hello.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "python",
+            "-m",
+            "compileall",
+            "-q",
+            "."
+          ],
+          "duration_seconds": 0.056,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "pip",
+            "--version"
+          ],
+          "duration_seconds": 0.14,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_1_stdout.txt",
+          "stdout_trunc": "pip 25.0.1 from /Users/user/.pyenv/versions/3.12.12/lib/python3.12/site-packages/pip (python 3.12)\n"
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "pytest",
+            "-q"
+          ],
+          "duration_seconds": 1.078,
+          "exit_code": 5,
+          "stderr_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/d5b1a70141ad1271/attempt_2/verify_2_stdout.txt",
+          "stdout_trunc": "\nno tests ran in 0.38s\n"
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "5497c497ad33ac07027ef029f14d53f029ca3ab7",
+  "repo_tree_hash_after": null,
+  "run_id": "d5b1a70141ad1271",
+  "total_attempts": 2,
+  "verdict": "FAIL",
+  "work_order_id": "WO-01"
+}
