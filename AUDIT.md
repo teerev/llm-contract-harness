@@ -494,11 +494,11 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 
 ### Priority 4 — Low (polish)
 
-#### R13. Enforce `forbidden` list in TR
-**Failure mode mitigated**: LLM writes something explicitly forbidden; harness doesn't catch it.  
-**Where**: `nodes_tr.py`, after scope check. Check write content for forbidden patterns.  
-**Acceptance test**: Submit a write containing a forbidden term; verify rejection.  
-**Note**: The spec is ambiguous on whether `forbidden` is advisory or enforced. Document the decision either way.
+#### R13. Enforce `forbidden` list in TR — NOT ACTIONED (impractical)
+**Status**: **Not actioned**. Inspection of actual work orders (e.g., `WO-01`, `WO-05`) shows that `forbidden` entries are free-form natural-language constraints ("Do not modify worldsim/types.py", "Do not add any dependencies", "Do not mutate the input agents dict"). These cannot be meaningfully enforced via string matching against file content — doing so would produce false positives and miss semantic violations. The underlying issue is that `context_files ⊆ allowed_files` is enforced by the schema, so files the LLM needs to *read* are also technically *writable*; `forbidden` compensates as advisory text. A proper fix would require a schema change (e.g., a separate `read_only_files` field), which is out of scope for a code-only fix.  
+**Failure mode mitigated**: N/A — advisory enforcement via the SE prompt remains the appropriate mechanism.  
+**Where**: N/A.  
+**Acceptance test**: N/A.
 
 #### R14. Ship `example_work_order.json`
 **Failure mode mitigated**: Spec requires it (AGENTS.md §2.11); currently missing.  
