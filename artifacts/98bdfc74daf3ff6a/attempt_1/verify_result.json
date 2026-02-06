@@ -1,0 +1,14 @@
+[
+  {
+    "command": [
+      "bash",
+      "scripts/verify.sh"
+    ],
+    "duration_seconds": 0.06,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts/98bdfc74daf3ff6a/attempt_1/verify_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/98bdfc74daf3ff6a/attempt_1/verify_0_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

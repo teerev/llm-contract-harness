@@ -1,0 +1,7 @@
+{
+  "command": "bash scripts/verify.sh",
+  "constraints_reminder": "Global verification must pass before acceptance.",
+  "exit_code": 2,
+  "primary_error_excerpt": "\n==================================== ERRORS ====================================\n____________________ ERROR collecting tests/test_render.py _____________________\nImportError while importing test module '/Users/user/repos/lsystem-plants/tests/test_render.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n../../.pyenv/versions/3.12.12/lib/python3.12/importlib/__init__.py:90: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests/test_render.py:4: in <module>\n    from PIL import Image\nE   ModuleNotFoundError: No module named 'PIL'\n=========================== short test summary info ============================\nERROR tests/test_render.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.52s\n",
+  "stage": "verify_failed"
+}

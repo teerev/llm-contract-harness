@@ -1,0 +1,72 @@
+{
+  "attempts": [
+    {
+      "acceptance": [],
+      "attempt_index": 1,
+      "baseline_commit": "c35617f1504363dc935b6d97069b660bdd80f54b",
+      "failure_brief": {
+        "command": "bash scripts/verify.sh",
+        "constraints_reminder": "Global verification must pass before acceptance.",
+        "exit_code": 1,
+        "primary_error_excerpt": "......FFFFFF                                                             [100%]\n=================================== FAILURES ===================================\n____________ test_single_F_angle_90_step_10_produces_one_segment_up ____________\n\n    def test_single_F_angle_90_step_10_produces_one_segment_up():\n>       segs = interpret(\"F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:19: TypeError\n________________________ test_FF_produces_two_segments _________________________\n\n    def test_FF_produces_two_segments():\n>       segs = interpret(\"FF\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:25: TypeError\n_______________ test_F_plus_F_angle_90_second_segment_goes_left ________________\n\n    def test_F_plus_F_angle_90_second_segment_goes_left():\n>       segs = interpret(\"F+F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:32: TypeError\n______________ test_F_minus_F_angle_90_second_segment_goes_right _______________\n\n    def test_F_minus_F_angle_90_second_segment_goes_right():\n>       segs = interpret(\"F-F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:40: TypeError\n___ test_push_pop_F_bracket_plus_F_bracket_minus_F_third_starts_after_first ____\n\n    def test_push_pop_F_bracket_plus_F_bracket_minus_F_third_starts_after_first():\n>       segs = interpret(\"F[+F]-F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:48: TypeError\n________ test_unknown_characters_are_ignored_FXF_produces\n...[truncated]",
+        "stage": "verify_failed"
+      },
+      "proposal_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "tests/test_turtle.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 1.24,
+          "exit_code": 1,
+          "stderr_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": "......FFFFFF                                                             [100%]\n=================================== FAILURES ===================================\n____________ test_single_F_angle_90_step_10_produces_one_segment_up ____________\n\n    def test_single_F_angle_90_step_10_produces_one_segment_up():\n>       segs = interpret(\"F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:19: TypeError\n________________________ test_FF_produces_two_segments _________________________\n\n    def test_FF_produces_two_segments():\n>       segs = interpret(\"FF\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:25: TypeError\n_______________ test_F_plus_F_angle_90_second_segment_goes_left ________________\n\n    def test_F_plus_F_angle_90_second_segment_goes_left():\n>       segs = interpret(\"F+F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:32: TypeError\n______________ test_F_minus_F_angle_90_second_segment_goes_right _______________\n\n    def test_F_minus_F_angle_90_second_segment_goes_right():\n>       segs = interpret(\"F-F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:40: TypeError\n___ test_push_pop_F_bracket_plus_F_bracket_minus_F_third_starts_after_first ____\n\n    def test_push_pop_F_bracket_plus_F_bracket_minus_F_third_starts_after_first():\n>       segs = interpret(\"F[+F]-F\", angle=90, step=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'angle'\n\ntests/test_turtle.py:48: TypeError\n________ test_unknown_characters_are_ignored_FXF_produces\n...[truncated]"
+        }
+      ],
+      "write_ok": true
+    },
+    {
+      "acceptance": [],
+      "attempt_index": 2,
+      "baseline_commit": "c35617f1504363dc935b6d97069b660bdd80f54b",
+      "failure_brief": {
+        "command": "bash scripts/verify.sh",
+        "constraints_reminder": "Global verification must pass before acceptance.",
+        "exit_code": 1,
+        "primary_error_excerpt": "......FFFFFF                                                             [100%]\n=================================== FAILURES ===================================\n____________ test_single_F_angle_90_step_10_produces_one_segment_up ____________\n\n    def test_single_F_angle_90_step_10_produces_one_segment_up():\n        # interpret uses parameter names: turn_angle, step_size\n>       segs = interpret(\"F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:20: TypeError\n________________________ test_FF_produces_two_segments _________________________\n\n    def test_FF_produces_two_segments():\n>       segs = interpret(\"FF\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:26: TypeError\n_______________ test_F_plus_F_angle_90_second_segment_goes_left ________________\n\n    def test_F_plus_F_angle_90_second_segment_goes_left():\n        # Default heading is +Y; '+' turns left (CCW), so after one F and a +90 turn,\n        # the next F should go toward -X.\n>       segs = interpret(\"F+F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:35: TypeError\n______________ test_F_minus_F_angle_90_second_segment_goes_right _______________\n\n    def test_F_minus_F_angle_90_second_segment_goes_right():\n        # '-' turns right (CW), so after one F and a -90 turn, the next F should go toward +X.\n>       segs = interpret(\"F-F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:43: TypeError\n___ test_push_pop_F_bracket_plus_F_bracket_minus_F_thir\n...[truncated]",
+        "stage": "verify_failed"
+      },
+      "proposal_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_2/proposed_writes.json",
+      "touched_files": [
+        "tests/test_turtle.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 1.338,
+          "exit_code": 1,
+          "stderr_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_2/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/c4e0b299398599f1/attempt_2/verify_0_stdout.txt",
+          "stdout_trunc": "......FFFFFF                                                             [100%]\n=================================== FAILURES ===================================\n____________ test_single_F_angle_90_step_10_produces_one_segment_up ____________\n\n    def test_single_F_angle_90_step_10_produces_one_segment_up():\n        # interpret uses parameter names: turn_angle, step_size\n>       segs = interpret(\"F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:20: TypeError\n________________________ test_FF_produces_two_segments _________________________\n\n    def test_FF_produces_two_segments():\n>       segs = interpret(\"FF\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:26: TypeError\n_______________ test_F_plus_F_angle_90_second_segment_goes_left ________________\n\n    def test_F_plus_F_angle_90_second_segment_goes_left():\n        # Default heading is +Y; '+' turns left (CCW), so after one F and a +90 turn,\n        # the next F should go toward -X.\n>       segs = interpret(\"F+F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:35: TypeError\n______________ test_F_minus_F_angle_90_second_segment_goes_right _______________\n\n    def test_F_minus_F_angle_90_second_segment_goes_right():\n        # '-' turns right (CW), so after one F and a -90 turn, the next F should go toward +X.\n>       segs = interpret(\"F-F\", turn_angle=90, step_size=10)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE       TypeError: interpret() got an unexpected keyword argument 'turn_angle'\n\ntests/test_turtle.py:43: TypeError\n___ test_push_pop_F_bracket_plus_F_bracket_minus_F_thir\n...[truncated]"
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "c35617f1504363dc935b6d97069b660bdd80f54b",
+  "repo_tree_hash_after": null,
+  "run_id": "c4e0b299398599f1",
+  "total_attempts": 2,
+  "verdict": "FAIL",
+  "work_order_id": "WO-09"
+}

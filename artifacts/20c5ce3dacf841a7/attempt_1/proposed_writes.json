@@ -1,0 +1,15 @@
+{
+  "summary": "Added deterministic unit tests for expand() and updated verification script to run pytest after compileall.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "import pytest\n\nfrom lsysviz.expand import expand\nfrom lsysviz.types import Grammar\n\n\ndef test_expand_zero_iterations_returns_axiom_unchanged():\n    g = Grammar(axiom=\"A\", rules={\"A\": \"AB\"})\n    assert expand(g, 0) == \"A\"\n\n\n@pytest.mark.parametrize(\n    \"iterations, expected\",\n    [\n        (1, \"AB\"),\n        (2, \"ABA\"),\n        (3, \"ABAAB\"),\n    ],\n)\ndef test_expand_fibonacci_lsystem(iterations, expected):\n    g = Grammar(axiom=\"A\", rules={\"A\": \"AB\", \"B\": \"A\"})\n    assert expand(g, iterations) == expected\n\n\ndef test_expand_preserves_characters_not_in_rules():\n    g = Grammar(axiom=\"F+F\", rules={\"F\": \"FF\"})\n    assert expand(g, 1) == \"FF+FF\"\n\n\ndef test_expand_empty_rules_leaves_axiom_unchanged():\n    g = Grammar(axiom=\"F+F\", rules={})\n    assert expand(g, 5) == \"F+F\"\n",
+      "path": "tests/test_expand.py"
+    },
+    {
+      "base_sha256": "87945f9eaa188bf4f4412f9522bb7f40e85e870de32d966c7aee07c921ac5887",
+      "content": "#!/usr/bin/env bash\nset -euo pipefail\npython -m compileall -q .\npython -m pytest -q\n",
+      "path": "scripts/verify.sh"
+    }
+  ]
+}

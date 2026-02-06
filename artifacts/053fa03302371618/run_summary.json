@@ -1,0 +1,49 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import os; assert os.path.isfile('scripts/verify.sh'), 'verify.sh not found'"
+          ],
+          "duration_seconds": 0.024,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/053fa03302371618/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/053fa03302371618/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "3578084bfac3c48c1aa8d28893ee343a41e1f92b",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts/053fa03302371618/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "scripts/verify.sh"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.059,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/053fa03302371618/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/053fa03302371618/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "3578084bfac3c48c1aa8d28893ee343a41e1f92b",
+  "repo_tree_hash_after": "d01e68518dd36d40d6b122416646fa32063f054e",
+  "run_id": "053fa03302371618",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-01"
+}

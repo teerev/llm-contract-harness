@@ -1,0 +1,15 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lsysviz.expand import expand; from lsysviz.types import Grammar; g = Grammar(axiom='A', rules={'A': 'AB', 'B': 'A'}); assert expand(g, 0) == 'A'; assert expand(g, 1) == 'AB'; assert expand(g, 2) == 'ABA'; assert expand(g, 3) == 'ABAAB'"
+    ],
+    "duration_seconds": 0.031,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts/98bdfc74daf3ff6a/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/98bdfc74daf3ff6a/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

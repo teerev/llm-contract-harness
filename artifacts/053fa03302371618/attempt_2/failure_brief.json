@@ -1,0 +1,7 @@
+{
+  "command": null,
+  "constraints_reminder": "LLM API call failed. Check OPENAI_API_KEY and model name.",
+  "exit_code": null,
+  "primary_error_excerpt": "OPENAI_API_KEY environment variable is not set. Set it before running the factory harness.",
+  "stage": "exception"
+}
