@@ -1,8 +1,0 @@
-{
-  "errors": [],
-  "touched_files": [
-    "hello.py",
-    "scripts/verify.sh"
-  ],
-  "write_ok": true
-}
