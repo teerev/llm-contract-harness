@@ -5,7 +5,15 @@ from __future__ import annotations
 import os
 
 from factory.schemas import CmdResult, FailureBrief, WorkOrder
-from factory.util import run_command, save_json, split_command, truncate
+from factory.util import (
+    ARTIFACT_ACCEPTANCE_RESULT,
+    ARTIFACT_VERIFY_RESULT,
+    make_attempt_dir,
+    run_command,
+    save_json,
+    split_command,
+    truncate,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +71,7 @@ def po_node(state: dict) -> dict:
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
 
-    attempt_dir = os.path.join(out_dir, run_id, f"attempt_{attempt_index}")
+    attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
@@ -90,14 +98,14 @@ def po_node(state: dict) -> dict:
                 primary_error_excerpt=truncate(_combined_excerpt(cr)),
                 constraints_reminder="Global verification must pass before acceptance.",
             )
-            save_json(verify_results, os.path.join(attempt_dir, "verify_result.json"))
+            save_json(verify_results, os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
             return {
                 "verify_results": verify_results,
                 "acceptance_results": [],
                 "failure_brief": fb.model_dump(),
             }
 
-    save_json(verify_results, os.path.join(attempt_dir, "verify_result.json"))
+    save_json(verify_results, os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
 
     # ------------------------------------------------------------------
     # 2. Acceptance commands
@@ -121,7 +129,7 @@ def po_node(state: dict) -> dict:
             )
             save_json(
                 acceptance_results,
-                os.path.join(attempt_dir, "acceptance_result.json"),
+                os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT),
             )
             return {
                 "verify_results": verify_results,
@@ -147,7 +155,7 @@ def po_node(state: dict) -> dict:
             )
             save_json(
                 acceptance_results,
-                os.path.join(attempt_dir, "acceptance_result.json"),
+                os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT),
             )
             return {
                 "verify_results": verify_results,
@@ -156,7 +164,7 @@ def po_node(state: dict) -> dict:
             }
 
     save_json(
-        acceptance_results, os.path.join(attempt_dir, "acceptance_result.json")
+        acceptance_results, os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT)
     )
 
     # All passed

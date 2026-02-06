@@ -114,20 +114,17 @@ The artifact output structure is implicitly defined across four files:
 
 ### 2.2 Problems Caused by Current Layout
 
-1. **Artifact path construction is scattered and implicit**. The string `f"attempt_{attempt_index}"` is computed independently in `se_node`, `tr_node`, `po_node`, and `_finalize_node` (4 places). Filenames like `"write_result.json"`, `"failure_brief.json"`, `"proposed_writes.json"` are string literals scattered across modules. There is no single manifest of artifact paths.
+1. ~~**Artifact path construction is scattered and implicit**. The string `f"attempt_{attempt_index}"` is computed independently in `se_node`, `tr_node`, `po_node`, and `_finalize_node` (4 places). Filenames like `"write_result.json"`, `"failure_brief.json"`, `"proposed_writes.json"` are string literals scattered across modules. There is no single manifest of artifact paths.~~ **RESOLVED (Phase 2):** `make_attempt_dir()` helper and 9 `ARTIFACT_*` constants added to `util.py`. All consumers updated.
 
-2. **`failure_brief.json` is written in two different places**: once in `nodes_se.py` (line 188, on LLM exception or parse failure) and again in `graph.py:_finalize_node()` (line 104). The finalize node writes it unconditionally on failure, which means it may overwrite the SE node's version with the same content. This is not a bug (the data is identical) but is confusing and would make testing artifact output harder.
+2. **`failure_brief.json` is written in two different places**: SE node (write-ahead for crash resilience) and `_finalize_node` (canonical write). This is intentional (see Advisory §1B). **Clarified (Phase 2):** Write-ahead comments added to both SE write sites; finalize write site annotated with overwrite semantics.
 
 3. **`attempt_dir` is created via `os.makedirs(..., exist_ok=True)` in all four nodes**. Since SE always runs first, the subsequent `makedirs` calls in TR, PO, and finalize are redundant but harmless.
 
 ### 2.3 Safe Cleanup Actions (Behavior-Preserving)
 
-**Action 2.3.1: Centralize artifact path constants**
+**Action 2.3.1: Centralize artifact path constants** — **DONE (Phase 2)**
 
-- **Files involved**: All node files + `run.py`
-- **Proposed change**: Add a small set of constants or a helper function in `util.py` (or a new section within it) that computes artifact paths given `(out_dir, run_id, attempt_index)`. Example: `def attempt_dir(out_dir, run_id, idx) -> str` and constants like `PROPOSED_WRITES = "proposed_writes.json"`.
-- **Why behavior is unchanged**: Only string construction is centralized; no filesystem or control-flow change.
-- **Regression check**: Verify artifact file paths in a real run remain identical byte-for-byte.
+Added to `util.py`: `make_attempt_dir(out_dir, run_id, attempt_index)` helper and 9 `ARTIFACT_*` string constants (`ARTIFACT_SE_PROMPT`, `ARTIFACT_PROPOSED_WRITES`, `ARTIFACT_RAW_LLM_RESPONSE`, `ARTIFACT_WRITE_RESULT`, `ARTIFACT_VERIFY_RESULT`, `ARTIFACT_ACCEPTANCE_RESULT`, `ARTIFACT_FAILURE_BRIEF`, `ARTIFACT_WORK_ORDER`, `ARTIFACT_RUN_SUMMARY`). All consumers in `nodes_se.py`, `nodes_tr.py`, `nodes_po.py`, `graph.py`, and `run.py` updated to use these. Dynamic log filenames (`verify_N_stdout.txt`, etc.) left inline in `nodes_po.py` since they only appear in one file.
 
 **Action 2.3.2: Create `attempt_dir` once, pass it through state**
 
@@ -136,11 +133,9 @@ The artifact output structure is implicitly defined across four files:
 - **Why behavior is unchanged**: The resulting path string is identical; only the computation location changes.
 - **Regression check**: Diff artifact directory structure between before/after runs.
 
-**Action 2.3.3: Remove duplicate `failure_brief.json` write from SE node**
+**Action 2.3.3: Remove duplicate `failure_brief.json` write from SE node** — **CANCELLED (Advisory §1B)**
 
-- **Files involved**: `nodes_se.py` (remove `save_json(fb.model_dump(), ...)` calls at lines 188 and 211), rely on `_finalize_node` in `graph.py` (line 104) which already persists it.
-- **Why behavior is unchanged**: `_finalize_node` always runs after SE (even on failure—routing sends to finalize), and it writes `failure_brief.json` whenever `failure_brief` is non-None. The file content is identical.
-- **Regression check**: Verify `failure_brief.json` is still present in attempt dirs on SE-stage failures.
+Reclassified as write-ahead resilience, not entropy. SE writes eagerly in case the process is killed before finalize runs. Write-ahead comments added in Phase 2 to document intent. See Advisory §1B for full crash/kill analysis.
 
 🚫 **Unsafe artifact moves**:
 - Moving `se_prompt.txt` or `raw_llm_response.json` writes out of SE node would change the point-in-time at which they are persisted. If the process crashes between SE and finalize, these artifacts would be lost. **Do not move.**
@@ -303,8 +298,9 @@ Each node unpacks what it needs from state dict
 | `MAX_EXCERPT_CHARS` | `util.py:54` | `2000` | `truncate()` |
 | `ALLOWED_STAGES` | `schemas.py:125` | frozenset of 8 strings | `FailureBrief._validate_stage` |
 | `GIT_TIMEOUT_SECONDS` | `workspace.py:11` | `30` | `_git()` default timeout — **added in Phase 1** |
+| `ARTIFACT_*` (9 constants) | `util.py:178–188` | string filenames | Canonical artifact filenames — **added in Phase 2** |
 
-These are all module-level `int` or `frozenset` constants—no mutation, no global state.
+These are all module-level `int`, `frozenset`, or `str` constants—no mutation, no global state.
 
 ### Global State
 
@@ -443,7 +439,7 @@ The following criteria define when `./factory` is ready for comprehensive unit t
 | # | Criterion | Current Status | Blocking Cleanup Step |
 |---|---|---|---|
 | 1 | No duplicate artifact writes for same logical output | `failure_brief.json` written in 2 places (reclassified as write-ahead resilience — see Advisory §1B) | N/A (intentional) |
-| 2 | Artifact path construction centralized | Scattered across 4 files | Phase 2, Step 5 |
+| 2 | Artifact path construction centralized | **DONE (Phase 2)** — `make_attempt_dir()` + 9 `ARTIFACT_*` constants in `util.py` | ~~Phase 2, Step 5~~ Complete |
 | 3 | TR failure paths extracted to single helper | **DONE (Phase 1)** — `_tr_fail()` in `nodes_tr.py` | ~~Step 3~~ Complete |
 | 4 | PO error excerpt construction extracted | **DONE (Phase 1)** — `_combined_excerpt()` in `nodes_po.py` | ~~Step 2~~ Complete |
 | 5 | Truncation behavior consistent | `raw[:500]` is intentional sub-slice (see Advisory §1A) — defer normalization | Phase 3, Step 7 |
@@ -453,7 +449,7 @@ The following criteria define when `./factory` is ready for comprehensive unit t
 | 9 | No global mutable state | Already satisfied | None |
 | 10 | Test seams exist for LLM and subprocess | Not yet; `mock.patch` works but is fragile | Phase 2+ (post-coverage) |
 
-**Minimum bar for test generation**: Phase 1 complete. Phase 2 steps 5–6 remaining, plus Phase 3 step 7 (deferred). Step 8 can be done incrementally as tests are written.
+**Minimum bar for test generation**: Phases 1 and 2 complete. Only Phase 3 step 7 (truncation normalization, deferred) remains. Test seams (step 8) can be added incrementally as tests are written.
 
 **Import-time safety**: `./factory` has no module-level side effects. Importing any module does not trigger filesystem access, network calls, or subprocess execution. This is already test-ready.
 
@@ -643,12 +639,12 @@ Previous order had artifact-altering changes early. Revised order prioritizes pr
 | 3 | Extract TR failure-return helper in `nodes_tr.py` | Zero (byte-identical, verified above) | All imports pass; `save_json` sort_keys=True makes dict order irrelevant | **DONE** |
 | 4 | Remove `RunSummary` from `schemas.py` | Zero (unused class) | `grep -r RunSummary factory/` confirms no remaining references | **DONE** |
 | **Phase 2: Low risk, needs diff verification** | | | | |
-| 5 | Centralize artifact path constants in `util.py` | Low (string construction only) | Full run, diff entire artifact tree | Pending |
-| 6 | Add write-ahead comments to SE's `failure_brief.json` writes | Zero (comment only) | N/A | Pending |
+| 5 | Centralize artifact path constants in `util.py` | Low (string construction only) | All imports pass; grep confirms no stale string literals remain | **DONE** |
+| 6 | Add write-ahead comments to SE's `failure_brief.json` writes | Zero (comment only) | N/A | **DONE** |
 | **Phase 3: Defer until tripwire tests exist** | | | | |
 | 7 | Truncation normalization in `nodes_se.py` | **Pragmatic-preserve only** — changes `failure_brief.json` content and retry prompt | Requires tripwire test that captures exact `failure_brief.json` for `llm_output_invalid` | Blocked |
 | ~~8~~ | ~~Remove duplicate `failure_brief.json` writes~~ | **Reclassified: do not execute** — write-ahead resilience, not entropy | N/A | Cancelled |
 
 **What "tripwire tests" means here**: A minimal test that invokes a node (or the full graph with a mock LLM) for a known-failure scenario, captures the artifact files, and asserts their content byte-for-byte. Once these exist, Phase 3 changes can be made and immediately validated against the captured baseline.
 
-~~**Phase 1 can be executed in a single commit with high confidence.**~~ **Phase 1 is complete.** Phase 2 requires one real run to diff-verify. Phase 3 should not be attempted until tests cover the affected failure paths.
+~~**Phase 1 can be executed in a single commit with high confidence.**~~ **Phase 1 is complete.** ~~Phase 2 requires one real run to diff-verify.~~ **Phase 2 is complete.** Phase 3 should not be attempted until tests cover the affected failure paths.

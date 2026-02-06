@@ -6,7 +6,16 @@ import os
 
 from factory import llm
 from factory.schemas import FailureBrief, WorkOrder, WriteProposal
-from factory.util import save_json, sha256_file, truncate
+from factory.util import (
+    ARTIFACT_FAILURE_BRIEF,
+    ARTIFACT_PROPOSED_WRITES,
+    ARTIFACT_RAW_LLM_RESPONSE,
+    ARTIFACT_SE_PROMPT,
+    make_attempt_dir,
+    save_json,
+    sha256_file,
+    truncate,
+)
 
 MAX_CONTEXT_BYTES = 200 * 1024  # 200 KB total for context-file reading
 
@@ -152,7 +161,7 @@ def se_node(state: dict) -> dict:
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
 
-    attempt_dir = os.path.join(out_dir, run_id, f"attempt_{attempt_index}")
+    attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
     # Failure brief from a prior attempt (if retrying)
@@ -167,7 +176,7 @@ def se_node(state: dict) -> dict:
     prompt = _build_prompt(work_order, context_files, prev_fb)
 
     # Persist the full prompt for post-mortem auditability
-    prompt_path = os.path.join(attempt_dir, "se_prompt.txt")
+    prompt_path = os.path.join(attempt_dir, ARTIFACT_SE_PROMPT)
     with open(prompt_path, "w", encoding="utf-8") as fh:
         fh.write(prompt)
 
@@ -185,7 +194,8 @@ def se_node(state: dict) -> dict:
             primary_error_excerpt=truncate(str(exc)),
             constraints_reminder="LLM API call failed. Check OPENAI_API_KEY and model name.",
         )
-        save_json(fb.model_dump(), os.path.join(attempt_dir, "failure_brief.json"))
+        # Write-ahead: persist now in case process is killed before finalize runs.
+        save_json(fb.model_dump(), os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF))
         return {"proposal": None, "write_ok": False, "failure_brief": fb.model_dump()}
 
     # --- Parse response ---
@@ -206,14 +216,15 @@ def se_node(state: dict) -> dict:
         # Save raw response for debugging
         save_json(
             {"raw_response": raw},
-            os.path.join(attempt_dir, "raw_llm_response.json"),
+            os.path.join(attempt_dir, ARTIFACT_RAW_LLM_RESPONSE),
         )
-        save_json(fb.model_dump(), os.path.join(attempt_dir, "failure_brief.json"))
+        # Write-ahead: persist now in case process is killed before finalize runs.
+        save_json(fb.model_dump(), os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF))
         return {"proposal": None, "write_ok": False, "failure_brief": fb.model_dump()}
 
     # Save proposal artifact
     save_json(
-        proposal.model_dump(), os.path.join(attempt_dir, "proposed_writes.json")
+        proposal.model_dump(), os.path.join(attempt_dir, ARTIFACT_PROPOSED_WRITES)
     )
 
     return {"proposal": proposal.model_dump(), "write_ok": False, "failure_brief": None}

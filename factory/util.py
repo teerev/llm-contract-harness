@@ -168,3 +168,26 @@ def is_path_inside_repo(rel_path: str, repo_root: str) -> bool:
     abs_path = os.path.realpath(os.path.join(repo_root, rel_path))
     abs_root = os.path.realpath(repo_root)
     return abs_path == abs_root or abs_path.startswith(abs_root + os.sep)
+
+
+# ---------------------------------------------------------------------------
+# Artifact path helpers  (Phase 2 — single source of truth for artifact names)
+# ---------------------------------------------------------------------------
+
+# Per-attempt artifact filenames
+ARTIFACT_SE_PROMPT = "se_prompt.txt"
+ARTIFACT_PROPOSED_WRITES = "proposed_writes.json"
+ARTIFACT_RAW_LLM_RESPONSE = "raw_llm_response.json"
+ARTIFACT_WRITE_RESULT = "write_result.json"
+ARTIFACT_VERIFY_RESULT = "verify_result.json"
+ARTIFACT_ACCEPTANCE_RESULT = "acceptance_result.json"
+ARTIFACT_FAILURE_BRIEF = "failure_brief.json"
+
+# Per-run artifact filenames
+ARTIFACT_WORK_ORDER = "work_order.json"
+ARTIFACT_RUN_SUMMARY = "run_summary.json"
+
+
+def make_attempt_dir(out_dir: str, run_id: str, attempt_index: int) -> str:
+    """Return the artifact directory path for a specific attempt."""
+    return os.path.join(out_dir, run_id, f"attempt_{attempt_index}")

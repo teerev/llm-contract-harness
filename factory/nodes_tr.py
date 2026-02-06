@@ -7,7 +7,9 @@ import tempfile
 
 from factory.schemas import FailureBrief, WorkOrder, WriteProposal
 from factory.util import (
+    ARTIFACT_WRITE_RESULT,
     is_path_inside_repo,
+    make_attempt_dir,
     normalize_path,
     save_json,
     sha256_file,
@@ -67,7 +69,7 @@ def _tr_fail(
     save_json(
         {"write_ok": False, "touched_files": touched_files,
          "errors": [fb.primary_error_excerpt]},
-        os.path.join(attempt_dir, "write_result.json"),
+        os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT),
     )
     return {
         "write_ok": False,
@@ -90,7 +92,7 @@ def tr_node(state: dict) -> dict:
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
 
-    attempt_dir = os.path.join(out_dir, run_id, f"attempt_{attempt_index}")
+    attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
     # Normalize paths
@@ -181,7 +183,7 @@ def tr_node(state: dict) -> dict:
     # All writes succeeded
     save_json(
         {"write_ok": True, "touched_files": touched_files, "errors": []},
-        os.path.join(attempt_dir, "write_result.json"),
+        os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT),
     )
     return {
         "write_ok": True,
