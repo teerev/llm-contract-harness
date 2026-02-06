@@ -1,0 +1,83 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; from lsysviz.types import Segment; segs = interpret('F', 90.0, 10.0); assert len(segs) == 1; assert abs(segs[0].y1 - 10.0) < 1e-9"
+          ],
+          "duration_seconds": 0.031,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; segs = interpret('FF', 90.0, 10.0); assert len(segs) == 2"
+          ],
+          "duration_seconds": 0.028,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; segs = interpret('F[+F]F', 90.0, 10.0); assert len(segs) == 3"
+          ],
+          "duration_seconds": 0.027,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_2_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "284b8012d1ee2eee89c6a5fce4eebc50d794d57e",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lsysviz/turtle.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.055,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "284b8012d1ee2eee89c6a5fce4eebc50d794d57e",
+  "config": {
+    "llm_model": "gpt-4o",
+    "llm_temperature": 0,
+    "max_attempts": 5,
+    "out_dir": "/Users/user/repos/aos/examples/artifacts",
+    "repo_root": "/Users/user/repos/worldsim4",
+    "timeout_seconds": 600
+  },
+  "repo_tree_hash_after": "b925881102d00d83a216929488a9db5d10320cdf",
+  "run_id": "38828215dcf67307",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-05"
+}

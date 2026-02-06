@@ -1,0 +1,10 @@
+{
+  "summary": "Implemented the turtle geometry interpreter in lsysviz/turtle.py to convert L-system strings into line segments.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from math import cos, sin, radians\nfrom lsysviz.types import Segment\n\ndef interpret(lstring: str, angle_deg: float, step_length: float) -> list[Segment]:\n    position_stack = []\n    x, y = 0.0, 0.0\n    angle = 90.0  # Start facing upwards\n    segments = []\n\n    for command in lstring:\n        if command == 'F':\n            new_x = x + step_length * cos(radians(angle))\n            new_y = y + step_length * sin(radians(angle))\n            segments.append(Segment(x, y, new_x, new_y))\n            x, y = new_x, new_y\n        elif command == '+':\n            angle += angle_deg\n        elif command == '-':\n            angle -= angle_deg\n        elif command == '[':\n            position_stack.append((x, y, angle))\n        elif command == ']':\n            x, y, angle = position_stack.pop()\n\n    return segments\n",
+      "path": "lsysviz/turtle.py"
+    }
+  ]
+}

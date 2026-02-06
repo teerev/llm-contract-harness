@@ -1,0 +1,54 @@
+You are a software engineer. Propose DIRECT FILE WRITES to implement the requested changes.
+
+## Work Order
+Title: Implement turtle geometry interpreter
+Intent: Create lsysviz/turtle.py with a pure function that converts an L-system string into a list of line segments using turtle-graphics interpretation.
+
+## Allowed Files (you may ONLY write to these paths)
+  - lsysviz/turtle.py
+  - lsysviz/types.py
+
+## Forbidden
+  - Do not modify lsysviz/types.py
+  - Do not modify any other existing files
+
+## Notes
+Define: interpret(lstring: str, angle_deg: float, step_length: float) -> list[Segment]. The turtle starts at position (0.0, 0.0) heading 90 degrees (straight up in standard math coordinates). Supported commands: 'F' = move forward by step_length in current heading direction and record a Segment from old position to new position; '+' = turn left (counter-clockwise) by angle_deg; '-' = turn right (clockwise) by angle_deg; '[' = push current position and heading onto a stack; ']' = pop position and heading from the stack. All other characters are silently ignored. The function must be pure and deterministic. Do NOT modify lsysviz/types.py.
+
+## Current File Contents
+Use the sha256 shown below as the `base_sha256` value in your writes.
+For files that do not exist yet, use the sha256 of empty bytes: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+### lsysviz/turtle.py
+exists: False
+sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+(empty / does not exist)
+
+### lsysviz/types.py
+exists: True
+sha256: acd6556ff72f55ba25dd18c7da8508b359c59357c1fc59a50e77300c801c52d4
+```
+from typing import NamedTuple, Dict
+
+class Grammar(NamedTuple):
+    axiom: str
+    rules: Dict[str, str]
+
+class Segment(NamedTuple):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+```
+
+## Required Output Format (STRICT — no deviations)
+Output ONLY a single JSON object with exactly two keys:
+  "summary"  — a brief description of what you changed
+  "writes"   — an array of objects, each with:
+      "path"        — relative file path (must be in allowed files)
+      "base_sha256" — hex SHA256 of the file's current content (from the sha256 values shown above)
+      "content"     — the COMPLETE new file content as a string
+
+Do NOT wrap the JSON in markdown fences or add any other text.
+Every write must contain the FULL file content, not a partial edit.

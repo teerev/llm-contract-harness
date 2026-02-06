@@ -1,0 +1,48 @@
+You are a software engineer. Propose DIRECT FILE WRITES to implement the requested changes.
+
+## Work Order
+Title: Freeze project layout and package skeleton
+Intent: Create the lsysviz package with __init__.py (version string), __main__.py (entry point), and cli.py (argparse stub with --version flag) to freeze the module layout and 'python -m lsysviz' entry point.
+
+## Allowed Files (you may ONLY write to these paths)
+  - lsysviz/__init__.py
+  - lsysviz/__main__.py
+  - lsysviz/cli.py
+
+## Forbidden
+  - Do not modify scripts/verify.sh
+  - Do not add any L-system logic yet
+  - Do not add any dependencies
+
+## Notes
+lsysviz/__init__.py must define __version__ = '0.1.0'. lsysviz/__main__.py must import main from .cli and call raise SystemExit(main()). lsysviz/cli.py must define build_parser() returning an ArgumentParser with a --version flag, and main(argv=None) that parses args, prints __version__ if --version is passed, otherwise prints help, and returns 0 in both cases. This is scaffold only — no L-system behavior.
+
+## Current File Contents
+Use the sha256 shown below as the `base_sha256` value in your writes.
+For files that do not exist yet, use the sha256 of empty bytes: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+### lsysviz/__init__.py
+exists: False
+sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+(empty / does not exist)
+
+### lsysviz/__main__.py
+exists: False
+sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+(empty / does not exist)
+
+### lsysviz/cli.py
+exists: False
+sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+(empty / does not exist)
+
+## Required Output Format (STRICT — no deviations)
+Output ONLY a single JSON object with exactly two keys:
+  "summary"  — a brief description of what you changed
+  "writes"   — an array of objects, each with:
+      "path"        — relative file path (must be in allowed files)
+      "base_sha256" — hex SHA256 of the file's current content (from the sha256 values shown above)
+      "content"     — the COMPLETE new file content as a string
+
+Do NOT wrap the JSON in markdown fences or add any other text.
+Every write must contain the FULL file content, not a partial edit.

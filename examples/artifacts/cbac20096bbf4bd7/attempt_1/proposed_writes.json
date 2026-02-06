@@ -1,0 +1,20 @@
+{
+  "summary": "Created the lsysviz package with __init__.py, __main__.py, and cli.py to establish the module layout and entry point.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "__version__ = '0.1.0'\n",
+      "path": "lsysviz/__init__.py"
+    },
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from .cli import main\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n",
+      "path": "lsysviz/__main__.py"
+    },
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "import argparse\nfrom . import __version__\n\n\ndef build_parser():\n    parser = argparse.ArgumentParser(description='L-system Visualizer')\n    parser.add_argument('--version', action='store_true', help='Show version information')\n    return parser\n\n\ndef main(argv=None):\n    parser = build_parser()\n    args = parser.parse_args(argv)\n\n    if args.version:\n        print(__version__)\n    else:\n        parser.print_help()\n\n    return 0\n",
+      "path": "lsysviz/cli.py"
+    }
+  ]
+}

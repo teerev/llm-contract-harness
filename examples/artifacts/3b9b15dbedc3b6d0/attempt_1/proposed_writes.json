@@ -1,0 +1,10 @@
+{
+  "summary": "Defined core data types Grammar and Segment using typing.NamedTuple in lsysviz/types.py.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from typing import NamedTuple, Dict\n\nclass Grammar(NamedTuple):\n    axiom: str\n    rules: Dict[str, str]\n\nclass Segment(NamedTuple):\n    x0: float\n    y0: float\n    x1: float\n    y1: float\n",
+      "path": "lsysviz/types.py"
+    }
+  ]
+}

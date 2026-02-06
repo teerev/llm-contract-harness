@@ -1,0 +1,99 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import os; p = '/tmp/lsysviz_factory_test.png'; os.path.isfile(p) and os.remove(p)"
+          ],
+          "duration_seconds": 0.026,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "lsysviz",
+            "--axiom",
+            "F",
+            "--rule",
+            "F=F[+F]F[-F]F",
+            "--iterations",
+            "2",
+            "--angle",
+            "25.7",
+            "--step",
+            "5",
+            "--width",
+            "400",
+            "--height",
+            "400",
+            "--output",
+            "/tmp/lsysviz_factory_test.png"
+          ],
+          "duration_seconds": 0.064,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "import os; assert os.path.isfile('/tmp/lsysviz_factory_test.png'), 'output PNG not created'"
+          ],
+          "duration_seconds": 0.025,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/acceptance_2_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "b50723d7d0f31a86a78eb7e5efc84ce2bf330503",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lsysviz/cli.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.052,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/96fcdba25377d952/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "b50723d7d0f31a86a78eb7e5efc84ce2bf330503",
+  "config": {
+    "llm_model": "gpt-4o",
+    "llm_temperature": 0,
+    "max_attempts": 5,
+    "out_dir": "/Users/user/repos/aos/examples/artifacts",
+    "repo_root": "/Users/user/repos/worldsim4",
+    "timeout_seconds": 600
+  },
+  "repo_tree_hash_after": "50e35c6e236a6242a16e84f1dbc477e9428e6f63",
+  "run_id": "96fcdba25377d952",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-07"
+}

@@ -1,0 +1,15 @@
+{
+  "summary": "Added unit tests for the expand function in tests/test_expand.py and updated scripts/verify.sh to run pytest.",
+  "writes": [
+    {
+      "base_sha256": "d0fd94ca9e257781639c70a5dce22ddc0e1f6e5c8f33cb2b36046afa4695499e",
+      "content": "#!/usr/bin/env bash\nset -euo pipefail\npython -m compileall -q .\npython -m pytest -q",
+      "path": "scripts/verify.sh"
+    },
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from lsysviz.expand import expand\nfrom lsysviz.types import Grammar\n\ndef test_expand_zero_iterations():\n    grammar = Grammar(axiom='A', rules={'A': 'AB'})\n    result = expand(grammar, 0)\n    assert result == 'A'\n\ndef test_expand_fibonacci_lsystem():\n    grammar = Grammar(axiom='A', rules={'A': 'AB', 'B': 'A'})\n    result_1 = expand(grammar, 1)\n    result_2 = expand(grammar, 2)\n    result_3 = expand(grammar, 3)\n    assert result_1 == 'AB'\n    assert result_2 == 'ABA'\n    assert result_3 == 'ABAAB'\n\ndef test_expand_characters_not_in_rules_preserved():\n    grammar = Grammar(axiom='F+F', rules={'F': 'FF'})\n    result = expand(grammar, 1)\n    assert result == 'FF+FF'\n\ndef test_expand_empty_rules():\n    grammar = Grammar(axiom='A', rules={})\n    result = expand(grammar, 1)\n    assert result == 'A'\n",
+      "path": "tests/test_expand.py"
+    }
+  ]
+}

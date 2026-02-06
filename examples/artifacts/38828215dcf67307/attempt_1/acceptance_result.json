@@ -1,0 +1,41 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lsysviz.turtle import interpret; from lsysviz.types import Segment; segs = interpret('F', 90.0, 10.0); assert len(segs) == 1; assert abs(segs[0].y1 - 10.0) < 1e-9"
+    ],
+    "duration_seconds": 0.031,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lsysviz.turtle import interpret; segs = interpret('FF', 90.0, 10.0); assert len(segs) == 2"
+    ],
+    "duration_seconds": 0.028,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lsysviz.turtle import interpret; segs = interpret('F[+F]F', 90.0, 10.0); assert len(segs) == 3"
+    ],
+    "duration_seconds": 0.027,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_2_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/examples/artifacts/38828215dcf67307/attempt_1/acceptance_2_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

@@ -1,0 +1,57 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.expand import expand; from lsysviz.types import Grammar; g = Grammar(axiom='A', rules={'A': 'AB', 'B': 'A'}); assert expand(g, 0) == 'A'; assert expand(g, 1) == 'AB'; assert expand(g, 2) == 'ABA'; assert expand(g, 3) == 'ABAAB'"
+          ],
+          "duration_seconds": 0.028,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/059c4068bc55a096/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/059c4068bc55a096/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "f8ac48bb42438fb10bebd63d7ac2c3b0c2afd089",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/examples/artifacts/059c4068bc55a096/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lsysviz/expand.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.042,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/examples/artifacts/059c4068bc55a096/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/examples/artifacts/059c4068bc55a096/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "f8ac48bb42438fb10bebd63d7ac2c3b0c2afd089",
+  "config": {
+    "llm_model": "gpt-4o",
+    "llm_temperature": 0,
+    "max_attempts": 5,
+    "out_dir": "/Users/user/repos/aos/examples/artifacts",
+    "repo_root": "/Users/user/repos/worldsim4",
+    "timeout_seconds": 600
+  },
+  "repo_tree_hash_after": "158c3a58ccbb67a8c6a529fafae6c94a07463757",
+  "run_id": "059c4068bc55a096",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-04"
+}

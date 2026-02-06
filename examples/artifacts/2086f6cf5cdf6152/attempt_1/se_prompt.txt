@@ -1,0 +1,102 @@
+You are a software engineer. Propose DIRECT FILE WRITES to implement the requested changes.
+
+## Work Order
+Title: Add rendering and determinism tests
+Intent: Create tests/test_render.py with tests for PNG rendering correctness and byte-level determinism.
+
+## Allowed Files (you may ONLY write to these paths)
+  - lsysviz/render.py
+  - lsysviz/types.py
+  - tests/test_render.py
+
+## Forbidden
+  - Do not modify lsysviz/render.py
+  - Do not modify lsysviz/types.py
+  - Do not modify any other existing files
+
+## Notes
+IMPORTANT: Read lsysviz/render.py carefully to learn the EXACT function signature and parameter names of render_to_png(). Use those exact parameter names in every test call. tests/test_render.py must import render_to_png from lsysviz.render and Segment from lsysviz.types. Use tempfile.mkdtemp() for all output files to avoid polluting the repo. Include at least these test cases: (1) rendering a non-empty segment list creates a valid PNG file (check file exists and starts with PNG magic bytes b'\x89PNG'), (2) rendering an empty segment list creates a file (blank white image), (3) determinism: call render_to_png twice with identical inputs to two different paths and assert the file bytes are identical, (4) rendering segments with negative coordinates works without error (the renderer must handle arbitrary coordinate ranges). Import PIL.Image to verify image dimensions if desired. Do NOT guess parameter names — read them from the source.
+
+## Current File Contents
+Use the sha256 shown below as the `base_sha256` value in your writes.
+For files that do not exist yet, use the sha256 of empty bytes: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+### lsysviz/render.py
+exists: True
+sha256: c8365209be7f4cb10c8f2aeed6430630fc2cc2603b291d18977d1d6bbbec3733
+```
+from PIL import Image, ImageDraw
+from lsysviz.types import Segment
+
+
+def render_to_png(segments: list[Segment], width: int, height: int, output_path: str) -> None:
+    # Create a white RGB image
+    image = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(image)
+
+    if not segments:
+        # Save a blank white image if no segments
+        image.save(output_path, 'PNG')
+        return
+
+    # Calculate bounding box of all segments
+    min_x = min(min(segment.x0, segment.x1) for segment in segments)
+    max_x = max(max(segment.x0, segment.x1) for segment in segments)
+    min_y = min(min(segment.y0, segment.y1) for segment in segments)
+    max_y = max(max(segment.y0, segment.y1) for segment in segments)
+
+    # Calculate scale and translation to fit segments within the image with padding
+    padding = 0.1  # 10% padding
+    scale_x = (1 - 2 * padding) * width / (max_x - min_x) if max_x > min_x else 1
+    scale_y = (1 - 2 * padding) * height / (max_y - min_y) if max_y > min_y else 1
+    scale = min(scale_x, scale_y)
+
+    translate_x = padding * width - min_x * scale
+    translate_y = padding * height - min_y * scale
+
+    # Draw each segment as a black line
+    for segment in segments:
+        x0 = segment.x0 * scale + translate_x
+        y0 = segment.y0 * scale + translate_y
+        x1 = segment.x1 * scale + translate_x
+        y1 = segment.y1 * scale + translate_y
+        draw.line((x0, y0, x1, y1), fill='black', width=1)
+
+    # Save the image as PNG
+    image.save(output_path, 'PNG')
+
+```
+
+### lsysviz/types.py
+exists: True
+sha256: acd6556ff72f55ba25dd18c7da8508b359c59357c1fc59a50e77300c801c52d4
+```
+from typing import NamedTuple, Dict
+
+class Grammar(NamedTuple):
+    axiom: str
+    rules: Dict[str, str]
+
+class Segment(NamedTuple):
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+```
+
+### tests/test_render.py
+exists: False
+sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+(empty / does not exist)
+
+## Required Output Format (STRICT — no deviations)
+Output ONLY a single JSON object with exactly two keys:
+  "summary"  — a brief description of what you changed
+  "writes"   — an array of objects, each with:
+      "path"        — relative file path (must be in allowed files)
+      "base_sha256" — hex SHA256 of the file's current content (from the sha256 values shown above)
+      "content"     — the COMPLETE new file content as a string
+
+Do NOT wrap the JSON in markdown fences or add any other text.
+Every write must contain the FULL file content, not a partial edit.

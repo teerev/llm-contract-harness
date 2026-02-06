@@ -1,0 +1,19 @@
+{
+  "acceptance_commands": [
+    "python -c \"from lsysviz.types import Grammar, Segment; g = Grammar(axiom='A', rules={'A': 'B'}); assert g.axiom == 'A'; assert g.rules == {'A': 'B'}; s = Segment(0.0, 0.0, 1.0, 1.0); assert s.x1 == 1.0\""
+  ],
+  "allowed_files": [
+    "lsysviz/types.py"
+  ],
+  "context_files": [
+    "lsysviz/types.py"
+  ],
+  "forbidden": [
+    "Do not modify any existing files",
+    "Do not add any behavior or logic beyond type definitions"
+  ],
+  "id": "WO-03",
+  "intent": "Create lsysviz/types.py defining the Grammar and Segment data types that all subsequent modules will depend on.",
+  "notes": "Use typing.NamedTuple for both types. Grammar has fields: axiom (str) and rules (dict[str, str]) where keys are single characters and values are replacement strings. Segment has fields: x0 (float), y0 (float), x1 (float), y1 (float) representing a line segment endpoint pair. No methods, no defaults, no validation \u2014 just plain immutable data containers.",
+  "title": "Define core data types (Grammar and Segment)"
+}
