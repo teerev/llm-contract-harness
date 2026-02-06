@@ -71,16 +71,21 @@ def get_tree_hash(repo_root: str) -> str:
 
 
 def rollback(repo_root: str, baseline_commit: str) -> None:
-    """Roll back to *baseline_commit*: ``git reset --hard`` + ``git clean -fd``."""
+    """Roll back to *baseline_commit*: ``git reset --hard`` + ``git clean -fdx``.
+
+    Uses ``-fdx`` (not ``-fd``) so that files matching ``.gitignore`` patterns
+    are also removed.  This is safe because the preflight guarantees a clean
+    working tree before the run starts.
+    """
     res = _git(["reset", "--hard", baseline_commit], cwd=repo_root)
     if res.returncode != 0:
         raise RuntimeError(
             f"git reset --hard failed: "
             f"{res.stderr.decode('utf-8', errors='replace')}"
         )
-    res = _git(["clean", "-fd"], cwd=repo_root)
+    res = _git(["clean", "-fdx"], cwd=repo_root)
     if res.returncode != 0:
         raise RuntimeError(
-            f"git clean -fd failed: "
+            f"git clean -fdx failed: "
             f"{res.stderr.decode('utf-8', errors='replace')}"
         )

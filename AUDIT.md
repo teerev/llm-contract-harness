@@ -427,9 +427,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `run.py:44-51`.  
 **Acceptance test**: Pass `--out <repo>/output`; verify the harness refuses with a clear error message.
 
-#### R3. Use `git clean -fdx` instead of `-fd` for rollback
+#### R3. ~~Use `git clean -fdx` instead of `-fd` for rollback~~ — COMPLETED
+**Status**: **DONE**. Changed `workspace.py:81` from `"-fd"` to `"-fdx"`, updated the docstring and error message to match. The docstring now documents why `-fdx` is safe (preflight guarantees a clean tree).  
 **Failure mode mitigated**: Gitignored files created by writes survive rollback, leaving the repo dirty.  
-**Where**: `workspace.py:81` — change `"-fd"` to `"-fdx"`.  
+**Where**: `workspace.py:81`.  
 **Acceptance test**: Write to a `.gitignore`d path, fail PO, verify the file is removed after rollback.  
 **Caveat**: `-fdx` removes ALL untracked files including gitignored ones. This is safe because the preflight guarantees a clean tree, and `git status --porcelain` used in `is_clean()` does NOT show gitignored files. If gitignored files pre-exist, they would be destroyed. **Consider**: either also check `git clean -ndx` in preflight to warn about gitignored files, or document the `-fdx` behavior explicitly.
 
