@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
 
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import compute_run_id, save_json
-from factory.workspace import get_baseline_commit, is_clean, is_git_repo
+from factory.workspace import get_baseline_commit, is_clean, is_git_repo, rollback
 
 
 def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
@@ -79,7 +80,52 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "repo_tree_hash_after": None,
     }
 
-    final_state = graph.invoke(initial_state)
+    try:
+        final_state = graph.invoke(initial_state)
+    except Exception as exc:
+        # ------------------------------------------------------------------
+        # Emergency handling: best-effort rollback + write summary
+        # ------------------------------------------------------------------
+        error_detail = traceback.format_exc()
+
+        # Best-effort rollback — the repo may have writes applied.
+        # Guard against rollback itself failing (e.g. locked index).
+        try:
+            rollback(repo_root, baseline_commit)
+        except Exception as rb_exc:
+            print(
+                f"WARNING: Best-effort rollback failed: {rb_exc}. "
+                "The repo may be in a dirty state. "
+                f"Restore manually with: git -C {repo_root} reset --hard {baseline_commit} "
+                f"&& git -C {repo_root} clean -fd",
+                file=sys.stderr,
+            )
+
+        # Write an emergency run_summary so the run is never invisible.
+        summary_dict = {
+            "run_id": run_id,
+            "work_order_id": work_order.id,
+            "verdict": "ERROR",
+            "total_attempts": 0,
+            "baseline_commit": baseline_commit,
+            "repo_tree_hash_after": None,
+            "attempts": [],
+            "error": str(exc),
+            "error_traceback": error_detail,
+        }
+        summary_path = os.path.join(run_dir, "run_summary.json")
+        try:
+            save_json(summary_dict, summary_path)
+        except Exception:
+            print(
+                f"CRITICAL: Failed to write run summary: {exc}",
+                file=sys.stderr,
+            )
+
+        print(f"Verdict: ERROR (unhandled exception)", file=sys.stderr)
+        print(f"Exception: {exc}", file=sys.stderr)
+        print(f"Run summary: {summary_path}", file=sys.stderr)
+        sys.exit(2)
 
     # ------------------------------------------------------------------
     # Write run_summary.json

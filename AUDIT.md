@@ -415,9 +415,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 
 ### Priority 1 — Critical (fix before production use)
 
-#### R1. Add top-level exception guard around `graph.invoke()`
+#### R1. ~~Add top-level exception guard around `graph.invoke()`~~ — COMPLETED
+**Status**: **DONE**. Implemented in `run.py:83-128`. `graph.invoke()` is now wrapped in a try/except that: (1) performs best-effort rollback (itself guarded against secondary failure), (2) writes an emergency `run_summary.json` with `verdict: "ERROR"`, exception message, and full traceback, and (3) exits with code 2 to distinguish crashes from normal failures.  
 **Failure mode mitigated**: Unhandled exception in any node (rollback failure, shlex parse error, unexpected SDK exception) crashes the process with no summary and a potentially dirty repo.  
-**Where**: `run.py:82` — wrap in try/except, ensure rollback + summary are attempted.  
+**Where**: `run.py:83-128`.  
 **Acceptance test**: Inject a `RuntimeError` into a node; verify `run_summary.json` is written and repo is clean afterward.
 
 #### R2. Validate outdir is not inside repo
