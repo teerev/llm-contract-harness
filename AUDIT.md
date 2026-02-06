@@ -442,10 +442,11 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `nodes_se.py:170-172`.  
 **Acceptance test**: Run a work order; verify `se_prompt.txt` exists in the attempt directory and contains the full prompt.
 
-#### R5. Always persist the raw LLM response
-**Failure mode mitigated**: Cannot audit LLM behavior on successful parses; cannot detect prompt injection or borderline JSON parsing.  
-**Where**: `nodes_se.py`, after `llm.complete()` returns (around line 175). Save to `attempt_N/raw_llm_response.txt` unconditionally.  
-**Acceptance test**: Run a successful attempt; verify `raw_llm_response.txt` exists.
+#### R5. Always persist the raw LLM response — NOT ACTIONED (unnecessary)
+**Status**: **Unnecessary**. On successful parse, the LLM's response is already fully captured in `proposed_writes.json` (which contains the parsed `WriteProposal` — the complete structured content of the response). On parse failure, `raw_llm_response.json` was already saved. The additional `raw_llm_response.txt` file introduced by this recommendation was reverted as redundant.  
+**Failure mode mitigated**: N/A — the parsed proposal artifact already serves this purpose.  
+**Where**: N/A.  
+**Acceptance test**: N/A.
 
 #### R6. Catch exceptions in PO node from `shlex.split`
 **Failure mode mitigated**: Malformed acceptance command string crashes PO node with no FailureBrief and no rollback guarantee.  
