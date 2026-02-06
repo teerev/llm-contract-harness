@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from factory.schemas import FailureBrief, WorkOrder
+from factory.schemas import CmdResult, FailureBrief, WorkOrder
 from factory.util import run_command, save_json, split_command, truncate
 
 
@@ -27,6 +27,26 @@ def _get_verify_commands(repo_root: str) -> list[list[str]]:
         ["python", "-m", "pip", "--version"],
         ["python", "-m", "pytest", "-q"],
     ]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _combined_excerpt(cr: CmdResult) -> str:
+    """Build a combined stderr+stdout excerpt from a failed command result.
+
+    Reproduces the exact concat-then-strip pattern used previously inline:
+    each present section adds ``[label]\\n<content>\\n``; the result is then
+    ``.strip()``-ped so there is no leading/trailing whitespace.
+    """
+    parts: list[str] = []
+    if cr.stderr_trunc:
+        parts.append(f"[stderr]\n{cr.stderr_trunc}")
+    if cr.stdout_trunc:
+        parts.append(f"[stdout]\n{cr.stdout_trunc}")
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -63,16 +83,11 @@ def po_node(state: dict) -> dict:
         verify_results.append(cr.model_dump())
 
         if cr.exit_code != 0:
-            combined = ""
-            if cr.stderr_trunc:
-                combined += f"[stderr]\n{cr.stderr_trunc}\n"
-            if cr.stdout_trunc:
-                combined += f"[stdout]\n{cr.stdout_trunc}\n"
             fb = FailureBrief(
                 stage="verify_failed",
                 command=" ".join(cmd),
                 exit_code=cr.exit_code,
-                primary_error_excerpt=truncate(combined.strip()),
+                primary_error_excerpt=truncate(_combined_excerpt(cr)),
                 constraints_reminder="Global verification must pass before acceptance.",
             )
             save_json(verify_results, os.path.join(attempt_dir, "verify_result.json"))
@@ -123,16 +138,11 @@ def po_node(state: dict) -> dict:
         acceptance_results.append(cr.model_dump())
 
         if cr.exit_code != 0:
-            combined = ""
-            if cr.stderr_trunc:
-                combined += f"[stderr]\n{cr.stderr_trunc}\n"
-            if cr.stdout_trunc:
-                combined += f"[stdout]\n{cr.stdout_trunc}\n"
             fb = FailureBrief(
                 stage="acceptance_failed",
                 command=cmd_str,
                 exit_code=cr.exit_code,
-                primary_error_excerpt=truncate(combined.strip()),
+                primary_error_excerpt=truncate(_combined_excerpt(cr)),
                 constraints_reminder="All acceptance commands must exit 0.",
             )
             save_json(

@@ -8,7 +8,10 @@ from __future__ import annotations
 import subprocess
 
 
-def _git(args: list[str], cwd: str, timeout: int = 30) -> subprocess.CompletedProcess:
+GIT_TIMEOUT_SECONDS: int = 30
+
+
+def _git(args: list[str], cwd: str, timeout: int = GIT_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
     """Run a ``git`` sub-command, capturing output, with no shell."""
     return subprocess.run(
         ["git"] + args,
