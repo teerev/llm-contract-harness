@@ -42,6 +42,15 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         )
         sys.exit(1)
 
+    if out_dir == repo_root or out_dir.startswith(repo_root + os.sep):
+        print(
+            f"ERROR: Output directory ({out_dir}) must not be inside the product repo "
+            f"({repo_root}). Artifacts written there would be affected by git rollback "
+            "and could pollute the tree hash on success.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     baseline_commit = get_baseline_commit(repo_root)
 
     # ------------------------------------------------------------------

@@ -421,9 +421,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `run.py:83-128`.  
 **Acceptance test**: Inject a `RuntimeError` into a node; verify `run_summary.json` is written and repo is clean afterward.
 
-#### R2. Validate outdir is not inside repo
+#### R2. ~~Validate outdir is not inside repo~~ — COMPLETED
+**Status**: **DONE**. Implemented in `run.py:44-51` as a preflight check. After the clean-tree check and before `get_baseline_commit`, the harness now rejects with a clear error if `out_dir == repo_root` or `out_dir` is a subdirectory of `repo_root` (both already canonicalized via `os.path.realpath`).  
 **Failure mode mitigated**: Artifact data loss on rollback; tree hash pollution on PASS.  
-**Where**: `run.py`, after resolving `out_dir` and `repo_root` (around line 18).  
+**Where**: `run.py:44-51`.  
 **Acceptance test**: Pass `--out <repo>/output`; verify the harness refuses with a clear error message.
 
 #### R3. Use `git clean -fdx` instead of `-fd` for rollback
