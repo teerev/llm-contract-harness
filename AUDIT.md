@@ -436,9 +436,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 
 ### Priority 2 — High (significant reliability/auditability improvement)
 
-#### R4. Persist the SE prompt to disk
+#### R4. ~~Persist the SE prompt to disk~~ — COMPLETED
+**Status**: **DONE**. Added in `nodes_se.py` (after `_build_prompt()`, before the LLM call). The full prompt is written as plain text to `attempt_N/se_prompt.txt` on every attempt, including retries.  
 **Failure mode mitigated**: Cannot reconstruct what the LLM was asked during postmortem.  
-**Where**: `nodes_se.py`, after `_build_prompt()` returns (around line 167). Save to `attempt_N/se_prompt.txt`.  
+**Where**: `nodes_se.py:170-172`.  
 **Acceptance test**: Run a work order; verify `se_prompt.txt` exists in the attempt directory and contains the full prompt.
 
 #### R5. Always persist the raw LLM response

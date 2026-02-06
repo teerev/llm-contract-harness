@@ -166,6 +166,11 @@ def se_node(state: dict) -> dict:
     # Build prompt
     prompt = _build_prompt(work_order, context_files, prev_fb)
 
+    # Persist the full prompt for post-mortem auditability
+    prompt_path = os.path.join(attempt_dir, "se_prompt.txt")
+    with open(prompt_path, "w", encoding="utf-8") as fh:
+        fh.write(prompt)
+
     # --- Call LLM ---
     try:
         raw = llm.complete(
