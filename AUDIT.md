@@ -448,14 +448,16 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: N/A.  
 **Acceptance test**: N/A.
 
-#### R6. Catch exceptions in PO node from `shlex.split`
+#### R6. ~~Catch exceptions in PO node from `shlex.split`~~ — COMPLETED
+**Status**: **DONE**. Wrapped `split_command(cmd_str)` in `nodes_po.py` (acceptance command loop) with a `try/except ValueError` that produces a `FailureBrief(stage="acceptance_failed")` with the parse error detail, saves the partial `acceptance_result.json`, and returns cleanly instead of crashing.  
 **Failure mode mitigated**: Malformed acceptance command string crashes PO node with no FailureBrief and no rollback guarantee.  
-**Where**: `nodes_po.py:88` — wrap `split_command(cmd_str)` in try/except, produce `FailureBrief(stage="exception")`.  
+**Where**: `nodes_po.py:88-109`.  
 **Acceptance test**: Work order with acceptance command `"echo 'unterminated`; verify FailureBrief is produced.
 
-#### R7. Add timeout to LLM calls
+#### R7. ~~Add timeout to LLM calls~~ — COMPLETED
+**Status**: **DONE**. Added a `timeout` parameter (default 120s) to both `_get_client()` and `complete()` in `llm.py`. The timeout is passed to the `openai.OpenAI` constructor, which applies it to the underlying `httpx` transport. The caller in `nodes_se.py` now passes `state["timeout_seconds"]` (the CLI `--timeout-seconds` value) as the timeout.  
 **Failure mode mitigated**: Hangs indefinitely if OpenAI API is unresponsive.  
-**Where**: `llm.py:30` — pass `timeout=<timeout_seconds>` to the OpenAI client constructor or the `create()` call.  
+**Where**: `llm.py:9-34`, `nodes_se.py:180`.  
 **Acceptance test**: Mock a non-responding LLM endpoint; verify the call fails within the timeout.
 
 #### R8. Scope `git add` on PASS to only proposal-touched files

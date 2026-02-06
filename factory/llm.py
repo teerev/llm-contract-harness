@@ -6,8 +6,12 @@ import json
 import os
 
 
-def _get_client():  # noqa: ANN202 — return type is openai.OpenAI
-    """Return an OpenAI client; fail fast on missing key or package."""
+def _get_client(timeout: int = 120):  # noqa: ANN202 — return type is openai.OpenAI
+    """Return an OpenAI client; fail fast on missing key or package.
+
+    *timeout* is the per-request timeout in seconds passed to the underlying
+    ``httpx`` transport used by the ``openai`` SDK.
+    """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError(
@@ -21,12 +25,17 @@ def _get_client():  # noqa: ANN202 — return type is openai.OpenAI
             "The 'openai' package is required but not installed. "
             "Install it with: pip install openai"
         )
-    return openai.OpenAI(api_key=api_key)
+    return openai.OpenAI(api_key=api_key, timeout=timeout)
 
 
-def complete(prompt: str, model: str, temperature: float = 0) -> str:
-    """Call the LLM and return ``choices[0].message.content``."""
-    client = _get_client()
+def complete(
+    prompt: str, model: str, temperature: float = 0, timeout: int = 120
+) -> str:
+    """Call the LLM and return ``choices[0].message.content``.
+
+    *timeout* is the per-request timeout in seconds.  Defaults to 120 s.
+    """
+    client = _get_client(timeout=timeout)
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],

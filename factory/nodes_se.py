@@ -177,6 +177,7 @@ def se_node(state: dict) -> dict:
             prompt=prompt,
             model=state["llm_model"],
             temperature=state["llm_temperature"],
+            timeout=state["timeout_seconds"],
         )
     except Exception as exc:
         fb = FailureBrief(
