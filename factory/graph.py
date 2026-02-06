@@ -123,8 +123,10 @@ def _finalize_node(state: dict) -> dict:
     if verdict == "FAIL":
         rollback(repo_root, baseline)
     else:
-        # PASS → compute tree hash (stages changes then writes tree object)
-        repo_tree_hash_after = get_tree_hash(repo_root)
+        # PASS → stage only proposal-touched files, then compute tree hash.
+        # Scoping prevents verification artifacts from polluting the hash.
+        touched = list(state.get("touched_files") or [])
+        repo_tree_hash_after = get_tree_hash(repo_root, touched_files=touched or None)
 
     return {
         "attempts": attempts,

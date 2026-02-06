@@ -49,12 +49,25 @@ def get_baseline_commit(repo_root: str) -> str:
     return result.stdout.decode("utf-8").strip()
 
 
-def get_tree_hash(repo_root: str) -> str:
-    """Stage all changes and return the tree-object hash (deterministic)."""
-    add = _git(["add", "-A"], cwd=repo_root)
+def get_tree_hash(repo_root: str, touched_files: list[str] | None = None) -> str:
+    """Stage changes and return the tree-object hash (deterministic).
+
+    If *touched_files* is provided (list of repo-relative paths), only those
+    files are staged via ``git add --``.  Otherwise falls back to
+    ``git add -A`` (stages everything).
+
+    Scoping the add to *touched_files* prevents verification artifacts
+    (e.g. ``__pycache__``, ``.pytest_cache``) from polluting the tree hash.
+    """
+    if touched_files:
+        add = _git(["add", "--"] + sorted(touched_files), cwd=repo_root)
+        add_desc = "git add -- <touched_files>"
+    else:
+        add = _git(["add", "-A"], cwd=repo_root)
+        add_desc = "git add -A"
     if add.returncode != 0:
         raise RuntimeError(
-            f"git add -A failed: {add.stderr.decode('utf-8', errors='replace')}"
+            f"{add_desc} failed: {add.stderr.decode('utf-8', errors='replace')}"
         )
     result = _git(["write-tree"], cwd=repo_root)
     if result.returncode != 0:

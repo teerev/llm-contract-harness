@@ -460,9 +460,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `llm.py:9-34`, `nodes_se.py:180`.  
 **Acceptance test**: Mock a non-responding LLM endpoint; verify the call fails within the timeout.
 
-#### R8. Scope `git add` on PASS to only proposal-touched files
+#### R8. ~~Scope `git add` on PASS to only proposal-touched files~~ — COMPLETED
+**Status**: **DONE**. `get_tree_hash()` in `workspace.py` now accepts an optional `touched_files` parameter. When provided, it runs `git add -- <files>` instead of `git add -A`, staging only the proposal-touched files. The call site in `graph.py:_finalize_node` passes `state["touched_files"]` on PASS. Falls back to `git add -A` if the list is empty (defensive).  
 **Failure mode mitigated**: `git add -A` stages verification artifacts and other non-proposal files, polluting the tree hash.  
-**Where**: `workspace.py:54` — replace `git add -A` with `git add` of only the specific files from the proposal's `touched_files`.  
+**Where**: `workspace.py:52-79`, `graph.py:126-128`.  
 **Acceptance test**: Run a PASS scenario where pytest creates `.pytest_cache`; verify tree hash does not include it.
 
 ### Priority 3 — Medium (robustness improvements)
