@@ -1,0 +1,10 @@
+{
+  "summary": "Added scripts/verify.sh to run global verification via python compileall.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "#!/usr/bin/env bash\nset -euo pipefail\npython -m compileall -q .\n",
+      "path": "scripts/verify.sh"
+    }
+  ]
+}

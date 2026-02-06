@@ -1,0 +1,16 @@
+[
+  {
+    "command": [
+      "python",
+      "-m",
+      "lifesim",
+      "--version"
+    ],
+    "duration_seconds": 0.029,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/d7d39c87ae0c4ab4/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/d7d39c87ae0c4ab4/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": "0.1.0\n"
+  }
+]

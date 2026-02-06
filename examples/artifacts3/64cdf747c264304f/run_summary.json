@@ -1,0 +1,62 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.stats import StatsCollector; from lifesim.types import StepResult, WorldState, TickMetrics, Position, Agent; ws = WorldState(5, 5, 1, 42, ((Position(0,0), Agent(10, 1, 0)),)); sr = StepResult(world=ws, births=1, deaths=2, movements=3); sc = StatsCollector(); tm = sc.record(sr); assert tm.population == 1 and tm.births == 1 and tm.deaths == 2 and tm.avg_energy == 10.0"
+          ],
+          "duration_seconds": 0.029,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.stats import StatsCollector; from lifesim.types import StepResult, WorldState; ws = WorldState(5, 5, 0, 42, ()); sr = StepResult(world=ws, births=0, deaths=0, movements=0); sc = StatsCollector(); sc.record(sr); h = sc.get_history(); assert len(h) == 1; csv = sc.to_csv(); assert 'step_number' in csv"
+          ],
+          "duration_seconds": 0.029,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "a69554ec96a28ca6baf5e7928bb5b6688a0dec63",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lifesim/stats.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.054,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/64cdf747c264304f/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "a69554ec96a28ca6baf5e7928bb5b6688a0dec63",
+  "repo_tree_hash_after": "0a91b1678fc8a00ab06c0df76c34c178b8fb4af0",
+  "run_id": "64cdf747c264304f",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-05"
+}

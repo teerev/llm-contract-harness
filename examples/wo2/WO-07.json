@@ -1,0 +1,34 @@
+{
+  "id": "WO-07",
+  "title": "Wire CLI to generate-solve-render pipeline",
+  "intent": "Edit mazegen/cli.py to add command-line arguments and wire them through the generate, solve, and render modules to produce maze output.",
+  "allowed_files": [
+    "mazegen/cli.py",
+    "mazegen/__init__.py",
+    "mazegen/types.py",
+    "mazegen/generate.py",
+    "mazegen/solve.py",
+    "mazegen/render.py"
+  ],
+  "forbidden": [
+    "Do not modify mazegen/__init__.py",
+    "Do not modify mazegen/types.py",
+    "Do not modify mazegen/generate.py",
+    "Do not modify mazegen/solve.py",
+    "Do not modify mazegen/render.py"
+  ],
+  "acceptance_commands": [
+    "python -m mazegen --width 5 --height 5 --seed 42",
+    "python -m mazegen --width 5 --height 5 --seed 42 --solve",
+    "python -c \"import subprocess; r = subprocess.run(['python', '-m', 'mazegen', '--width', '3', '--height', '3', '--seed', '42'], capture_output=True, text=True); assert r.returncode == 0; assert '+' in r.stdout and '|' in r.stdout, 'expected ASCII maze art'\""
+  ],
+  "context_files": [
+    "mazegen/cli.py",
+    "mazegen/__init__.py",
+    "mazegen/types.py",
+    "mazegen/generate.py",
+    "mazegen/solve.py",
+    "mazegen/render.py"
+  ],
+  "notes": "Edit ONLY mazegen/cli.py. Keep the existing --version flag. Add these required arguments to build_parser(): --width (int, required), --height (int, required), --seed (int, required). Add optional: --solve (store_true, default False — if set, solve the maze and overlay the solution path), --output (str, optional — if given, write to this file instead of stdout). In main(): if --version, print version and return 0. Otherwise: call generate(width, height, seed) to get a Maze, optionally call solve(maze) if --solve, call render_ascii(maze, solution=sol_or_none) to get the ASCII string, then print to stdout or write to --output file, and return 0. All other files are context-only — read them to learn the exact function signatures but do NOT modify them."
+}

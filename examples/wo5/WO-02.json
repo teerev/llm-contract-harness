@@ -1,0 +1,24 @@
+{
+  "id": "WO-02",
+  "title": "Freeze project layout and package skeleton",
+  "intent": "Create the worldsim package with __init__.py (version), __main__.py (entry point), and cli.py (argparse stub with --version) to freeze the module layout and 'python -m worldsim' entry point.",
+  "allowed_files": [
+    "worldsim/__init__.py",
+    "worldsim/__main__.py",
+    "worldsim/cli.py"
+  ],
+  "forbidden": [
+    "Do not modify scripts/verify.sh",
+    "Do not add any simulation logic yet",
+    "Do not add any dependencies"
+  ],
+  "acceptance_commands": [
+    "python -m worldsim --version"
+  ],
+  "context_files": [
+    "worldsim/__init__.py",
+    "worldsim/__main__.py",
+    "worldsim/cli.py"
+  ],
+  "notes": "worldsim/__init__.py must define __version__ = '0.1.0'. worldsim/__main__.py must import main from .cli and call raise SystemExit(main()). worldsim/cli.py must define build_parser() returning an ArgumentParser with a --version flag, and main(argv=None) that parses args, prints __version__ if --version is passed, otherwise prints help, and returns 0 in both cases. This is scaffold only — no simulation behavior."
+}

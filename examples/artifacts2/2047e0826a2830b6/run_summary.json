@@ -1,0 +1,88 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-m",
+            "mazegen",
+            "--width",
+            "5",
+            "--height",
+            "5",
+            "--seed",
+            "42"
+          ],
+          "duration_seconds": 0.038,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": "+---+---+---+---+---+\n|                   |\n+---+---+---+---+   +\n|           |   |   |\n+   +---+   +   +   +\n|       |   |   |   |\n+   +   +   +   +   +\n|   |   |       |   |\n+   +   +---+---+   +\n|   |               |\n+---+---+---+---+---+\n"
+        },
+        {
+          "command": [
+            "python",
+            "-m",
+            "mazegen",
+            "--width",
+            "5",
+            "--height",
+            "5",
+            "--seed",
+            "42",
+            "--solve"
+          ],
+          "duration_seconds": 0.035,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": "+---+---+---+---+---+\n| *   *   *   *   * |\n+---+---+---+---+   +\n|           |   | * |\n+   +---+   +   +   +\n|       |   |   | * |\n+   +   +   +   +   +\n|   |   |       | * |\n+   +   +---+---+   +\n|   |             * |\n+---+---+---+---+---+\n"
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "import subprocess; r = subprocess.run(['python', '-m', 'mazegen', '--width', '3', '--height', '3', '--seed', '42'], capture_output=True, text=True); assert r.returncode == 0; assert '+' in r.stdout and '|' in r.stdout, 'expected ASCII maze art'"
+          ],
+          "duration_seconds": 0.066,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/acceptance_2_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "67c1e50cf3f750a7facfc4d3e46e8149f5fab245",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "mazegen/cli.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.055,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/2047e0826a2830b6/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "67c1e50cf3f750a7facfc4d3e46e8149f5fab245",
+  "repo_tree_hash_after": "2d0ce4ef22f402c6cb97ff5d6730afcdac9f6c2b",
+  "run_id": "2047e0826a2830b6",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-07"
+}

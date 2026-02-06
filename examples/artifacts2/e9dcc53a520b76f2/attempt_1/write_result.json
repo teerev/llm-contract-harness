@@ -1,0 +1,8 @@
+{
+  "errors": [],
+  "touched_files": [
+    "scripts/verify.sh",
+    "tests/test_generate.py"
+  ],
+  "write_ok": true
+}

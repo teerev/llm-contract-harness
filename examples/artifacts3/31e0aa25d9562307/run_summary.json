@@ -1,0 +1,62 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.types import Position, Agent, WorldState; p = Position(row=0, col=0); a = Agent(energy=10, age=0, direction=0); ws = WorldState(width=5, height=5, step_number=0, seed=42, agents=((p, a),)); assert ws.width == 5 and len(ws.agents) == 1"
+          ],
+          "duration_seconds": 0.029,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.types import StepResult, TickMetrics, SimConfig, WorldState; ws = WorldState(5, 5, 0, 42, ()); sr = StepResult(world=ws, births=0, deaths=0, movements=0); tm = TickMetrics(step_number=0, population=0, births=0, deaths=0, avg_energy=0.0); sc = SimConfig(width=10, height=10, seed=42); assert sc.initial_density == 0.3 and sc.max_steps == 100"
+          ],
+          "duration_seconds": 0.028,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "6290e2ee9579d3e79393545fdd662c3734a4ba83",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lifesim/types.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.058,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/31e0aa25d9562307/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "6290e2ee9579d3e79393545fdd662c3734a4ba83",
+  "repo_tree_hash_after": "fb54ed4fb1a01d854fbff8ccd5ab6bac21da32ab",
+  "run_id": "31e0aa25d9562307",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-03"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "WO-04",
+  "title": "Implement collision-safe movement function",
+  "intent": "Create worldsim/movement.py with a pure function that repositions agents on the grid without ever losing an agent or creating duplicate positions.",
+  "allowed_files": [
+    "worldsim/movement.py",
+    "worldsim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify worldsim/types.py",
+    "Do not modify any other existing files",
+    "Do not mutate the input agents dict",
+    "Do not handle energy, age, reproduction, or death — only position and direction"
+  ],
+  "acceptance_commands": [
+    "python -c \"from worldsim.movement import move_agents; from worldsim.types import Position, Agent; import random; agents = {Position(r,c): Agent(10,0,r%4) for r in range(5) for c in range(5) if (r+c)%2==0}; new_a, m = move_agents(agents, 5, 5, random.Random(42)); assert len(new_a) == len(agents), f'agents lost: {len(new_a)} != {len(agents)}'\"",
+    "python -c \"from worldsim.movement import move_agents; from worldsim.types import Position, Agent; import random; agents = {Position(r,c): Agent(10,0,r%4) for r in range(5) for c in range(5) if (r+c)%2==0}; new_a, m = move_agents(agents, 5, 5, random.Random(42)); assert len(new_a) == len(set(new_a.keys())), 'duplicate positions'\"",
+    "python -c \"from worldsim.movement import move_agents; from worldsim.types import Position, Agent; import random; agents = {Position(0,0): Agent(10,0,0), Position(2,2): Agent(10,0,2)}; r1 = move_agents(dict(agents), 5, 5, random.Random(42)); r2 = move_agents(dict(agents), 5, 5, random.Random(42)); assert r1 == r2, 'not deterministic'\""
+  ],
+  "context_files": [
+    "worldsim/movement.py",
+    "worldsim/types.py"
+  ],
+  "notes": "Define: move_agents(agents: dict[Position, Agent], width: int, height: int, rng: random.Random) -> tuple[dict[Position, Agent], int]. Returns (new_agents_dict, movements_count). Must NOT mutate the input dict. Energy and age are NOT modified — only position and direction change.\n\nCOLLISION-SAFE SEQUENTIAL PLACEMENT ALGORITHM:\n1. Create remaining = set of all keys in agents (the unprocessed queue).\n2. Create new_agents = {} (empty dict for final positions).\n3. For each (pos, agent) in sorted(agents.items()) by Position:\n   a. Remove pos from remaining (mark as processed).\n   b. Compute target: direction 0=N means row-1, 1=E means col+1, 2=S means row+1, 3=W means col-1. Apply toroidal wrapping: row % height, col % width.\n   c. If target is NOT a key in new_agents AND target is NOT in remaining: move to target, increment movements.\n   d. Else: stay at pos.\n   e. Set new direction = rng.randint(0, 3).\n   f. Create new Agent with same energy and age as original but with the new direction. Place in new_agents at the final position (target or pos).\n4. ASSERT: len(new_agents) == len(agents). No agents may be lost.\n\nReturn (new_agents, movements_count). Do NOT modify worldsim/types.py."
+}

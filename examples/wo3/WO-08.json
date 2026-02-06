@@ -1,0 +1,40 @@
+{
+  "id": "WO-08",
+  "title": "Wire CLI to full simulation pipeline",
+  "intent": "Edit lifesim/cli.py to add all command-line arguments and wire them through create_world, step loop, stats, render, and checkpoint modules.",
+  "allowed_files": [
+    "lifesim/cli.py",
+    "lifesim/__init__.py",
+    "lifesim/types.py",
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/stats.py",
+    "lifesim/render.py",
+    "lifesim/checkpoint.py"
+  ],
+  "forbidden": [
+    "Do not modify lifesim/__init__.py",
+    "Do not modify lifesim/types.py",
+    "Do not modify lifesim/world.py",
+    "Do not modify lifesim/rules.py",
+    "Do not modify lifesim/stats.py",
+    "Do not modify lifesim/render.py",
+    "Do not modify lifesim/checkpoint.py"
+  ],
+  "acceptance_commands": [
+    "python -m lifesim --width 10 --height 10 --seed 42 --steps 5",
+    "python -m lifesim --width 10 --height 10 --seed 42 --steps 3 --render ascii",
+    "python -c \"import subprocess; r = subprocess.run(['python', '-m', 'lifesim', '--width', '5', '--height', '5', '--seed', '42', '--steps', '3'], capture_output=True, text=True); assert r.returncode == 0; assert 'population' in r.stdout.lower() or 'step' in r.stdout.lower(), 'expected metrics output'\""
+  ],
+  "context_files": [
+    "lifesim/cli.py",
+    "lifesim/__init__.py",
+    "lifesim/types.py",
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/stats.py",
+    "lifesim/render.py",
+    "lifesim/checkpoint.py"
+  ],
+  "notes": "Edit ONLY lifesim/cli.py. Read ALL context files to learn exact function signatures.\n\nKeep the existing --version flag. Add required arguments: --width (int), --height (int), --seed (int), --steps (int). Add optional arguments: --density (float, default 0.3), --initial-energy (int, default 10), --energy-gain (int, default 2), --move-cost (int, default 1), --reproduction-threshold (int, default 15), --reproduction-cost (int, default 8), --max-age (int, default 50), --render (str, choices=['ascii', 'none'], default 'none'), --checkpoint-out (str, optional path to save final state), --checkpoint-in (str, optional path to load initial state from).\n\nIn main(): if --version, print and return 0. Build SimConfig from args. If --checkpoint-in, call load_checkpoint and create World from that state; else call create_world(config). Create a StatsCollector. Loop for --steps iterations: call world.step(), record with stats, if --render ascii print render_ascii(step_result.world) followed by a blank line. After loop: print stats.to_csv() to stdout. If --checkpoint-out, call save_checkpoint(world.get_state(), path). Return 0.\n\nAll other files are context-only — do NOT modify them."
+}

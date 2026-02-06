@@ -1,0 +1,24 @@
+{
+  "id": "WO-02",
+  "title": "Freeze project layout and package skeleton",
+  "intent": "Create the mazegen package with __init__.py (version string), __main__.py (entry point), and cli.py (argparse stub with --version flag) to freeze the module layout and 'python -m mazegen' entry point.",
+  "allowed_files": [
+    "mazegen/__init__.py",
+    "mazegen/__main__.py",
+    "mazegen/cli.py"
+  ],
+  "forbidden": [
+    "Do not modify scripts/verify.sh",
+    "Do not add any maze logic yet",
+    "Do not add any dependencies"
+  ],
+  "acceptance_commands": [
+    "python -m mazegen --version"
+  ],
+  "context_files": [
+    "mazegen/__init__.py",
+    "mazegen/__main__.py",
+    "mazegen/cli.py"
+  ],
+  "notes": "mazegen/__init__.py must define __version__ = '0.1.0'. mazegen/__main__.py must import main from .cli and call raise SystemExit(main()). mazegen/cli.py must define build_parser() returning an ArgumentParser with a --version flag, and main(argv=None) that parses args, prints __version__ if --version is passed, otherwise prints help, and returns 0 in both cases. This is scaffold only — no maze behavior."
+}

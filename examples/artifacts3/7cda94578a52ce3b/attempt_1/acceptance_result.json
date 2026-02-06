@@ -1,0 +1,54 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w = create_world(cfg); st = w.get_state(); assert st.width == 8 and st.height == 8 and st.step_number == 0 and len(st.agents) > 0"
+    ],
+    "duration_seconds": 0.033,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w1 = create_world(cfg); w2 = create_world(cfg); assert w1.get_state() == w2.get_state(); r1 = w1.step(); r2 = w2.step(); assert r1 == r2, 'not deterministic'"
+    ],
+    "duration_seconds": 0.031,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=12, height=12, seed=99, initial_density=0.4); w = create_world(cfg); pop0 = len(w.get_state().agents); r = w.step(); pop1 = len(r.world.agents); assert pop0 + r.births - r.deaths == pop1, f'population invariant violated: {pop0}+{r.births}-{r.deaths}!={pop1}'"
+    ],
+    "duration_seconds": 0.033,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_2_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_2_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=10, height=10, seed=7, initial_density=0.5); w = create_world(cfg); positions = [p for p, _ in w.get_state().agents]; assert len(positions) == len(set(positions)), 'duplicate positions in initial state'; r = w.step(); positions2 = [p for p, _ in r.world.agents]; assert len(positions2) == len(set(positions2)), 'duplicate positions after step'"
+    ],
+    "duration_seconds": 0.029,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_3_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/7cda94578a52ce3b/attempt_1/acceptance_3_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

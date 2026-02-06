@@ -1,0 +1,10 @@
+{
+  "summary": "Added worldsim/stats.py implementing StatsCollector to record per-tick metrics from StepResult and export history as CSV without modifying existing types.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from __future__ import annotations\n\nfrom statistics import mean\n\nfrom worldsim.types import StepResult, TickMetrics\n\n\nclass StatsCollector:\n    def __init__(self) -> None:\n        self._history: list[TickMetrics] = []\n\n    def record(self, step_result: StepResult) -> TickMetrics:\n        world = step_result.world\n        population = len(world.agents)\n\n        if population == 0:\n            avg_energy = 0.0\n        else:\n            avg_energy = float(mean(agent.energy for _, agent in world.agents))\n\n        area = world.width * world.height\n        density = (population / area) if area > 0 else 0.0\n\n        metrics = TickMetrics(\n            step_number=world.step_number,\n            population=population,\n            births=step_result.births,\n            deaths=step_result.deaths,\n            avg_energy=avg_energy,\n            density=density,\n        )\n        self._history.append(metrics)\n        return metrics\n\n    def get_history(self) -> list[TickMetrics]:\n        return list(self._history)\n\n    def to_csv(self) -> str:\n        header = \"step_number,population,births,deaths,avg_energy,density\"\n        rows = [header]\n        for m in self._history:\n            rows.append(\n                f\"{m.step_number},{m.population},{m.births},{m.deaths},{m.avg_energy},{m.density}\"\n            )\n        return \"\\n\".join(rows)\n",
+      "path": "worldsim/stats.py"
+    }
+  ]
+}

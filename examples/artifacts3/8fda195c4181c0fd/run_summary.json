@@ -1,0 +1,49 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import os; assert os.path.isfile('README.md'); content = open('README.md').read(); assert len(content) > 300, 'README too short'; assert 'lifesim' in content; assert '--seed' in content; assert 'deterministic' in content.lower() or 'determinism' in content.lower()"
+          ],
+          "duration_seconds": 0.026,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/8fda195c4181c0fd/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/8fda195c4181c0fd/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "ad764dc50bd0e64b9b8168339c912ac8e8b03ab6",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts3/8fda195c4181c0fd/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "README.md"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 1.33,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/8fda195c4181c0fd/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/8fda195c4181c0fd/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ".....................                                                    [100%]\n21 passed in 0.53s\n"
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "ad764dc50bd0e64b9b8168339c912ac8e8b03ab6",
+  "repo_tree_hash_after": "39bdac73335a05d49315c4f5c07e9b93d2c0f617",
+  "run_id": "8fda195c4181c0fd",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-11"
+}

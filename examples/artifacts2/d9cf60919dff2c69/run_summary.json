@@ -1,0 +1,49 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import os; assert os.path.isfile('README.md'); content = open('README.md').read(); assert len(content) > 200, 'README too short'; assert 'mazegen' in content; assert '--seed' in content"
+          ],
+          "duration_seconds": 0.025,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/d9cf60919dff2c69/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/d9cf60919dff2c69/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "8600ca87b78906f7fabb9135e02b2123e3a8daa6",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts2/d9cf60919dff2c69/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "README.md"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 1.212,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/d9cf60919dff2c69/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/d9cf60919dff2c69/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": "................                                                         [100%]\n16 passed in 0.42s\n"
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "8600ca87b78906f7fabb9135e02b2123e3a8daa6",
+  "repo_tree_hash_after": "b90084273fa8dc8408fc767bc63a81ae1499589b",
+  "run_id": "d9cf60919dff2c69",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-11"
+}

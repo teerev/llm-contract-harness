@@ -1,0 +1,41 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.rules import default_ruleset; from worldsim.types import Position, Agent, SimConfig; import random; agents = {Position(r,c): Agent(10,0,r%4) for r in range(4) for c in range(4) if (r+c)%3!=0}; cfg = SimConfig(width=5, height=5, seed=42); new_a, b, d, m = default_ruleset(agents, 5, 5, cfg, random.Random(42)); assert len(agents)+b-d == len(new_a), f'pop invariant: {len(agents)}+{b}-{d}!={len(new_a)}'"
+    ],
+    "duration_seconds": 0.028,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.rules import default_ruleset; from worldsim.types import Position, Agent, SimConfig; import random; agents = {Position(r,c): Agent(10,0,r%4) for r in range(4) for c in range(4) if (r+c)%3!=0}; cfg = SimConfig(width=5, height=5, seed=42); new_a, b, d, m = default_ruleset(agents, 5, 5, cfg, random.Random(42)); newborns = sum(1 for a in new_a.values() if a.age == 0); assert newborns == b, f'newborn count {newborns} != births {b}'"
+    ],
+    "duration_seconds": 0.028,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.rules import default_ruleset; from worldsim.types import Position, Agent, SimConfig; import random; agents = {Position(0,0): Agent(10,0,0), Position(1,1): Agent(10,0,2)}; cfg = SimConfig(width=5, height=5, seed=42); r1 = default_ruleset(dict(agents), 5, 5, cfg, random.Random(42)); r2 = default_ruleset(dict(agents), 5, 5, cfg, random.Random(42)); assert r1 == r2, 'not deterministic'"
+    ],
+    "duration_seconds": 0.027,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_2_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts5/7d4011acf0d034e4/attempt_1/acceptance_2_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

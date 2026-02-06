@@ -1,0 +1,10 @@
+{
+  "summary": "Added lsysviz/turtle.py implementing a pure turtle-graphics interpreter that converts an L-system string into a list of Segment objects, supporting F/+/-/[/] commands with stack-based branching.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from __future__ import annotations\n\nimport math\nfrom typing import List, Tuple\n\nfrom .types import Segment\n\n\ndef interpret(lstring: str, angle_deg: float, step_length: float) -> list[Segment]:\n    \"\"\"Interpret an L-system string using turtle-graphics rules.\n\n    The turtle starts at (0.0, 0.0) with heading 90 degrees (up).\n\n    Supported commands:\n      - 'F': move forward by step_length and record a Segment\n      - '+': turn left (counter-clockwise) by angle_deg\n      - '-': turn right (clockwise) by angle_deg\n      - '[': push current (x, y, heading_deg) onto a stack\n      - ']': pop (x, y, heading_deg) from the stack\n\n    All other characters are ignored.\n\n    This function is pure and deterministic.\n    \"\"\"\n\n    x: float = 0.0\n    y: float = 0.0\n    heading_deg: float = 90.0\n\n    segments: List[Segment] = []\n    stack: List[Tuple[float, float, float]] = []\n\n    for ch in lstring:\n        if ch == \"F\":\n            theta = math.radians(heading_deg)\n            x1 = x + step_length * math.cos(theta)\n            y1 = y + step_length * math.sin(theta)\n            segments.append(Segment(x, y, x1, y1))\n            x, y = x1, y1\n        elif ch == \"+\":\n            heading_deg += angle_deg\n        elif ch == \"-\":\n            heading_deg -= angle_deg\n        elif ch == \"[\":\n            stack.append((x, y, heading_deg))\n        elif ch == \"]\":\n            if stack:\n                x, y, heading_deg = stack.pop()\n        else:\n            # Ignore all other characters\n            continue\n\n    return segments\n",
+      "path": "lsysviz/turtle.py"
+    }
+  ]
+}

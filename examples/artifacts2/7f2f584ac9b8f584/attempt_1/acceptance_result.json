@@ -1,0 +1,28 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from mazegen.generate import generate; from mazegen.solve import solve; m = generate(width=5, height=5, seed=42); sol = solve(m); assert sol.found; assert sol.path[0] == m.start; assert sol.path[-1] == m.end; assert len(sol.path) >= 2"
+    ],
+    "duration_seconds": 0.029,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/7f2f584ac9b8f584/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/7f2f584ac9b8f584/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from mazegen.generate import generate; from mazegen.solve import solve; m = generate(width=5, height=5, seed=42); sol = solve(m); p = sol.path; assert all(abs(p[i].row - p[i+1].row) + abs(p[i].col - p[i+1].col) == 1 and (min(p[i], p[i+1]), max(p[i], p[i+1])) in m.passages for i in range(len(p) - 1)), 'invalid path'"
+    ],
+    "duration_seconds": 0.028,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/7f2f584ac9b8f584/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/7f2f584ac9b8f584/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

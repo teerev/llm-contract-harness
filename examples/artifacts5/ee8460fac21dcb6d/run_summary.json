@@ -1,0 +1,51 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-m",
+            "pytest",
+            "tests/test_support.py",
+            "-q"
+          ],
+          "duration_seconds": 1.121,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts5/ee8460fac21dcb6d/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts5/ee8460fac21dcb6d/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": "..........                                                               [100%]\n10 passed in 0.41s\n"
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "8bb70bc70ad7ff330e36f2e8eb1f57fa3e2cbaa9",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts5/ee8460fac21dcb6d/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "tests/test_support.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 1.302,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts5/ee8460fac21dcb6d/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts5/ee8460fac21dcb6d/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": "......................                                                   [100%]\n22 passed in 0.45s\n"
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "8bb70bc70ad7ff330e36f2e8eb1f57fa3e2cbaa9",
+  "repo_tree_hash_after": "2888901ad35ceb84497dc08aa9b19fe836142d70",
+  "run_id": "ee8460fac21dcb6d",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-13"
+}

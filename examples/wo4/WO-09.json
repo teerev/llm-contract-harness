@@ -1,0 +1,24 @@
+{
+  "id": "WO-09",
+  "title": "Implement HTML canvas viewer generator",
+  "intent": "Create worldsim/render_html.py with a function that produces a standalone HTML file containing an animated canvas replay of simulation frames, viewable in any browser without a server.",
+  "allowed_files": [
+    "worldsim/render_html.py",
+    "worldsim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify worldsim/types.py",
+    "Do not modify any other existing files",
+    "Do not import any external dependencies — use only stdlib",
+    "Do not use any template engines"
+  ],
+  "acceptance_commands": [
+    "python -c \"import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(3,3,i,42,((Position(0,i%3), Agent(10-i,i,0)),)) for i in range(5)]; d = tempfile.mkdtemp(); p = os.path.join(d, 'sim.html'); render_html(states, p); content = open(p).read(); assert content.lstrip().startswith('<!DOCTYPE') or content.lstrip().startswith('<!doctype'), 'not valid HTML'; assert '<canvas' in content.lower(), 'no canvas element'\"",
+    "python -c \"import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(4,4,0,42,((Position(r,c), Agent(8,0,0)) for r in range(2) for c in range(2)))]; d = tempfile.mkdtemp(); p = os.path.join(d, 'test.html'); render_html(states, p); content = open(p).read(); assert len(content) > 500, 'HTML too short'; assert 'frames' in content.lower() or 'FRAMES' in content, 'no frame data found'\""
+  ],
+  "context_files": [
+    "worldsim/render_html.py",
+    "worldsim/types.py"
+  ],
+  "notes": "Define: render_html(states: list[WorldState], output_path: str) -> None.\n\nGenerate a self-contained HTML file that visualizes the simulation as an animated canvas. The file must work when opened directly in a browser with no server.\n\nStructure of the HTML file:\n1. <!DOCTYPE html> header with <html><head><title>worldsim</title>\n2. <style> block: body background #1a1a2e, canvas centered, text color white, font monospace.\n3. <script> block containing:\n   a. const FRAMES = [...]; — a JS array of frame objects built from the states list. Each frame: {step: int, width: int, height: int, agents: [[row, col, energy, age, direction], ...]}. Serialize this data using Python's json.dumps embedded in the JS source.\n   b. A draw(frameIndex) function: compute cellW = canvas.width / frame.width, cellH = canvas.height / frame.height. Fill canvas black. For each agent: fill color green (#00ff88) if energy > 10, yellow (#ffcc00) if energy 5-10, red (#ff4444) if energy < 5. Draw agent as a filled rectangle at (col*cellW, row*cellH, cellW-1, cellH-1).\n   c. Animation via setInterval at 200ms. Increment frame index, wrap around. Update a step counter display.\n   d. Click on canvas toggles pause/play.\n4. <body> with <canvas id='grid' width='800' height='600'></canvas> and a <p id='info'> for step counter.\n5. Closing tags.\n\nBuild the entire HTML as a Python f-string or string concatenation. Use json.dumps to serialize frame data. Write to output_path with UTF-8 encoding.\n\nDo NOT modify worldsim/types.py. Do NOT import any external dependencies."
+}

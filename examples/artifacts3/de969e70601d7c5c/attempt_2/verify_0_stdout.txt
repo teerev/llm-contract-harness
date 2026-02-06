@@ -1,0 +1,91 @@
+.......F.F                                                               [100%]
+=================================== FAILURES ===================================
+________ test_population_invariant_accounting_for_collisions_and_deaths ________
+
+    def test_population_invariant_accounting_for_collisions_and_deaths():
+        """Population change is not simply births-deaths because movement can cause overwrites.
+    
+        In default_ruleset phase 1, if two agents target the same cell, the later one overwrites
+        the earlier in the new_agents dict, reducing population without counting as a death.
+    
+        Therefore, the correct invariant is:
+          pop_after == pop_before - collisions + births - deaths
+        where collisions is the number of overwrites during movement/placement.
+        """
+    
+        config = SimConfig(width=16, height=10, seed=77, initial_density=0.45)
+        world = create_world(config)
+    
+        for _ in range(10):
+            before = world.get_state()
+            pop_before = len(before.agents)
+            res = world.step()
+            pop_after = len(res.world.agents)
+    
+            collisions = pop_before - res.movements - pop_after + res.births - res.deaths
+            # Rearranged from: pop_after = pop_before - collisions + births - deaths
+>           assert pop_after == pop_before - collisions + res.births - res.deaths
+E           assert 72 == (((73 - -64) + 0) - 0)
+E            +  where 0 = StepResult(world=WorldState(width=16, height=10, step_number=1, seed=77, agents=((Position(row=0, col=1), Agent(energy...=1, direction=3)), (Position(row=9, col=15), Agent(energy=11, age=1, direction=2)))), births=0, deaths=0, movements=65).births
+E            +  and   0 = StepResult(world=WorldState(width=16, height=10, step_number=1, seed=77, agents=((Position(row=0, col=1), Agent(energy...=1, direction=3)), (Position(row=9, col=15), Agent(energy=11, age=1, direction=2)))), births=0, deaths=0, movements=65).deaths
+
+tests/test_simulation.py:111: AssertionError
+___________ test_age_monotonicity_for_survivors_by_identity_matching ___________
+
+    def test_age_monotonicity_for_survivors_by_identity_matching():
+        """Ages increase by 1 for agents that survive.
+    
+        Agents can move and can be overwritten by collisions; positions are not stable identities.
+        We match survivors by their (new_position) and infer their previous position by reversing
+        the movement using the *previous* direction.
+    
+        In default_ruleset, each agent attempts to move exactly one step in its current direction.
+        If its target cell is already occupied in the new map, it stays in place.
+    
+        For any agent that ends up at a position that was the unique target of exactly one previous
+        agent, that agent must have age == prev_age + 1.
+        """
+    
+        config = SimConfig(width=20, height=10, seed=888, initial_density=0.5)
+        world = create_world(config)
+    
+        def wrap(row: int, col: int, width: int, height: int) -> Position:
+            return Position(row % height, col % width)
+    
+        def move_target(pos: Position, direction: int, width: int, height: int) -> Position:
+            if direction == 0:
+                return wrap(pos.row - 1, pos.col, width, height)
+            if direction == 1:
+                return wrap(pos.row, pos.col + 1, width, height)
+            if direction == 2:
+                return wrap(pos.row + 1, pos.col, width, height)
+            return wrap(pos.row, pos.col - 1, width, height)
+    
+        for _ in range(10):
+            before = world.get_state()
+            before_agents = _agents_dict(before)
+    
+            # Map each target position to the list of previous positions that would target it.
+            target_to_sources: Dict[Position, list[Position]] = {}
+            for pos, agent in before_agents.items():
+                tgt = move_target(pos, agent.direction, before.width, before.height)
+                target_to_sources.setdefault(tgt, []).append(pos)
+    
+            res = world.step()
+            after_agents = _agents_dict(res.world)
+    
+            for after_pos, after_agent in after_agents.items():
+                sources = target_to_sources.get(after_pos, [])
+                if len(sources) == 1:
+                    prev_pos = sources[0]
+                    prev_agent = before_agents[prev_pos]
+>                   assert after_agent.age == prev_agent.age + 1
+E                   assert 6 == (0 + 1)
+E                    +  where 6 = Agent(energy=8, age=6, direction=0).age
+E                    +  and   0 = Agent(energy=8, age=0, direction=3).age
+
+tests/test_simulation.py:172: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_simulation.py::test_population_invariant_accounting_for_collisions_and_deaths
+FAILED tests/test_simulation.py::test_age_monotonicity_for_survivors_by_identity_matching
+2 failed, 8 passed in 0.47s

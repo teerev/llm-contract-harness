@@ -1,0 +1,7 @@
+{
+  "command": "python -m pytest -q",
+  "constraints_reminder": "Global verification must pass before acceptance.",
+  "exit_code": 5,
+  "primary_error_excerpt": "\nno tests ran in 0.39s\n",
+  "stage": "verify_failed"
+}

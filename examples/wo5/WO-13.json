@@ -1,0 +1,31 @@
+{
+  "id": "WO-13",
+  "title": "Add support module tests",
+  "intent": "Create tests/test_support.py with tests for statistics accuracy, ASCII rendering correctness, and checkpoint round-trip including simulation resume.",
+  "allowed_files": [
+    "tests/test_support.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/checkpoint.py"
+  ],
+  "forbidden": [
+    "Do not modify any worldsim/ source files",
+    "Do not modify scripts/verify.sh"
+  ],
+  "acceptance_commands": [
+    "python -m pytest tests/test_support.py -q"
+  ],
+  "context_files": [
+    "tests/test_support.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/checkpoint.py"
+  ],
+  "notes": "IMPORTANT: Read ALL source files for EXACT signatures. Do NOT guess.\n\nCreate tests/test_support.py:\n\nStats (3 tests):\n1. StatsCollector.record returns TickMetrics with correct population and density\n2. to_csv has header + correct row count\n3. avg_energy is 0.0 when population is 0\n\nASCII render (3 tests):\n4. render_ascii returns height lines, each width characters\n5. Agents at correct positions with correct characters (@ for energy>5, o for 1-5)\n6. Determinism: same state renders identically twice\n\nCheckpoint (4 tests):\n7. Round-trip: save then load equals original\n8. Round-trip with empty agents\n9. All agent fields preserved (energy, age, direction)\n10. Resume: run 5 steps, checkpoint, load into new World, run 5 more — must equal 10 steps straight\n\nUse tempfile.mkdtemp() for file output."
+}

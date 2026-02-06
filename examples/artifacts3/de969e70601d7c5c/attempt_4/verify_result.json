@@ -1,0 +1,14 @@
+[
+  {
+    "command": [
+      "bash",
+      "scripts/verify.sh"
+    ],
+    "duration_seconds": 1.306,
+    "exit_code": 1,
+    "stderr_path": "/Users/user/repos/aos/artifacts3/de969e70601d7c5c/attempt_4/verify_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts3/de969e70601d7c5c/attempt_4/verify_0_stdout.txt",
+    "stdout_trunc": ".........F                                                               [100%]\n=================================== FAILURES ===================================\n______ test_age_monotonicity_ages_only_increase_for_survivors_by_position ______\n\n    def test_age_monotonicity_ages_only_increase_for_survivors_by_position():\n        # Because agents move, we can only compare ages for agents that remain at the\n        # same position across steps (i.e., survivors at identical Position).\n        config = SimConfig(width=14, height=9, seed=31415, initial_density=0.5)\n        world = create_world(config)\n    \n        for _ in range(10):\n            before = world.get_state()\n            before_agents = _agents_dict(before)\n            res = world.step()\n            after_agents = _agents_dict(res.world)\n    \n            common_positions = set(before_agents.keys()) & set(after_agents.keys())\n            for pos in common_positions:\n>               assert after_agents[pos].age == before_agents[pos].age + 1\nE               assert 0 == (4 + 1)\nE                +  where 0 = Agent(energy=8, age=0, direction=0).age\nE                +  and   4 = Agent(energy=14, age=4, direction=0).age\n\ntests/test_simulation.py:134: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_simulation.py::test_age_monotonicity_ages_only_increase_for_survivors_by_position\n1 failed, 9 passed in 0.47s\n"
+  }
+]

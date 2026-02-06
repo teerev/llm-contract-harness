@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "touched_files": [
+    "worldsim/__init__.py",
+    "worldsim/__main__.py",
+    "worldsim/cli.py"
+  ],
+  "write_ok": true
+}

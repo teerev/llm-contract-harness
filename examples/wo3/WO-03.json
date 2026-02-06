@@ -1,0 +1,20 @@
+{
+  "id": "WO-03",
+  "title": "Define core data types",
+  "intent": "Create lifesim/types.py defining Position, Agent, WorldState, StepResult, TickMetrics, and SimConfig as immutable NamedTuples that all subsequent modules will depend on.",
+  "allowed_files": [
+    "lifesim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify any existing files",
+    "Do not add any logic beyond type definitions"
+  ],
+  "acceptance_commands": [
+    "python -c \"from lifesim.types import Position, Agent, WorldState; p = Position(row=0, col=0); a = Agent(energy=10, age=0, direction=0); ws = WorldState(width=5, height=5, step_number=0, seed=42, agents=((p, a),)); assert ws.width == 5 and len(ws.agents) == 1\"",
+    "python -c \"from lifesim.types import StepResult, TickMetrics, SimConfig, WorldState; ws = WorldState(5, 5, 0, 42, ()); sr = StepResult(world=ws, births=0, deaths=0, movements=0); tm = TickMetrics(step_number=0, population=0, births=0, deaths=0, avg_energy=0.0); sc = SimConfig(width=10, height=10, seed=42); assert sc.initial_density == 0.3 and sc.max_steps == 100\""
+  ],
+  "context_files": [
+    "lifesim/types.py"
+  ],
+  "notes": "Use typing.NamedTuple for ALL types. Definitions:\n\nPosition: row (int), col (int).\n\nAgent: energy (int), age (int), direction (int) where 0=North 1=East 2=South 3=West.\n\nWorldState: width (int), height (int), step_number (int), seed (int), agents (tuple) — a sorted tuple of (Position, Agent) pairs representing all living agents, sorted by Position for determinism.\n\nStepResult: world (WorldState), births (int), deaths (int), movements (int).\n\nTickMetrics: step_number (int), population (int), births (int), deaths (int), avg_energy (float).\n\nSimConfig: width (int), height (int), seed (int), initial_density (float, default 0.3), max_steps (int, default 100), initial_energy (int, default 10), energy_gain (int, default 2), move_cost (int, default 1), reproduction_threshold (int, default 15), reproduction_cost (int, default 8), max_age (int, default 50). Only width, height, and seed are required; all others have defaults.\n\nNo methods, no validation logic — just plain immutable data containers."
+}

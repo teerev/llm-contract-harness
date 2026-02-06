@@ -1,0 +1,23 @@
+{
+  "id": "WO-09",
+  "title": "Implement checkpoint save and load",
+  "intent": "Create worldsim/checkpoint.py with functions to serialize a WorldState to JSON and deserialize it back, enabling exact simulation resumption.",
+  "allowed_files": [
+    "worldsim/checkpoint.py",
+    "worldsim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify worldsim/types.py",
+    "Do not modify any other existing files",
+    "Do not use pickle — JSON only"
+  ],
+  "acceptance_commands": [
+    "python -c \"import tempfile, os; from worldsim.checkpoint import save_checkpoint, load_checkpoint; from worldsim.types import WorldState, Position, Agent; ws = WorldState(width=5, height=5, step_number=3, seed=42, agents=((Position(0,0), Agent(10,2,1)), (Position(3,4), Agent(5,7,3)))); d = tempfile.mkdtemp(); p = os.path.join(d, 'ck.json'); save_checkpoint(ws, p); ws2 = load_checkpoint(p); assert ws == ws2, 'round-trip failed'\"",
+    "python -c \"import tempfile, os; from worldsim.checkpoint import save_checkpoint, load_checkpoint; from worldsim.types import WorldState; ws = WorldState(3, 3, 0, 1, ()); d = tempfile.mkdtemp(); p = os.path.join(d, 'e.json'); save_checkpoint(ws, p); assert load_checkpoint(p) == ws\""
+  ],
+  "context_files": [
+    "worldsim/checkpoint.py",
+    "worldsim/types.py"
+  ],
+  "notes": "Define save_checkpoint(state: WorldState, path: str) -> None and load_checkpoint(path: str) -> WorldState. JSON only, sorted keys, 2-space indent. Round-trip must be lossless. Do NOT modify worldsim/types.py."
+}

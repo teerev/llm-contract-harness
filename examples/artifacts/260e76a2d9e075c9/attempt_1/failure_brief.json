@@ -1,0 +1,7 @@
+{
+  "command": "python -c \"import tempfile, os; from lsysviz.types import Segment; from lsysviz.render import render_to_png; d = tempfile.mkdtemp(); p = os.path.join(d, 'test.png'); render_to_png([Segment(0,0,100,0), Segment(100,0,100,100)], 200, 200, p); assert os.path.isfile(p), 'PNG not created'\"",
+  "constraints_reminder": "All acceptance commands must exit 0.",
+  "exit_code": 1,
+  "primary_error_excerpt": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"/Users/user/repos/lsystem-plants/lsysviz/render.py\", line 5, in <module>\n    from PIL import Image, ImageDraw\nModuleNotFoundError: No module named 'PIL'\n",
+  "stage": "acceptance_failed"
+}

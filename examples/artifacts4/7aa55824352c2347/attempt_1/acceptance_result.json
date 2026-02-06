@@ -1,0 +1,41 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.world import create_world; from worldsim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w = create_world(cfg); st = w.get_state(); assert st.width == 8 and st.height == 8 and st.step_number == 0 and len(st.agents) > 0"
+    ],
+    "duration_seconds": 0.03,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.world import create_world; from worldsim.types import SimConfig; w1 = create_world(SimConfig(8, 8, 42)); w2 = create_world(SimConfig(8, 8, 42)); assert w1.get_state() == w2.get_state(); r1 = w1.step(); r2 = w2.step(); assert r1 == r2, 'not deterministic'"
+    ],
+    "duration_seconds": 0.031,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from worldsim.world import create_world; from worldsim.types import SimConfig; cfg = SimConfig(width=10, height=10, seed=99, initial_density=0.4); w = create_world(cfg); st0 = w.get_state(); p0 = len(st0.agents); r = w.step(); p1 = len(r.world.agents); assert p0 + r.births - r.deaths == p1, f'pop invariant: {p0}+{r.births}-{r.deaths}!={p1}'"
+    ],
+    "duration_seconds": 0.032,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_2_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts4/7aa55824352c2347/attempt_1/acceptance_2_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

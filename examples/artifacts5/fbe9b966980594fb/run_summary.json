@@ -1,0 +1,62 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(3,3,i,42,((Position(0,i%3), Agent(10-i,i,0)),)) for i in range(5)]; d = tempfile.mkdtemp(); p = os.path.join(d, 'sim.html'); render_html(states, p); content = open(p).read(); assert content.lstrip().lower().startswith('<!doctype'), 'not HTML'; assert '<canvas' in content.lower(), 'no canvas'"
+          ],
+          "duration_seconds": 0.033,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(4,4,0,42,((Position(r,c), Agent(8,0,0)) for r in range(2) for c in range(2)))]; d = tempfile.mkdtemp(); p = os.path.join(d, 't.html'); render_html(states, p); assert os.path.getsize(p) > 500, 'HTML too small'"
+          ],
+          "duration_seconds": 0.032,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "0f12f318ac74b46c4e71b4e8284cbe66ccded726",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "worldsim/render_html.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.052,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "0f12f318ac74b46c4e71b4e8284cbe66ccded726",
+  "repo_tree_hash_after": "c336a88e8c34f64d22f151e3be608b2e7fe8780c",
+  "run_id": "fbe9b966980594fb",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-10"
+}

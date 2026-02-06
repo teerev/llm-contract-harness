@@ -1,0 +1,22 @@
+{
+  "id": "WO-07",
+  "title": "Implement statistics collector",
+  "intent": "Create worldsim/stats.py with a StatsCollector class that records per-tick metrics and can emit them as CSV.",
+  "allowed_files": [
+    "worldsim/stats.py",
+    "worldsim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify worldsim/types.py",
+    "Do not modify any other existing files"
+  ],
+  "acceptance_commands": [
+    "python -c \"from worldsim.stats import StatsCollector; from worldsim.types import StepResult, WorldState, Position, Agent; ws = WorldState(5, 5, 1, 42, ((Position(0,0), Agent(10, 1, 0)),)); sr = StepResult(world=ws, births=1, deaths=2, movements=3); sc = StatsCollector(); tm = sc.record(sr); assert tm.population == 1 and tm.births == 1 and tm.deaths == 2 and tm.avg_energy == 10.0 and abs(tm.density - 1/25) < 1e-9\"",
+    "python -c \"from worldsim.stats import StatsCollector; from worldsim.types import StepResult, WorldState; ws = WorldState(5, 5, 0, 42, ()); sr = StepResult(world=ws, births=0, deaths=0, movements=0); sc = StatsCollector(); sc.record(sr); csv = sc.to_csv(); assert 'step_number' in csv and 'density' in csv; lines = csv.strip().split(chr(10)); assert len(lines) == 2\""
+  ],
+  "context_files": [
+    "worldsim/stats.py",
+    "worldsim/types.py"
+  ],
+  "notes": "Define class StatsCollector with:\n- __init__(self): initialize empty history list.\n- record(self, step_result: StepResult) -> TickMetrics: compute population = len(world.agents), avg_energy = mean of all agent energies (0.0 if empty), density = population / (world.width * world.height). Build TickMetrics, append to history, return it.\n- get_history(self) -> list[TickMetrics]: return copy of history.\n- to_csv(self) -> str: CSV with header 'step_number,population,births,deaths,avg_energy,density' and one row per tick. No trailing newline after last row.\n\nDo NOT modify worldsim/types.py."
+}

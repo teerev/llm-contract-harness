@@ -1,0 +1,62 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(3,3,i,42,((Position(0,i%3), Agent(10-i,i,0)),)) for i in range(5)]; d = tempfile.mkdtemp(); p = os.path.join(d, 'sim.html'); render_html(states, p); content = open(p).read(); assert content.lstrip().startswith('<!DOCTYPE') or content.lstrip().startswith('<!doctype'), 'not valid HTML'; assert '<canvas' in content.lower(), 'no canvas element'"
+          ],
+          "duration_seconds": 0.037,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(4,4,0,42,((Position(r,c), Agent(8,0,0)) for r in range(2) for c in range(2)))]; d = tempfile.mkdtemp(); p = os.path.join(d, 'test.html'); render_html(states, p); content = open(p).read(); assert len(content) > 500, 'HTML too short'; assert 'frames' in content.lower() or 'FRAMES' in content, 'no frame data found'"
+          ],
+          "duration_seconds": 0.035,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "c73f7f266aba8980be05c7d3dd81792ea429c2fd",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "worldsim/render_html.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.055,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts4/702e27c14bf5dc2c/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "c73f7f266aba8980be05c7d3dd81792ea429c2fd",
+  "repo_tree_hash_after": "44ad2b8b4ce0b6c04cee903baa4897d398d72a43",
+  "run_id": "702e27c14bf5dc2c",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-09"
+}

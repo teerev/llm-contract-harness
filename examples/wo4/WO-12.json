@@ -1,0 +1,34 @@
+{
+  "id": "WO-12",
+  "title": "Add integration, checkpoint, and rendering tests",
+  "intent": "Create tests/test_integration.py with tests for statistics accuracy, ASCII rendering correctness, checkpoint round-trip with resume, HTML output structure, and end-to-end determinism.",
+  "allowed_files": [
+    "tests/test_integration.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/render_html.py",
+    "worldsim/checkpoint.py"
+  ],
+  "forbidden": [
+    "Do not modify any worldsim/ source files",
+    "Do not modify scripts/verify.sh",
+    "Do not modify any other existing files"
+  ],
+  "acceptance_commands": [
+    "python -m pytest tests/test_integration.py -q"
+  ],
+  "context_files": [
+    "tests/test_integration.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/render_html.py",
+    "worldsim/checkpoint.py"
+  ],
+  "notes": "IMPORTANT: Read ALL context source files to learn EXACT function signatures. Do NOT guess parameter names. Do NOT import any external dependencies in test code — use only stdlib and the worldsim package.\n\nCreate tests/test_integration.py with at least these tests:\n\nStats:\n1. StatsCollector.record returns TickMetrics with correct population and density\n2. to_csv has header + correct row count after N records\n3. avg_energy is 0.0 when population is 0\n\nASCII render:\n4. render_ascii returns string with height lines, each width characters\n5. Agents appear as '@' (energy>5) or 'o' (energy 1-5) at correct positions\n6. Determinism: same WorldState renders identically twice\n\nCheckpoint:\n7. save then load produces identical WorldState\n8. Round-trip with empty agents works\n9. Checkpoint resume: run 5 steps, checkpoint, load into new World, run 5 more — must equal 10 steps straight from same seed\n\nHTML render:\n10. render_html creates a file starting with <!DOCTYPE\n11. Output contains <canvas and frame data\n12. File size is > 500 bytes for non-trivial input\n\nEnd-to-end:\n13. Full pipeline create_world -> 10 steps -> get_state, run twice same seed, final states identical\n\nUse tempfile.mkdtemp() for all file output."
+}

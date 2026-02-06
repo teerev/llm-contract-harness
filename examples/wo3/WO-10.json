@@ -1,0 +1,32 @@
+{
+  "id": "WO-10",
+  "title": "Add integration and support module tests",
+  "intent": "Create tests/test_integration.py with tests for statistics collection, ASCII rendering, checkpoint round-trip, and end-to-end simulation determinism.",
+  "allowed_files": [
+    "tests/test_integration.py",
+    "lifesim/types.py",
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/stats.py",
+    "lifesim/render.py",
+    "lifesim/checkpoint.py"
+  ],
+  "forbidden": [
+    "Do not modify any lifesim/ source files",
+    "Do not modify scripts/verify.sh",
+    "Do not modify any other existing files"
+  ],
+  "acceptance_commands": [
+    "python -m pytest tests/test_integration.py -q"
+  ],
+  "context_files": [
+    "tests/test_integration.py",
+    "lifesim/types.py",
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/stats.py",
+    "lifesim/render.py",
+    "lifesim/checkpoint.py"
+  ],
+  "notes": "IMPORTANT: Read ALL context source files to learn EXACT function signatures. Do NOT guess parameter names.\n\nCreate tests/test_integration.py with at least these tests:\n\nStats tests:\n1. StatsCollector.record returns TickMetrics with correct population count\n2. to_csv contains header and correct number of data rows after N records\n3. avg_energy is 0.0 when population is 0\n\nRender tests:\n4. render_ascii returns a string with exactly height lines, each of width characters\n5. Agents appear as '@' or 'o' at their positions; empty cells are '.'\n6. Determinism: same WorldState renders identically\n\nCheckpoint tests:\n7. save then load produces identical WorldState (round-trip)\n8. Round-trip with empty agents tuple works\n9. Round-trip preserves all agent fields (energy, age, direction)\n\nEnd-to-end tests:\n10. Full pipeline: create_world -> 10 steps -> get_state, run twice with same seed, final states are identical\n11. Checkpoint resume: run 5 steps, checkpoint, load checkpoint into new World, run 5 more steps — result matches running 10 steps straight from the same seed\n\nUse tempfile.mkdtemp() for any file output to avoid polluting the repo."
+}

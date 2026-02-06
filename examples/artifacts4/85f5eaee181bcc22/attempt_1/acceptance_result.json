@@ -1,0 +1,16 @@
+[
+  {
+    "command": [
+      "python",
+      "-m",
+      "worldsim",
+      "--version"
+    ],
+    "duration_seconds": 0.031,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts4/85f5eaee181bcc22/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts4/85f5eaee181bcc22/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": "0.1.0\n"
+  }
+]

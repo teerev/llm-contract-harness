@@ -1,0 +1,26 @@
+........F.                                                               [100%]
+=================================== FAILURES ===================================
+_ test_age_increases_survivors_from_initial_population_have_age_gt_0_after_5_steps_sparse_grid _
+
+    def test_age_increases_survivors_from_initial_population_have_age_gt_0_after_5_steps_sparse_grid():
+        config = SimConfig(width=30, height=30, seed=888, initial_density=0.05)
+        world = create_world(config)
+    
+        initial_state = world.get_state()
+        initial_positions = _positions_set(initial_state)
+    
+        for _ in range(5):
+            world.step()
+    
+        state = world.get_state()
+        # Newborn agents can have age==0; only assert for agents that existed initially and survived.
+        for pos, agent in state.agents:
+            if pos in initial_positions:
+>               assert agent.age > 0
+E               assert 0 > 0
+E                +  where 0 = Agent(energy=8, age=0, direction=3).age
+
+tests/test_simulation.py:113: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_simulation.py::test_age_increases_survivors_from_initial_population_have_age_gt_0_after_5_steps_sparse_grid
+1 failed, 9 passed in 0.53s

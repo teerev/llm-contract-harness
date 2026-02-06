@@ -1,0 +1,28 @@
+{
+  "id": "WO-04",
+  "title": "Implement world engine and default ruleset",
+  "intent": "Create lifesim/world.py (World class with create_world, step, get_state) and lifesim/rules.py (default_ruleset function implementing movement, energy, reproduction, and death) to form the core simulation engine.",
+  "allowed_files": [
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/types.py"
+  ],
+  "forbidden": [
+    "Do not modify lifesim/types.py",
+    "Do not modify any other existing files",
+    "Do not use the global random module state — always use random.Random instances",
+    "Do not import any external dependencies"
+  ],
+  "acceptance_commands": [
+    "python -c \"from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w = create_world(cfg); st = w.get_state(); assert st.width == 8 and st.height == 8 and st.step_number == 0 and len(st.agents) > 0\"",
+    "python -c \"from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w1 = create_world(cfg); w2 = create_world(cfg); assert w1.get_state() == w2.get_state(); r1 = w1.step(); r2 = w2.step(); assert r1 == r2, 'not deterministic'\"",
+    "python -c \"from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=12, height=12, seed=99, initial_density=0.4); w = create_world(cfg); pop0 = len(w.get_state().agents); r = w.step(); pop1 = len(r.world.agents); assert pop0 + r.births - r.deaths == pop1, f'population invariant violated: {pop0}+{r.births}-{r.deaths}!={pop1}'\"",
+    "python -c \"from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=10, height=10, seed=7, initial_density=0.5); w = create_world(cfg); positions = [p for p, _ in w.get_state().agents]; assert len(positions) == len(set(positions)), 'duplicate positions in initial state'; r = w.step(); positions2 = [p for p, _ in r.world.agents]; assert len(positions2) == len(set(positions2)), 'duplicate positions after step'\""
+  ],
+  "context_files": [
+    "lifesim/world.py",
+    "lifesim/rules.py",
+    "lifesim/types.py"
+  ],
+  "notes": "TWO FILES to create: lifesim/world.py and lifesim/rules.py.\n\n--- lifesim/world.py ---\nDefine: create_world(config: SimConfig) -> World. Use random.Random(config.seed) to place agents on the grid. For each cell (row, col) in row-major order, if rng.random() < config.initial_density, place an Agent(energy=config.initial_energy, age=0, direction=rng.randint(0,3)). Start is always Position(0,0), agents are sorted by Position.\n\nClass World must have:\n- __init__(self, config: SimConfig, state: WorldState, ruleset=None): stores config, unpacks agents into an internal dict[Position, Agent], defaults ruleset to default_ruleset from lifesim.rules\n- step(self) -> StepResult: derive a per-step RNG as random.Random(config.seed * 6364136223846793005 + step_number) for deterministic resumability, call self._ruleset(agents_dict, width, height, config, rng), build new WorldState from result, return StepResult\n- get_state(self) -> WorldState: snapshot current state as immutable WorldState with agents sorted by Position\n\n--- lifesim/rules.py ---\nDefine: default_ruleset(agents: dict, width: int, height: int, config: SimConfig, rng: random.Random) -> tuple containing (new_agents_dict, births_count, deaths_count, movements_count).\n\nThe algorithm builds a NEW agents dict from scratch during each phase. Process agents in sorted Position order.\n\nPhase 1 — Age + Move: create an empty dict called new_agents. For each (pos, agent) in the OLD agents dict sorted by pos: increment age by 1. Compute target cell from direction (0=N:row-1, 1=E:col+1, 2=S:row+1, 3=W:col-1) with wrapping (modulo width/height). Check if target is NOT already a key in new_agents AND NOT occupied in the old agents dict by an agent that has not yet been processed. SIMPLEST CORRECT APPROACH: check if target is already in new_agents — if not, move there and increment movements; if occupied in new_agents, stay at current position. Then add the agent to new_agents at its final position. Randomize direction via rng.randint(0,3). Decrease energy by config.move_cost, increase by config.energy_gain. CRITICAL: after this phase, len(new_agents) MUST equal len(old agents). No agents may be lost during movement.\n\nPhase 2 — Reproduction: for each agent in new_agents in sorted order, if energy >= config.reproduction_threshold, find adjacent empty cells (not in new_agents), pick one randomly via rng. Place offspring Agent(energy=config.reproduction_cost, age=0, direction=rng.randint(0,3)) into new_agents. Parent loses config.reproduction_cost energy (update in new_agents). Increment births.\n\nPhase 3 — Death: remove agents from new_agents where energy <= 0 or age > config.max_age. Count deaths.\n\nINVARIANT: population_before + births - deaths == population_after. This MUST hold for every step. Grid wraps toroidally. No two agents may ever occupy the same cell. Do NOT modify lifesim/types.py."
+}

@@ -1,0 +1,75 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; from lsysviz.types import Segment; segs = interpret('F', 90.0, 10.0); assert len(segs) == 1; assert abs(segs[0].y1 - 10.0) < 1e-9"
+          ],
+          "duration_seconds": 0.027,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; segs = interpret('FF', 90.0, 10.0); assert len(segs) == 2"
+          ],
+          "duration_seconds": 0.032,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lsysviz.turtle import interpret; segs = interpret('F[+F]F', 90.0, 10.0); assert len(segs) == 3"
+          ],
+          "duration_seconds": 0.028,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/acceptance_2_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "97a9cc49358777efc27c76a0471882495d465905",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lsysviz/turtle.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.059,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts/6957b7e36e5855ad/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "97a9cc49358777efc27c76a0471882495d465905",
+  "repo_tree_hash_after": "6e7a7656e62eec59baf81c23c6f273790b50c66f",
+  "run_id": "6957b7e36e5855ad",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-05"
+}

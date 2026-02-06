@@ -1,0 +1,38 @@
+......F..............                                                    [100%]
+=================================== FAILURES ===================================
+_______________ test_checkpoint_round_trip_identical_worldstate ________________
+
+    def test_checkpoint_round_trip_identical_worldstate() -> None:
+        state = _make_state(
+            width=7,
+            height=5,
+            step_number=9,
+            seed=999,
+            agents=(
+                (Position(4, 6), Agent(energy=12, age=7, direction=2)),
+                (Position(0, 0), Agent(energy=1, age=0, direction=0)),
+            ),
+        )
+    
+        tmpdir = tempfile.mkdtemp()
+        path = os.path.join(tmpdir, "checkpoint.json")
+    
+        save_checkpoint(state, path)
+        loaded = load_checkpoint(path)
+    
+>       assert loaded == state
+E       AssertionError: assert WorldState(wi...irection=2)))) == WorldState(wi...irection=0))))
+E         
+E         Omitting 4 identical items, use -vv to show
+E         Differing attributes:
+E         ['agents']
+E         
+E         Drill down into differing attribute agents:
+E           agents: ((Position(row=0, col=0), Agent(energy=1, age=0, direction=0)), (Position(row=4, col=6), Agent(energy=12, age=7, direction=2))) != ((Position(row=4, col=6), Agent(energy=12, age=7, direction=2)), (Position(row=0, col=0), Agent(energy=1, age=0, direction=0)))...
+E         
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/test_integration.py:139: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_integration.py::test_checkpoint_round_trip_identical_worldstate
+1 failed, 20 passed in 0.50s

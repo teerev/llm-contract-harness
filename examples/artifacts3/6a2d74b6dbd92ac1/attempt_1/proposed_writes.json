@@ -1,0 +1,10 @@
+{
+  "summary": "Added lifesim/stats.py implementing a pure StatsCollector that records per-tick TickMetrics from StepResult, stores history, returns copies, and can emit CSV output.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from __future__ import annotations\n\nfrom typing import List\n\nfrom lifesim.types import StepResult, TickMetrics\n\n\nclass StatsCollector:\n    def __init__(self) -> None:\n        self._history: List[TickMetrics] = []\n\n    def record(self, step_result: StepResult) -> TickMetrics:\n        world = step_result.world\n        population = len(world.agents)\n\n        if population == 0:\n            avg_energy = 0.0\n        else:\n            total_energy = 0\n            for _pos, agent in world.agents:\n                total_energy += agent.energy\n            avg_energy = total_energy / population\n\n        metrics = TickMetrics(\n            step_number=world.step_number,\n            population=population,\n            births=step_result.births,\n            deaths=step_result.deaths,\n            avg_energy=float(avg_energy),\n        )\n        self._history.append(metrics)\n        return metrics\n\n    def get_history(self) -> list[TickMetrics]:\n        return list(self._history)\n\n    def to_csv(self) -> str:\n        lines = [\"step_number,population,births,deaths,avg_energy\"]\n        for m in self._history:\n            lines.append(\n                f\"{m.step_number},{m.population},{m.births},{m.deaths},{m.avg_energy}\"\n            )\n        return \"\\n\".join(lines)\n",
+      "path": "lifesim/stats.py"
+    }
+  ]
+}

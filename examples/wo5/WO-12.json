@@ -1,0 +1,28 @@
+{
+  "id": "WO-12",
+  "title": "Add core simulation tests and enable pytest",
+  "intent": "Create tests/test_simulation.py with deterministic tests for movement safety, rules invariants, world creation, and stepping, and update scripts/verify.sh to run pytest.",
+  "allowed_files": [
+    "tests/test_simulation.py",
+    "scripts/verify.sh",
+    "worldsim/types.py",
+    "worldsim/movement.py",
+    "worldsim/rules.py",
+    "worldsim/world.py"
+  ],
+  "forbidden": [
+    "Do not modify any worldsim/ source files"
+  ],
+  "acceptance_commands": [
+    "python -m pytest tests/test_simulation.py -q"
+  ],
+  "context_files": [
+    "tests/test_simulation.py",
+    "scripts/verify.sh",
+    "worldsim/types.py",
+    "worldsim/movement.py",
+    "worldsim/rules.py",
+    "worldsim/world.py"
+  ],
+  "notes": "IMPORTANT: Read ALL source files to learn EXACT function signatures. Do NOT guess parameter names.\n\nCreate tests/test_simulation.py with at least these tests:\n1. create_world returns WorldState with correct dimensions and step_number=0\n2. Determinism: create_world same config twice → identical state\n3. move_agents preserves agent count: len(output) == len(input)\n4. move_agents produces no duplicate positions\n5. move_agents is deterministic\n6. default_ruleset population invariant: len(in) + births - deaths == len(out)\n7. default_ruleset newborn counting: count of agents with age==0 equals births\n8. default_ruleset does not mutate input dict\n9. World.step() increments step_number\n10. World.step() determinism over 10 steps\n11. No cell collisions after step: all positions unique\n12. Energy bounds: all agents in step result have energy > 0\n\nUpdate scripts/verify.sh to append 'python -m pytest -q' as the last line."
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from hello import greet, farewell; assert greet() == 'Hello, World!'; assert farewell() == 'Goodbye, World!'"
+    ],
+    "duration_seconds": 0.026,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts/166a940a5bc3970c/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts/166a940a5bc3970c/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "summary": "Added lifesim/render.py implementing a pure deterministic render_ascii(WorldState) that outputs an ASCII grid with agent energy-based glyphs.",
+  "writes": [
+    {
+      "base_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content": "from __future__ import annotations\n\nfrom typing import Dict\n\nfrom .types import Position, WorldState\n\n\ndef render_ascii(state: WorldState) -> str:\n    \"\"\"Render a WorldState as an ASCII grid.\n\n    Each cell is one character:\n      - '.' for empty\n      - '@' for agents with energy > 5\n      - 'o' for agents with energy 1-5\n      - 'x' for agents with energy <= 0\n\n    Rows are separated by '\\n' with no trailing newline.\n    \"\"\"\n\n    def glyph(energy: int) -> str:\n        if energy > 5:\n            return \"@\"\n        if energy > 0:\n            return \"o\"\n        return \"x\"\n\n    # Build a position->glyph map. If duplicates exist, last one wins deterministically\n    # based on the order in state.agents.\n    agent_at: Dict[Position, str] = {}\n    for pos, agent in state.agents:\n        agent_at[pos] = glyph(agent.energy)\n\n    lines = []\n    for r in range(state.height):\n        row_chars = []\n        for c in range(state.width):\n            row_chars.append(agent_at.get(Position(r, c), \".\"))\n        lines.append(\"\".join(row_chars))\n\n    return \"\\n\".join(lines)\n",
+      "path": "lifesim/render.py"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(3,3,i,42,((Position(0,i%3), Agent(10-i,i,0)),)) for i in range(5)]; d = tempfile.mkdtemp(); p = os.path.join(d, 'sim.html'); render_html(states, p); content = open(p).read(); assert content.lstrip().lower().startswith('<!doctype'), 'not HTML'; assert '<canvas' in content.lower(), 'no canvas'"
+    ],
+    "duration_seconds": 0.033,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "import tempfile, os; from worldsim.render_html import render_html; from worldsim.types import WorldState, Position, Agent; states = [WorldState(4,4,0,42,((Position(r,c), Agent(8,0,0)) for r in range(2) for c in range(2)))]; d = tempfile.mkdtemp(); p = os.path.join(d, 't.html'); render_html(states, p); assert os.path.getsize(p) > 500, 'HTML too small'"
+    ],
+    "duration_seconds": 0.032,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts5/fbe9b966980594fb/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

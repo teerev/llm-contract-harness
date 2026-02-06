@@ -1,0 +1,36 @@
+{
+  "id": "WO-15",
+  "title": "Generate project README",
+  "intent": "Create README.md documenting the worldsim package: what it does, CLI usage with examples, Python API overview, and notes on determinism, checkpointing, and the HTML viewer.",
+  "allowed_files": [
+    "README.md",
+    "worldsim/__init__.py",
+    "worldsim/cli.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/render_html.py",
+    "worldsim/checkpoint.py"
+  ],
+  "forbidden": [
+    "Do not modify any file except README.md"
+  ],
+  "acceptance_commands": [
+    "python -c \"import os; assert os.path.isfile('README.md'); c = open('README.md').read(); assert len(c) > 300; assert 'worldsim' in c; assert '--seed' in c; assert 'deterministic' in c.lower() or 'determinism' in c.lower()\""
+  ],
+  "context_files": [
+    "README.md",
+    "worldsim/__init__.py",
+    "worldsim/cli.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/stats.py",
+    "worldsim/render_ascii.py",
+    "worldsim/render_html.py",
+    "worldsim/checkpoint.py"
+  ],
+  "notes": "Read ALL context files. Write README.md with: (1) title + one-paragraph description, (2) quick start CLI example, (3) CLI reference with all flags, (4) three examples: headless, ASCII render, HTML viewer generation, (5) Python API section: create_world, World.step, StatsCollector, render_ascii, render_html, checkpoint, (6) default ruleset description, (7) determinism note, (8) checkpoint/resume note, (9) HTML viewer note. Concise and accurate — do not invent features. Do NOT modify any other files."
+}

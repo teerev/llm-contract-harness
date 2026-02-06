@@ -1,0 +1,28 @@
+{
+  "id": "WO-14",
+  "title": "Add HTML render and end-to-end determinism tests",
+  "intent": "Create tests/test_integration.py with tests for HTML output structure and end-to-end simulation determinism across multiple seeds and step counts.",
+  "allowed_files": [
+    "tests/test_integration.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/render_html.py"
+  ],
+  "forbidden": [
+    "Do not modify any worldsim/ source files",
+    "Do not modify scripts/verify.sh",
+    "Do not import any external dependencies in test code"
+  ],
+  "acceptance_commands": [
+    "python -m pytest tests/test_integration.py -q"
+  ],
+  "context_files": [
+    "tests/test_integration.py",
+    "worldsim/types.py",
+    "worldsim/world.py",
+    "worldsim/rules.py",
+    "worldsim/render_html.py"
+  ],
+  "notes": "IMPORTANT: Read ALL source files for EXACT signatures. Do NOT guess. Do NOT import PIL or any external dependency.\n\nCreate tests/test_integration.py:\n\nHTML render (3 tests):\n1. render_html creates file starting with <!DOCTYPE (case-insensitive)\n2. Output contains <canvas and frame data\n3. File > 500 bytes for non-trivial input\n\nEnd-to-end determinism (3 tests):\n4. create_world → 10 steps → get_state, run twice same seed → identical final states\n5. create_world → 20 steps with seed=42, then separately with seed=99 → different final states\n6. Population trend: run 50 steps on a 20x20 grid with density=0.2, verify population stays > 0 (system doesn't instantly collapse) and population count at step 50 matches between two identical runs\n\nUse tempfile.mkdtemp() for HTML output."
+}

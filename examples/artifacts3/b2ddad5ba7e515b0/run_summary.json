@@ -1,0 +1,76 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w = create_world(cfg); st = w.get_state(); assert st.width == 8 and st.height == 8 and st.step_number == 0 and len(st.agents) > 0"
+          ],
+          "duration_seconds": 0.03,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w = create_world(cfg); r = w.step(); assert r.world.step_number == 1; assert r.births >= 0 and r.deaths >= 0 and r.movements >= 0"
+          ],
+          "duration_seconds": 0.029,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_1_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_1_stdout.txt",
+          "stdout_trunc": ""
+        },
+        {
+          "command": [
+            "python",
+            "-c",
+            "from lifesim.world import create_world; from lifesim.types import SimConfig; cfg = SimConfig(width=8, height=8, seed=42); w1 = create_world(cfg); w2 = create_world(cfg); assert w1.get_state() == w2.get_state(); r1 = w1.step(); r2 = w2.step(); assert r1 == r2, 'not deterministic'"
+          ],
+          "duration_seconds": 0.029,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_2_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/acceptance_2_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "f1dd817618d553b42f1984e9dccea54f8cadabc7",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "lifesim/rules.py",
+        "lifesim/world.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.059,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts3/b2ddad5ba7e515b0/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "f1dd817618d553b42f1984e9dccea54f8cadabc7",
+  "repo_tree_hash_after": "611cec3864d166b91c17949b115f5f98e5c4b23b",
+  "run_id": "b2ddad5ba7e515b0",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-04"
+}
