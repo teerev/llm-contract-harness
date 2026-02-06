@@ -60,6 +60,18 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     run_dir = os.path.join(out_dir, run_id)
     os.makedirs(run_dir, exist_ok=True)
 
+    # Persist the work order and CLI config for post-mortem reproducibility
+    save_json(work_order.model_dump(), os.path.join(run_dir, "work_order.json"))
+
+    run_config = {
+        "llm_model": args.llm_model,
+        "llm_temperature": args.llm_temperature,
+        "max_attempts": args.max_attempts,
+        "timeout_seconds": args.timeout_seconds,
+        "repo_root": repo_root,
+        "out_dir": out_dir,
+    }
+
     # ------------------------------------------------------------------
     # Build & invoke graph
     # ------------------------------------------------------------------
@@ -118,6 +130,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
             "total_attempts": 0,
             "baseline_commit": baseline_commit,
             "repo_tree_hash_after": None,
+            "config": run_config,
             "attempts": [],
             "error": str(exc),
             "error_traceback": error_detail,
@@ -149,6 +162,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "total_attempts": len(attempts),
         "baseline_commit": baseline_commit,
         "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
+        "config": run_config,
         "attempts": attempts,
     }
 

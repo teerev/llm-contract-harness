@@ -468,10 +468,11 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 
 ### Priority 3 — Medium (robustness improvements)
 
-#### R9. Copy work order and record CLI args in run artifacts
+#### R9. ~~Copy work order and record CLI args in run artifacts~~ — COMPLETED
+**Status**: **DONE**. In `run.py`: (1) the work order is saved to `<run_dir>/work_order.json` immediately after the run directory is created; (2) a `config` dict containing `llm_model`, `llm_temperature`, `max_attempts`, `timeout_seconds`, `repo_root`, and `out_dir` is included in both the normal and emergency `run_summary.json`.  
 **Failure mode mitigated**: Cannot fully reconstruct run conditions from artifacts alone.  
-**Where**: `run.py`, after loading work order (around line 51). Copy to `run_id/work_order.json`. Add `llm_model`, `llm_temperature`, `max_attempts`, `timeout_seconds` to `run_summary.json`.  
-**Acceptance test**: Verify these files/fields exist in a run's artifact directory.
+**Where**: `run.py:63-72` (work order + config), `run.py:130` and `run.py:160` (config in summaries).  
+**Acceptance test**: Verify `work_order.json` and `config` key exist in a run's artifact directory.
 
 #### R10. Reject proposals with duplicate write paths
 **Failure mode mitigated**: Two writes to the same path both pass hash checks (checks run before writes); second write silently overwrites first.  
