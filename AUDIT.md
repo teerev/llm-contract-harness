@@ -486,9 +486,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `__main__.py:55-60`.  
 **Acceptance test**: Pass `--max-attempts 0`; verify error message.
 
-#### R12. Include BOTH stderr and stdout in FailureBrief excerpt
+#### R12. ~~Include BOTH stderr and stdout in FailureBrief excerpt~~ — COMPLETED
+**Status**: **DONE**. Both verify and acceptance failure paths in `nodes_po.py` now concatenate stderr and stdout (labelled `[stderr]` and `[stdout]`) into the `primary_error_excerpt`, instead of the previous `stderr or stdout` either/or logic. The combined string is then truncated to the 2000-char limit.  
 **Failure mode mitigated**: Current `stderr or stdout` logic loses stdout when stderr is non-empty. Many tools write useful info to both streams.  
-**Where**: `nodes_po.py:70,104` — concatenate both (truncated) instead of either/or.  
+**Where**: `nodes_po.py:68-73` (verify), `nodes_po.py:127-132` (acceptance).  
 **Acceptance test**: Create a test that writes to both streams; verify both appear in the FailureBrief excerpt.
 
 ### Priority 4 — Low (polish)

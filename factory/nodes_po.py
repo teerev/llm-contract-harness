@@ -63,11 +63,16 @@ def po_node(state: dict) -> dict:
         verify_results.append(cr.model_dump())
 
         if cr.exit_code != 0:
+            combined = ""
+            if cr.stderr_trunc:
+                combined += f"[stderr]\n{cr.stderr_trunc}\n"
+            if cr.stdout_trunc:
+                combined += f"[stdout]\n{cr.stdout_trunc}\n"
             fb = FailureBrief(
                 stage="verify_failed",
                 command=" ".join(cmd),
                 exit_code=cr.exit_code,
-                primary_error_excerpt=truncate(cr.stderr_trunc or cr.stdout_trunc),
+                primary_error_excerpt=truncate(combined.strip()),
                 constraints_reminder="Global verification must pass before acceptance.",
             )
             save_json(verify_results, os.path.join(attempt_dir, "verify_result.json"))
@@ -118,11 +123,16 @@ def po_node(state: dict) -> dict:
         acceptance_results.append(cr.model_dump())
 
         if cr.exit_code != 0:
+            combined = ""
+            if cr.stderr_trunc:
+                combined += f"[stderr]\n{cr.stderr_trunc}\n"
+            if cr.stdout_trunc:
+                combined += f"[stdout]\n{cr.stdout_trunc}\n"
             fb = FailureBrief(
                 stage="acceptance_failed",
                 command=cmd_str,
                 exit_code=cr.exit_code,
-                primary_error_excerpt=truncate(cr.stderr_trunc or cr.stdout_trunc),
+                primary_error_excerpt=truncate(combined.strip()),
                 constraints_reminder="All acceptance commands must exit 0.",
             )
             save_json(
