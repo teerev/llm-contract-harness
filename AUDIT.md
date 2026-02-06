@@ -480,9 +480,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `nodes_tr.py:64-89`.  
 **Acceptance test**: Submit a proposal with two writes to the same path; verify `FailureBrief(stage="write_scope_violation")`.
 
-#### R11. Validate `max_attempts >= 1`
+#### R11. ~~Validate `max_attempts >= 1`~~ — COMPLETED
+**Status**: **DONE**. Added a check in `__main__.py` after arg parsing: if `args.max_attempts < 1`, prints an error to stderr and exits with code 1 before `run_cli` is called.  
 **Failure mode mitigated**: `max_attempts=0` still executes one attempt.  
-**Where**: `__main__.py`, after parsing args (or in `run.py`).  
+**Where**: `__main__.py:55-60`.  
 **Acceptance test**: Pass `--max-attempts 0`; verify error message.
 
 #### R12. Include BOTH stderr and stdout in FailureBrief excerpt

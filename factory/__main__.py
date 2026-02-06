@@ -53,6 +53,13 @@ def main() -> None:
         sys.exit(1)
 
     if args.command == "run":
+        if args.max_attempts < 1:
+            print(
+                "ERROR: --max-attempts must be at least 1.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         # Defer import so ``--help`` stays fast
         from factory.run import run_cli
 
