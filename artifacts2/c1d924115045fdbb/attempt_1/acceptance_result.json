@@ -1,0 +1,28 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from mazegen.generate import generate; from mazegen.types import Position; m = generate(width=4, height=4, seed=42); assert m.width == 4 and m.height == 4; assert m.start == Position(0, 0); assert m.end == Position(3, 3); assert len(m.passages) > 0"
+    ],
+    "duration_seconds": 0.028,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/c1d924115045fdbb/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/c1d924115045fdbb/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  },
+  {
+    "command": [
+      "python",
+      "-c",
+      "from mazegen.generate import generate; m1 = generate(width=4, height=4, seed=42); m2 = generate(width=4, height=4, seed=42); assert m1.passages == m2.passages, 'not deterministic'"
+    ],
+    "duration_seconds": 0.029,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/c1d924115045fdbb/attempt_1/acceptance_1_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/c1d924115045fdbb/attempt_1/acceptance_1_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

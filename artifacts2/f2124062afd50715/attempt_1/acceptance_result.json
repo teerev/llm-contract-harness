@@ -1,0 +1,15 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "from mazegen.types import Position, Maze, Solution; p = Position(row=0, col=1); assert p.row == 0 and p.col == 1; m = Maze(width=3, height=3, seed=42, start=Position(0,0), end=Position(2,2), passages=frozenset()); assert m.width == 3; s = Solution(found=True, path=(Position(0,0),)); assert s.found and len(s.path) == 1"
+    ],
+    "duration_seconds": 0.027,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

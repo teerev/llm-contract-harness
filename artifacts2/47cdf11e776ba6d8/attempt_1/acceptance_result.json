@@ -1,0 +1,15 @@
+[
+  {
+    "command": [
+      "python",
+      "-c",
+      "import os; assert os.path.isfile('scripts/verify.sh'), 'verify.sh not found'"
+    ],
+    "duration_seconds": 0.026,
+    "exit_code": 0,
+    "stderr_path": "/Users/user/repos/aos/artifacts2/47cdf11e776ba6d8/attempt_1/acceptance_0_stderr.txt",
+    "stderr_trunc": "",
+    "stdout_path": "/Users/user/repos/aos/artifacts2/47cdf11e776ba6d8/attempt_1/acceptance_0_stdout.txt",
+    "stdout_trunc": ""
+  }
+]

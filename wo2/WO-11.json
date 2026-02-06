@@ -1,0 +1,34 @@
+{
+  "id": "WO-11",
+  "title": "Generate project README",
+  "intent": "Create README.md documenting the mazegen package: what it does, how to install, CLI usage with examples, Python API overview, and a note on determinism.",
+  "allowed_files": [
+    "README.md",
+    "mazegen/__init__.py",
+    "mazegen/__main__.py",
+    "mazegen/cli.py",
+    "mazegen/types.py",
+    "mazegen/generate.py",
+    "mazegen/solve.py",
+    "mazegen/render.py"
+  ],
+  "forbidden": [
+    "Do not modify any file except README.md",
+    "Do not modify any mazegen/ source files",
+    "Do not modify scripts/ or tests/"
+  ],
+  "acceptance_commands": [
+    "python -c \"import os; assert os.path.isfile('README.md'); content = open('README.md').read(); assert len(content) > 200, 'README too short'; assert 'mazegen' in content; assert '--seed' in content\""
+  ],
+  "context_files": [
+    "README.md",
+    "mazegen/__init__.py",
+    "mazegen/__main__.py",
+    "mazegen/cli.py",
+    "mazegen/types.py",
+    "mazegen/generate.py",
+    "mazegen/solve.py",
+    "mazegen/render.py"
+  ],
+  "notes": "Read ALL the provided context files to understand the project. Write a README.md that includes: (1) a project title and one-paragraph description, (2) installation instructions (just 'pip install' is not needed — it's a standalone package, just mention Python 3.10+), (3) CLI usage section showing 'python -m mazegen' with all flags (read cli.py to get the exact arguments), (4) at least two concrete CLI examples: one generating a maze, one generating and solving, (5) a brief Python API section showing how to use generate(), solve(), and render_ascii() programmatically, (6) a note that all outputs are deterministic given the same seed. Keep it concise and accurate — do not invent features that don't exist in the source. All other files are context-only — do NOT modify them."
+}

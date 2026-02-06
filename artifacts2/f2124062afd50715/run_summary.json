@@ -1,0 +1,49 @@
+{
+  "attempts": [
+    {
+      "acceptance": [
+        {
+          "command": [
+            "python",
+            "-c",
+            "from mazegen.types import Position, Maze, Solution; p = Position(row=0, col=1); assert p.row == 0 and p.col == 1; m = Maze(width=3, height=3, seed=42, start=Position(0,0), end=Position(2,2), passages=frozenset()); assert m.width == 3; s = Solution(found=True, path=(Position(0,0),)); assert s.found and len(s.path) == 1"
+          ],
+          "duration_seconds": 0.027,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/acceptance_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/acceptance_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "attempt_index": 1,
+      "baseline_commit": "018a255da032bbb67e96b8a8259cba741f59d59a",
+      "failure_brief": null,
+      "proposal_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/proposed_writes.json",
+      "touched_files": [
+        "mazegen/types.py"
+      ],
+      "verify": [
+        {
+          "command": [
+            "bash",
+            "scripts/verify.sh"
+          ],
+          "duration_seconds": 0.054,
+          "exit_code": 0,
+          "stderr_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/verify_0_stderr.txt",
+          "stderr_trunc": "",
+          "stdout_path": "/Users/user/repos/aos/artifacts2/f2124062afd50715/attempt_1/verify_0_stdout.txt",
+          "stdout_trunc": ""
+        }
+      ],
+      "write_ok": true
+    }
+  ],
+  "baseline_commit": "018a255da032bbb67e96b8a8259cba741f59d59a",
+  "repo_tree_hash_after": "68d635e1142cd9b57cd03aac2a325b024fa7d0f9",
+  "run_id": "f2124062afd50715",
+  "total_attempts": 1,
+  "verdict": "PASS",
+  "work_order_id": "WO-03"
+}

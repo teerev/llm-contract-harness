@@ -1,0 +1,10 @@
+{
+  "summary": "Updated mazegen CLI to accept width/height/seed, optionally solve and write output to a file, and wired generate->solve->render_ascii pipeline while preserving --version behavior.",
+  "writes": [
+    {
+      "base_sha256": "1a735a19478af7689f1f6a26bd2b58260fffbed22a676d91c7338d713f612672",
+      "content": "from __future__ import annotations\n\nimport argparse\n\nfrom . import __version__\nfrom .generate import generate\nfrom .render import render_ascii\nfrom .solve import solve\n\n\ndef build_parser() -> argparse.ArgumentParser:\n    parser = argparse.ArgumentParser(prog=\"mazegen\")\n    parser.add_argument(\n        \"--version\",\n        action=\"store_true\",\n        help=\"print version and exit\",\n    )\n\n    parser.add_argument(\"--width\", type=int, required=True, help=\"maze width (columns)\")\n    parser.add_argument(\"--height\", type=int, required=True, help=\"maze height (rows)\")\n    parser.add_argument(\"--seed\", type=int, required=True, help=\"random seed (deterministic)\")\n\n    parser.add_argument(\n        \"--solve\",\n        action=\"store_true\",\n        default=False,\n        help=\"solve the maze and overlay the solution path\",\n    )\n    parser.add_argument(\n        \"--output\",\n        type=str,\n        default=None,\n        help=\"write output to this file instead of stdout\",\n    )\n\n    return parser\n\n\ndef main(argv: list[str] | None = None) -> int:\n    parser = build_parser()\n    args = parser.parse_args(argv)\n\n    if args.version:\n        print(__version__)\n        return 0\n\n    maze = generate(args.width, args.height, args.seed)\n    sol = solve(maze) if args.solve else None\n    out = render_ascii(maze, solution=sol)\n\n    if args.output:\n        with open(args.output, \"w\", encoding=\"utf-8\") as f:\n            f.write(out)\n    else:\n        print(out, end=\"\")\n\n    return 0\n",
+      "path": "mazegen/cli.py"
+    }
+  ]
+}
