@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="/Users/user/repos/worldsim"
-WO_DIR="/Users/user/repos/aos/wo4"
-OUT_DIR="/Users/user/repos/aos/artifacts4"
+REPO="/Users/user/repos/worldsim3"
+WO_DIR="/Users/user/repos/aos/examples/wo5"
+OUT_DIR="/Users/user/repos/aos/examples/artifacts6"
 MODEL="gpt-5.2"
-MAX_ATTEMPTS=2
+MAX_ATTEMPTS=5
 
 # Init the product repo (wipe and recreate to guarantee clean state)
 if [ -d "$REPO" ]; then
@@ -20,7 +20,7 @@ git add -A
 git commit --allow-empty -m "init"
 cd -
 
-for i in $(seq -w 1 12); do
+for i in $(seq -w 1 15); do
   WO="$WO_DIR/WO-${i}.json"
   echo ""
   echo "========================================"
@@ -45,5 +45,5 @@ done
 
 echo ""
 echo "========================================"
-echo "  All 12 work orders completed!"
+echo "  All 15 work orders completed!"
 echo "========================================"

@@ -1,9 +1,0 @@
-{
-  "errors": [],
-  "touched_files": [
-    "mazegen/__init__.py",
-    "mazegen/__main__.py",
-    "mazegen/cli.py"
-  ],
-  "write_ok": true
-}

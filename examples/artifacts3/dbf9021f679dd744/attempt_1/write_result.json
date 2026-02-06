@@ -1,9 +1,0 @@
-{
-  "errors": [],
-  "touched_files": [
-    "lifesim/__init__.py",
-    "lifesim/__main__.py",
-    "lifesim/cli.py"
-  ],
-  "write_ok": true
-}
