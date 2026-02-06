@@ -85,7 +85,29 @@ def po_node(state: dict) -> dict:
     acceptance_results: list[dict] = []
 
     for idx, cmd_str in enumerate(work_order.acceptance_commands):
-        cmd = split_command(cmd_str)
+        try:
+            cmd = split_command(cmd_str)
+        except ValueError as exc:
+            fb = FailureBrief(
+                stage="acceptance_failed",
+                command=cmd_str,
+                primary_error_excerpt=truncate(
+                    f"Failed to parse acceptance command: {exc}"
+                ),
+                constraints_reminder=(
+                    "Acceptance commands must be valid shell syntax "
+                    "(parseable by shlex.split)."
+                ),
+            )
+            save_json(
+                acceptance_results,
+                os.path.join(attempt_dir, "acceptance_result.json"),
+            )
+            return {
+                "verify_results": verify_results,
+                "acceptance_results": acceptance_results,
+                "failure_brief": fb.model_dump(),
+            }
         cr = run_command(
             cmd=cmd,
             cwd=repo_root,
