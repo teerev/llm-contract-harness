@@ -62,6 +62,32 @@ def tr_node(state: dict) -> dict:
     allowed_set = set(normalize_path(p) for p in work_order.allowed_files)
 
     # ------------------------------------------------------------------
+    # 0. Duplicate-path check — reject proposals that write the same file twice
+    # ------------------------------------------------------------------
+    if len(touched_files) < len(proposal.writes):
+        from collections import Counter
+
+        counts = Counter(normalize_path(w.path) for w in proposal.writes)
+        dupes = sorted(p for p, n in counts.items() if n > 1)
+        fb = FailureBrief(
+            stage="write_scope_violation",
+            primary_error_excerpt=f"Duplicate write paths in proposal: {dupes}",
+            constraints_reminder=(
+                "Each file may only appear once in the writes array."
+            ),
+        )
+        save_json(
+            {"write_ok": False, "touched_files": touched_files,
+             "errors": [fb.primary_error_excerpt]},
+            os.path.join(attempt_dir, "write_result.json"),
+        )
+        return {
+            "write_ok": False,
+            "touched_files": touched_files,
+            "failure_brief": fb.model_dump(),
+        }
+
+    # ------------------------------------------------------------------
     # 1. Scope check — all proposed files must be in allowed_files
     # ------------------------------------------------------------------
     out_of_scope = [f for f in touched_files if f not in allowed_set]

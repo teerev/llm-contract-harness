@@ -474,9 +474,10 @@ Given identical inputs (same work order JSON, same repo state, same LLM response
 **Where**: `run.py:63-72` (work order + config), `run.py:130` and `run.py:160` (config in summaries).  
 **Acceptance test**: Verify `work_order.json` and `config` key exist in a run's artifact directory.
 
-#### R10. Reject proposals with duplicate write paths
+#### R10. ~~Reject proposals with duplicate write paths~~ — COMPLETED
+**Status**: **DONE**. Added a duplicate-path check in `nodes_tr.py` as step 0, before the scope check. Compares `len(touched_files)` (deduplicated) to `len(proposal.writes)`. On mismatch, identifies the duplicate paths and returns `FailureBrief(stage="write_scope_violation")` with the list of duplicates.  
 **Failure mode mitigated**: Two writes to the same path both pass hash checks (checks run before writes); second write silently overwrites first.  
-**Where**: `nodes_tr.py`, after computing `touched_files` (around line 61). Compare `len(touched_files)` to `len(proposal.writes)`.  
+**Where**: `nodes_tr.py:64-89`.  
 **Acceptance test**: Submit a proposal with two writes to the same path; verify `FailureBrief(stage="write_scope_violation")`.
 
 #### R11. Validate `max_attempts >= 1`
