@@ -41,6 +41,13 @@ EXECUTION CONSTRAINT (must design for)
 The work orders will be executed by an automated system that:
 - Proposes changes as **direct file writes** (full file contents), not diffs.
 - Uses **base-hash preconditions** per file: a write is only valid if the current file bytes hash matches the expected base hash.
+- Writes files as **plain text only** — no file-permission bits (e.g. chmod +x) are set.
+  Therefore, acceptance commands must NEVER invoke scripts directly (e.g. `./scripts/verify.sh`).
+  Always use an explicit interpreter: `bash scripts/verify.sh`, `python script.py`, etc.
+- Runs each acceptance command via `subprocess.run(cmd, shell=False)` — **NO shell interpretation**.
+  This means: NO pipes (`|`), NO redirects (`>`, `<`), NO chaining (`&&`, `||`, `;`),
+  NO backticks, NO subshells. Each acceptance command must be a single process invocation.
+  If you need to test complex output, wrap the logic in a single `python -c "..."` command.
 - Therefore:
   - Edit surfaces must be small and predictable.
   - Churn and broad refactors dramatically increase failure probability.
@@ -111,9 +118,59 @@ Each work order MUST include these exact keys and no others:
 - `intent`: string, one sentence describing observable behaviour
 - `allowed_files`: list of strings, explicit relative file paths (no globs)
 - `forbidden`: list of strings, explicit prohibitions
-- `acceptance_commands`: list of strings, must include `./scripts/verify.sh`
+- `acceptance_commands`: list of strings, must include `bash scripts/verify.sh`
 - `context_files`: list of strings, subset of allowed_files
 - `notes`: string or null, implementation guidance for the coding agent
+
+────────────────────────────────
+WO-01 BOOTSTRAPPING CONTRACT (MANDATORY)
+────────────────────────────────
+
+WO-01 is structurally special: it creates `scripts/verify.sh`, which defines the
+global verification command that every subsequent work order depends on. This
+introduces a bootstrapping constraint that must be handled explicitly.
+
+WO-01 MUST:
+- Have `allowed_files` containing ONLY `scripts/verify.sh` (no other files).
+- Specify the EXACT, byte-level content of `scripts/verify.sh` in the `notes` field.
+  Leave zero degrees of freedom for the coding agent. Example:
+  "scripts/verify.sh must contain exactly: #!/usr/bin/env bash, set -euo pipefail,
+  python -m pytest -q — three lines, nothing else."
+- Use an INDEPENDENT acceptance command — NOT `bash scripts/verify.sh`.
+  Rationale: you cannot verify with verify.sh when verify.sh is the file being created.
+  Use something like: python -c "import os; assert os.path.isfile('scripts/verify.sh')"
+
+WO-01 MUST NOT:
+- Bundle project skeleton, package init, or test files alongside verify.sh.
+  Those belong in WO-02 or later.
+- Use `bash scripts/verify.sh` as an acceptance command (circular dependency).
+- Leave verify.sh content up to interpretation via loose notes.
+
+The verify.sh content should use a command that succeeds on any valid Python project
+regardless of test layout. Prefer `python -m pytest -q` or `python -m compileall -q .`.
+Do NOT use `python -m unittest discover` (it requires explicit `-s <dir>` flags that
+vary by project layout and is a known source of silent failures).
+
+────────────────────────────────
+ACCEPTANCE COMMAND DESIGN PRINCIPLE
+────────────────────────────────
+
+Every work order — including WO-02 and beyond — MUST include at least one acceptance
+command that **independently verifies the work order's specific intent**, beyond just
+re-running `bash scripts/verify.sh`.
+
+`bash scripts/verify.sh` is a global regression gate. It catches regressions but does
+not prove that the work order achieved its purpose. If the only acceptance command is
+the global verify, the work order has no per-feature acceptance and correctness is not
+enforced.
+
+Good patterns:
+- `python -c "from mypackage.module import MyClass; assert hasattr(MyClass, 'method')"`
+- `python -c "import mypackage; print(mypackage.__version__)"`
+- `python -m mypackage --help`
+
+Bad pattern:
+- `acceptance_commands: ["bash scripts/verify.sh"]` with nothing else.
 
 ────────────────────────────────
 GLOBAL CONSTRAINTS
@@ -146,7 +203,7 @@ Output a single JSON object with exactly these keys:
       "intent": "...",
       "allowed_files": ["..."],
       "forbidden": ["..."],
-      "acceptance_commands": ["./scripts/verify.sh", "..."],
+      "acceptance_commands": ["bash scripts/verify.sh", "..."],
       "context_files": ["..."],
       "notes": "..."
     },

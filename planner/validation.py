@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
 from factory.schemas import WorkOrder
 
-VERIFY_COMMAND = "./scripts/verify.sh"
+VERIFY_COMMAND = "bash scripts/verify.sh"
+VERIFY_SCRIPT_PATH = "scripts/verify.sh"
 WO_ID_PATTERN = re.compile(r"^WO-\d{2}$")
 GLOB_CHARS = set("*?[")
+# Bare tokens that indicate shell operators — incompatible with shell=False.
+# Checked against individual tokens after shlex.split, so semicolons and
+# other characters *inside* quoted strings (e.g. python -c "a; b") are safe.
+SHELL_OPERATOR_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<", "<<"})
 
 
 def _strip_strings(obj: Any) -> Any:
@@ -77,11 +83,33 @@ def validate_plan(work_orders_raw: list[dict]) -> list[str]:
         wo_id = wo.get("id", f"index-{i}")
 
         # Global verification command
+        # WO-01 is exempt when it creates verify.sh (bootstrapping constraint:
+        # it cannot use bash scripts/verify.sh as acceptance for the file it
+        # is itself creating). All other work orders must include it.
         acceptance = wo.get("acceptance_commands", [])
-        if VERIFY_COMMAND not in acceptance:
+        allowed = wo.get("allowed_files", [])
+        is_bootstrap = wo.get("id") == "WO-01" and VERIFY_SCRIPT_PATH in allowed
+        if not is_bootstrap and VERIFY_COMMAND not in acceptance:
             errors.append(
                 f"{wo_id}: acceptance_commands must contain '{VERIFY_COMMAND}'"
             )
+
+        # Shell operators — commands run with shell=False, so pipes,
+        # redirects, and chaining operators will not work.  We check the
+        # shlex-split tokens (not the raw string) so that characters inside
+        # quoted arguments (e.g. python -c "a; b") are not flagged.
+        for cmd_str in acceptance:
+            try:
+                tokens = shlex.split(cmd_str)
+            except ValueError:
+                continue  # shlex parse errors are caught elsewhere
+            bad = [t for t in tokens if t in SHELL_OPERATOR_TOKENS]
+            if bad:
+                errors.append(
+                    f"{wo_id}: acceptance command contains shell operator "
+                    f"token(s) {bad} which are incompatible with shell=False "
+                    f"execution: {cmd_str!r}"
+                )
 
         # Path hygiene — reject glob characters
         for field in ("allowed_files", "context_files"):

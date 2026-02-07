@@ -142,6 +142,26 @@ def run_command(
             duration_seconds=round(duration, 3),
         )
 
+    except OSError as exc:
+        # Covers PermissionError (no +x bit), FileNotFoundError (missing
+        # interpreter), and other OS-level launch failures.  Return a
+        # failed CmdResult instead of letting the exception crash the run.
+        duration = time.monotonic() - start
+        err_msg = f"[OSError] {exc}\n"
+        with open(stdout_path, "wb") as fh:
+            fh.write(b"")
+        with open(stderr_path, "wb") as fh:
+            fh.write(err_msg.encode("utf-8", errors="replace"))
+        return CmdResult(
+            command=cmd,
+            exit_code=-1,
+            stdout_trunc="",
+            stderr_trunc=truncate(err_msg),
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            duration_seconds=round(duration, 3),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Shell-command splitting
