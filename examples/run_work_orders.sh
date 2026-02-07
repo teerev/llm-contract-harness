@@ -52,7 +52,13 @@ if [ ! -d "$WO_DIR" ]; then
 fi
 
 # Collect and sort WO files
-mapfile -t WO_FILES < <(find "$WO_DIR" -maxdepth 1 -name 'WO-*.json' | sort)
+WO_FILES=()
+# Bash 3.2 (macOS default) does not support `mapfile`, so build the array manually.
+shopt -s nullglob
+while IFS= read -r wo; do
+  WO_FILES+=("$wo")
+done < <(printf '%s\n' "$WO_DIR"/WO-*.json | sort)
+shopt -u nullglob
 
 if [ ${#WO_FILES[@]} -eq 0 ]; then
   echo "ERROR: No WO-*.json files found in $WO_DIR" >&2

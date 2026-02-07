@@ -8,7 +8,12 @@ import traceback
 
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
-from factory.util import compute_run_id, save_json
+from factory.util import (
+    ARTIFACT_RUN_SUMMARY,
+    ARTIFACT_WORK_ORDER,
+    compute_run_id,
+    save_json,
+)
 from factory.workspace import get_baseline_commit, is_clean, is_git_repo, rollback
 
 
@@ -61,7 +66,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     os.makedirs(run_dir, exist_ok=True)
 
     # Persist the work order and CLI config for post-mortem reproducibility
-    save_json(work_order.model_dump(), os.path.join(run_dir, "work_order.json"))
+    save_json(work_order.model_dump(), os.path.join(run_dir, ARTIFACT_WORK_ORDER))
 
     run_config = {
         "llm_model": args.llm_model,
@@ -135,7 +140,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
             "error": str(exc),
             "error_traceback": error_detail,
         }
-        summary_path = os.path.join(run_dir, "run_summary.json")
+        summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
         try:
             save_json(summary_dict, summary_path)
         except Exception:
@@ -166,7 +171,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "attempts": attempts,
     }
 
-    summary_path = os.path.join(run_dir, "run_summary.json")
+    summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
     save_json(summary_dict, summary_path)
 
     print(f"Verdict: {verdict}")

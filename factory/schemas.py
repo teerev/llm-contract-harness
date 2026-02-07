@@ -150,7 +150,7 @@ class FailureBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# CmdResult / AttemptRecord / RunSummary
+# CmdResult / AttemptRecord
 # ---------------------------------------------------------------------------
 
 class CmdResult(BaseModel):
@@ -172,16 +172,6 @@ class AttemptRecord(BaseModel):
     verify: list[CmdResult]
     acceptance: list[CmdResult]
     failure_brief: Optional[FailureBrief] = None
-
-
-class RunSummary(BaseModel):
-    run_id: str
-    work_order_id: str
-    verdict: str
-    total_attempts: int
-    baseline_commit: str
-    repo_tree_hash_after: Optional[str] = None
-    attempts: list[AttemptRecord]
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,12 @@ from langgraph.graph import END, StateGraph
 from factory.nodes_po import po_node
 from factory.nodes_se import se_node
 from factory.nodes_tr import tr_node
-from factory.util import save_json
+from factory.util import (
+    ARTIFACT_FAILURE_BRIEF,
+    ARTIFACT_PROPOSED_WRITES,
+    make_attempt_dir,
+    save_json,
+)
 from factory.workspace import get_tree_hash, rollback
 
 
@@ -86,7 +91,7 @@ def _finalize_node(state: dict) -> dict:
     repo_root: str = state["repo_root"]
     baseline: str = state["baseline_commit"]
 
-    attempt_dir = os.path.join(out_dir, run_id, f"attempt_{attempt_index}")
+    attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
     failure_brief = state.get("failure_brief")
@@ -95,13 +100,14 @@ def _finalize_node(state: dict) -> dict:
     verdict: str = "FAIL" if failure_brief else "PASS"
 
     # --- Proposal path ---
-    proposal_path = os.path.join(attempt_dir, "proposed_writes.json")
+    proposal_path = os.path.join(attempt_dir, ARTIFACT_PROPOSED_WRITES)
     if not os.path.exists(proposal_path):
         proposal_path = ""
 
     # --- Save failure_brief artifact ---
     if failure_brief:
-        save_json(failure_brief, os.path.join(attempt_dir, "failure_brief.json"))
+        # Finalize always overwrites; SE writes are for crash resilience.
+        save_json(failure_brief, os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF))
 
     # --- Build attempt record ---
     attempt_record: dict = {

@@ -7,7 +7,9 @@ import tempfile
 
 from factory.schemas import FailureBrief, WorkOrder, WriteProposal
 from factory.util import (
+    ARTIFACT_WRITE_RESULT,
     is_path_inside_repo,
+    make_attempt_dir,
     normalize_path,
     save_json,
     sha256_file,
@@ -41,6 +43,42 @@ def _atomic_write(target_path: str, content: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# TR failure helper
+# ---------------------------------------------------------------------------
+
+
+def _tr_fail(
+    stage: str,
+    excerpt: str,
+    reminder: str,
+    touched_files: list[str],
+    attempt_dir: str,
+) -> dict:
+    """Build a TR failure: persist write_result.json and return failure state.
+
+    Centralises the five identical failure paths in ``tr_node``.  The
+    ``write_result.json`` artifact and the returned state dict are
+    byte-identical to the previously-inlined versions (``save_json`` uses
+    ``sort_keys=True``, so Python dict insertion order is irrelevant).
+    """
+    fb = FailureBrief(
+        stage=stage,
+        primary_error_excerpt=excerpt,
+        constraints_reminder=reminder,
+    )
+    save_json(
+        {"write_ok": False, "touched_files": touched_files,
+         "errors": [fb.primary_error_excerpt]},
+        os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT),
+    )
+    return {
+        "write_ok": False,
+        "touched_files": touched_files,
+        "failure_brief": fb.model_dump(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
 
@@ -54,7 +92,7 @@ def tr_node(state: dict) -> dict:
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
 
-    attempt_dir = os.path.join(out_dir, run_id, f"attempt_{attempt_index}")
+    attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
     # Normalize paths
@@ -69,67 +107,39 @@ def tr_node(state: dict) -> dict:
 
         counts = Counter(normalize_path(w.path) for w in proposal.writes)
         dupes = sorted(p for p, n in counts.items() if n > 1)
-        fb = FailureBrief(
+        return _tr_fail(
             stage="write_scope_violation",
-            primary_error_excerpt=f"Duplicate write paths in proposal: {dupes}",
-            constraints_reminder=(
-                "Each file may only appear once in the writes array."
-            ),
+            excerpt=f"Duplicate write paths in proposal: {dupes}",
+            reminder="Each file may only appear once in the writes array.",
+            touched_files=touched_files,
+            attempt_dir=attempt_dir,
         )
-        save_json(
-            {"write_ok": False, "touched_files": touched_files,
-             "errors": [fb.primary_error_excerpt]},
-            os.path.join(attempt_dir, "write_result.json"),
-        )
-        return {
-            "write_ok": False,
-            "touched_files": touched_files,
-            "failure_brief": fb.model_dump(),
-        }
 
     # ------------------------------------------------------------------
     # 1. Scope check — all proposed files must be in allowed_files
     # ------------------------------------------------------------------
     out_of_scope = [f for f in touched_files if f not in allowed_set]
     if out_of_scope:
-        fb = FailureBrief(
+        return _tr_fail(
             stage="write_scope_violation",
-            primary_error_excerpt=f"Files outside allowed scope: {out_of_scope}",
-            constraints_reminder=(
-                "All proposed file paths must be in the work order's allowed_files list."
-            ),
+            excerpt=f"Files outside allowed scope: {out_of_scope}",
+            reminder="All proposed file paths must be in the work order's allowed_files list.",
+            touched_files=touched_files,
+            attempt_dir=attempt_dir,
         )
-        save_json(
-            {"write_ok": False, "touched_files": touched_files,
-             "errors": [fb.primary_error_excerpt]},
-            os.path.join(attempt_dir, "write_result.json"),
-        )
-        return {
-            "write_ok": False,
-            "touched_files": touched_files,
-            "failure_brief": fb.model_dump(),
-        }
 
     # ------------------------------------------------------------------
     # 2. Path-safety check — paths must resolve inside repo
     # ------------------------------------------------------------------
     for f in touched_files:
         if not is_path_inside_repo(f, repo_root):
-            fb = FailureBrief(
+            return _tr_fail(
                 stage="write_scope_violation",
-                primary_error_excerpt=f"Path escapes repo root: {f}",
-                constraints_reminder="All file paths must resolve to inside the product repo.",
+                excerpt=f"Path escapes repo root: {f}",
+                reminder="All file paths must resolve to inside the product repo.",
+                touched_files=touched_files,
+                attempt_dir=attempt_dir,
             )
-            save_json(
-                {"write_ok": False, "touched_files": touched_files,
-                 "errors": [fb.primary_error_excerpt]},
-                os.path.join(attempt_dir, "write_result.json"),
-            )
-            return {
-                "write_ok": False,
-                "touched_files": touched_files,
-                "failure_brief": fb.model_dump(),
-            }
 
     # ------------------------------------------------------------------
     # 3. Base-hash check — ALL files checked BEFORE any writes
@@ -139,27 +149,19 @@ def tr_node(state: dict) -> dict:
         abs_path = os.path.join(repo_root, norm)
         actual_hash = sha256_file(abs_path)
         if actual_hash != w.base_sha256:
-            fb = FailureBrief(
+            return _tr_fail(
                 stage="stale_context",
-                primary_error_excerpt=(
+                excerpt=(
                     f"Hash mismatch for {norm}: "
                     f"expected {w.base_sha256}, actual {actual_hash}"
                 ),
-                constraints_reminder=(
+                reminder=(
                     "base_sha256 must match the current file content. "
                     "Re-read context files and use their current sha256."
                 ),
+                touched_files=touched_files,
+                attempt_dir=attempt_dir,
             )
-            save_json(
-                {"write_ok": False, "touched_files": touched_files,
-                 "errors": [fb.primary_error_excerpt]},
-                os.path.join(attempt_dir, "write_result.json"),
-            )
-            return {
-                "write_ok": False,
-                "touched_files": touched_files,
-                "failure_brief": fb.model_dump(),
-            }
 
     # ------------------------------------------------------------------
     # 4. Apply writes
@@ -170,26 +172,18 @@ def tr_node(state: dict) -> dict:
         try:
             _atomic_write(abs_path, w.content)
         except Exception as exc:
-            fb = FailureBrief(
+            return _tr_fail(
                 stage="write_failed",
-                primary_error_excerpt=truncate(f"Failed to write {norm}: {exc}"),
-                constraints_reminder="Atomic file write failed.",
+                excerpt=truncate(f"Failed to write {norm}: {exc}"),
+                reminder="Atomic file write failed.",
+                touched_files=touched_files,
+                attempt_dir=attempt_dir,
             )
-            save_json(
-                {"write_ok": False, "touched_files": touched_files,
-                 "errors": [fb.primary_error_excerpt]},
-                os.path.join(attempt_dir, "write_result.json"),
-            )
-            return {
-                "write_ok": False,
-                "touched_files": touched_files,
-                "failure_brief": fb.model_dump(),
-            }
 
     # All writes succeeded
     save_json(
         {"write_ok": True, "touched_files": touched_files, "errors": []},
-        os.path.join(attempt_dir, "write_result.json"),
+        os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT),
     )
     return {
         "write_ok": True,
