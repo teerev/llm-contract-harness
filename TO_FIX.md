@@ -42,7 +42,7 @@ WorkOrder:
   allowed_files: list[str]
   forbidden: list[str]
   acceptance_commands: list[str]
-  context_files: list[str]        # MUST be subset of allowed_files (enforced at line 64)
+  context_files: list[str]        # may include read-only upstream deps (max 10)
   notes: Optional[str]
 ```
 
@@ -64,84 +64,22 @@ WorkOrder:
 
 ### OPEN Issues
 
-#### I8: `context_files ⊆ allowed_files` is too restrictive
+#### I8: `context_files ⊆ allowed_files` was too restrictive — FIXED (S1)
 
-**Current state of the code:**
+**Status: FIXED.** The subset constraint was removed from `factory/schemas.py`.
+`context_files` may now include read-only upstream dependencies outside `allowed_files`.
 
-`factory/schemas.py` lines 60–71 enforce:
+**What was changed:**
+- `factory/schemas.py`: Removed the subset enforcement from `_check_context_constraints`
+  (the max-10 limit is preserved)
+- `planner/PLANNER_PROMPT.md`: `context_files` description updated to say it must include
+  all `allowed_files` and may also include read-only upstream dependencies
+- `tests/test_schemas.py`: `test_context_files_subset_enforced` replaced with
+  `test_context_files_not_restricted_to_allowed`
 
-```python
-@model_validator(mode="after")
-def _check_context_constraints(self) -> "WorkOrder":
-    if len(self.context_files) > 10:
-        raise ValueError("context_files must have at most 10 entries")
-    allowed_set = set(self.allowed_files)
-    for cf in self.context_files:
-        if cf not in allowed_set:
-            raise ValueError(
-                f"context_files must be a subset of allowed_files: "
-                f"{cf!r} not in allowed_files"
-            )
-    return self
-```
-
-And `planner/PLANNER_PROMPT.md` line 122 tells the planner:
-
-```
-- `context_files`: list of strings, subset of allowed_files
-```
-
-**The problem:**
-
-The executor LLM (SE node) can only see files listed in `context_files`. But `context_files`
-must be a subset of `allowed_files` (files the executor is allowed to *write*). This means
-the executor **cannot read files it is not allowed to edit**.
-
-In practice, work orders frequently need to *read* upstream modules to understand their APIs
-without *writing* to them. Two real failures were caused by this:
-
-- **WO-05 failure** (`out2/` run): `train_q_learning` in `maze_rl/qlearn.py` referenced
-  `env.height` / `env.rows` — attributes that don't exist on `GridEnv`. The executor
-  couldn't see `maze_rl/env.py` (not in `context_files` because not in `allowed_files`)
-  so it guessed attribute names. Both attempts failed with `AttributeError`.
-
-- **WO-04 failure** (`out4/` run): The acceptance command called
-  `load_maze_text(BUILTIN_MAZES['SIMPLE'])` but `BUILTIN_MAZES['SIMPLE']` returns a dict,
-  not a string. `load_maze_text` expects a string. The planner wrote a self-contradictory
-  acceptance command because it lost track of its own API definitions across work orders.
-
-**Where the constraint lives:**
-
-1. Schema: `factory/schemas.py` line 64 — hard validator
-2. Prompt: `planner/PLANNER_PROMPT.md` line 122 — tells the planner the rule
-3. SE node: `factory/nodes_se.py` line 32 — reads `work_order.context_files` to build prompt
-
-**What needs to change (proposed fix S1):**
-
-Option A — Add a new field `read_context` (or similar) to the schema that is NOT
-constrained to `allowed_files`. The SE node would read from the union of `context_files`
-and `read_context`. The TR node scope check (`factory/nodes_tr.py` line 100) would
-continue to check only `allowed_files`. The planner prompt would explain that
-`read_context` provides read-only visibility into upstream modules.
-
-Option B — Remove the subset constraint entirely from `context_files`. Let `context_files`
-contain any repo-relative path. The SE node already reads them as read-only context (no
-writes are generated for context-only files). The TR node scope check is separate and
-would continue enforcing that *writes* are within `allowed_files`.
-
-Option B is simpler but changes the semantics of `context_files` from "files I will edit
-and need context for" to "files I need to see." Option A is more explicit but adds a new
-schema field.
-
-**Impact analysis for either option:**
-
-- `factory/schemas.py`: Remove or relax the subset validator (lines 64–70)
-- `planner/PLANNER_PROMPT.md`: Update field description (line 122) and explain read-only context
-- `planner/validation.py`: No change needed (it doesn't enforce this constraint)
-- `factory/nodes_se.py`: No change needed (`_read_context_files` already just reads whatever is listed)
-- `factory/nodes_tr.py`: No change needed (scope check uses `allowed_files`, not `context_files`)
-- Existing work orders: Still valid (subset is still allowed, just no longer required)
-- Tests: `tests/test_schemas.py` likely has tests for the subset constraint that would need updating
+**Original failures this addresses:**
+- WO-05: executor couldn't see `maze_rl/env.py`, guessed `env.height` → `AttributeError`
+- WO-04: planner couldn't provide upstream module context to executor
 
 #### I9: Planner writes semantically wrong acceptance commands
 
@@ -244,6 +182,246 @@ notes validation. The PO node uses fallback verification for scaffold work order
 
 ---
 
+## Workplan W1: Deterministic Feedback Loop (compile → validate → revise)
+
+### Motivation
+
+The planner currently generates all work orders in a single LLM pass. If the output
+has validation errors (shell operators, syntax errors, structural problems), the compile
+fails and the user must manually re-run. There is no mechanism for the planner LLM to
+see its own mistakes and self-correct.
+
+A deterministic feedback loop would: generate → validate → if errors, feed them back
+to the LLM → regenerate → validate → ... until convergence or a retry limit.
+
+### What can be checked deterministically (no LLM needed)
+
+These checks run on raw JSON and acceptance command strings — no code execution required:
+
+1. **Everything `validation.py` already checks:**
+   - ID contiguity (`WO-01`, `WO-02`, ... without gaps)
+   - Verify command presence (with WO-01 bootstrap exemption)
+   - Shell operator tokens in acceptance commands
+   - Schema conformance via pydantic `WorkOrder(**wo)`
+   - Glob characters in paths
+
+2. **NEW — Python syntax validation for `python -c` commands:**
+   - Extract the Python code from every acceptance command that starts with `python -c`
+   - Run `ast.parse(code)` on it
+   - This would have caught the WO-06 `SyntaxError` (the `with` statement on a single line)
+   - Implementation: add a new check in `validation.py` after the shell operator check
+
+3. **NEW — Cross-work-order structural checks:**
+   - Every file in `allowed_files` for WO-N should appear in `context_files` for WO-N
+     (the executor needs to see what it's editing)
+   - Files referenced in acceptance commands via imports (e.g., `from maze_rl.env import ...`)
+     should exist in `allowed_files` of some earlier work order (the module must have been
+     created by a prior step)
+
+### Where the loop fits in the codebase
+
+The integration point is `planner/compiler.py`, specifically `compile_plan()`.
+
+Current flow (lines 134–184):
+
+```
+prompt = render_prompt(template_text, spec_text)     # line 129
+raw_response = client.generate_text(prompt)          # line 137
+parsed = _parse_json(raw_response)                   # line 144
+work_orders, errors = parse_and_validate(parsed)     # line 159
+if errors: return result (failure)                   # line 174
+```
+
+Proposed flow with feedback loop:
+
+```
+prompt = render_prompt(template_text, spec_text)
+for attempt in range(MAX_COMPILE_RETRIES):
+    raw_response = client.generate_text(prompt)
+    parsed = _parse_json(raw_response)
+    work_orders, errors = parse_and_validate(parsed)   # includes new checks
+    if not errors:
+        break
+    # Build a revision prompt with the errors
+    prompt = _build_revision_prompt(template_text, spec_text, raw_response, errors)
+# proceed with work_orders (or fail if still errors after retries)
+```
+
+### Implementation steps
+
+1. **Add `ast.parse` check to `planner/validation.py`:**
+   - New function: for each acceptance command, if it matches `python -c "..."`,
+     extract the Python code and call `ast.parse()`. Report `SyntaxError` as a
+     validation error.
+   - Wire it into `validate_plan()` in the per-work-order loop.
+
+2. **Add `_build_revision_prompt()` to `planner/compiler.py`:**
+   - Takes the original spec, the LLM's previous JSON output, and the error list.
+   - Produces a prompt like: "You previously generated these work orders: [JSON].
+     They failed validation with these errors: [errors]. Please fix the errors and
+     output the corrected JSON. Preserve work orders that had no errors."
+
+3. **Add retry loop to `compile_plan()` in `planner/compiler.py`:**
+   - Wrap lines 134–184 in a `for attempt in range(MAX_COMPILE_RETRIES)` loop.
+   - On each iteration, if `errors` is non-empty, build a revision prompt and call
+     `client.generate_text()` again.
+   - Persist each attempt's raw response and errors as separate artifacts
+     (e.g., `llm_raw_response_attempt_1.txt`, `validation_errors_attempt_1.json`).
+   - `MAX_COMPILE_RETRIES` should be small (2–3). The first attempt usually works;
+     the revision is just for catching mechanical errors.
+
+4. **Update `compile_summary.json`:**
+   - Add `compile_attempts` count and per-attempt error lists to the summary artifact.
+
+### Cost / risk assessment
+
+- **LLM cost:** One additional API call per retry (only when validation fails). At
+  `high` reasoning effort, each call costs ~$0.10–0.50. Cheap relative to the cost
+  of a failed factory run.
+- **Latency:** 10–30 minutes per retry at `high` effort. Acceptable since the user
+  said they don't care about planner speed.
+- **Risk:** Low. The retry loop is purely additive. If the first attempt passes
+  validation, the loop exits immediately with zero behavioral change.
+- **Files affected:** `planner/compiler.py`, `planner/validation.py`. No factory changes.
+
+---
+
+## Workplan W2: LLM Reviewer Pass (semantic consistency check)
+
+### Motivation
+
+Deterministic checks (W1) catch structural and syntactic errors but cannot catch
+**semantic** errors — cases where the planner writes acceptance commands that misuse
+APIs it defined in earlier work orders. Examples:
+
+- WO-04 calls `load_maze_text(BUILTIN_MAZES['SIMPLE'])` — but `BUILTIN_MAZES['SIMPLE']`
+  is a dict, and `load_maze_text` expects a string. The planner confused its own
+  return types.
+
+- WO-05 calls `train_q_learning(m, episodes=5, seed=0)` with too few arguments.
+  The planner's own `notes` for WO-05 specifies many more required parameters.
+
+These errors survive all deterministic checks because they require understanding the
+*meaning* of the APIs defined in `notes`, not just the structure of the JSON.
+
+### What the reviewer would check
+
+A second LLM pass reads ALL work orders as a batch and answers:
+
+1. **Acceptance command / notes consistency:** For each work order, does the acceptance
+   command use the APIs as described in the notes? Do function signatures match? Do
+   argument types align with what earlier work orders produce?
+
+2. **Cross-work-order API coherence:** If WO-03 defines `BUILTIN_MAZES` as a dict
+   mapping names to text strings, and WO-04's acceptance command treats
+   `BUILTIN_MAZES['SIMPLE']` as a parsed maze dict, flag the contradiction.
+
+3. **Context_files completeness:** If a work order's notes say "use GridworldEnv from
+   env.py" but `maze_rl/env.py` is not in `context_files`, flag it. (This overlaps
+   with W1 deterministic checks but the LLM can catch subtler cases.)
+
+### Where the reviewer fits in the codebase
+
+The reviewer runs AFTER the deterministic feedback loop (W1) converges, but BEFORE
+writing the final work orders to disk.
+
+```
+# In compile_plan(), after the W1 loop produces validated work_orders:
+
+if ENABLE_REVIEWER:
+    review_errors = _run_reviewer(client, work_orders)
+    if review_errors:
+        # Feed review errors back to the planner for one final revision
+        prompt = _build_review_revision_prompt(spec_text, work_orders, review_errors)
+        raw_response = client.generate_text(prompt)
+        parsed = _parse_json(raw_response)
+        work_orders, errors = parse_and_validate(parsed)
+        # ... (may need another W1 loop here)
+```
+
+### Implementation steps
+
+1. **Create reviewer prompt template:**
+   - New file: `planner/REVIEWER_PROMPT.md` (or inline in compiler.py).
+   - The prompt takes the full list of work orders as JSON and asks the LLM to:
+     - For each acceptance command, verify argument types and counts match the
+       function signatures described in `notes` (both the current WO and earlier WOs).
+     - Report each inconsistency as a structured error:
+       `{"work_order_id": "WO-04", "error": "load_maze_text expects str, got dict from BUILTIN_MAZES"}`
+   - Output format: JSON array of error objects, or empty array if no issues.
+
+2. **Add `_run_reviewer()` to `planner/compiler.py`:**
+   - Takes `client` and `work_orders` list.
+   - Builds the reviewer prompt with all work orders serialized as JSON.
+   - Calls `client.generate_text()`.
+   - Parses the response as a JSON array of errors.
+   - Returns the error list.
+
+3. **Add review-revision loop to `compile_plan()`:**
+   - After W1 converges, call `_run_reviewer()`.
+   - If errors found, build a revision prompt that includes the original spec,
+     the current work orders, and the reviewer's findings.
+   - Send back to the planner LLM for one final revision attempt.
+   - Re-run W1 deterministic validation on the revised output.
+   - Maximum 1–2 review cycles (the reviewer should catch most issues on first pass).
+
+4. **Artifact persistence:**
+   - Save `reviewer_prompt.txt`, `reviewer_response.json`, `reviewer_errors.json`
+     in the compile artifacts directory.
+
+5. **Make it optional:**
+   - Add `--review / --no-review` CLI flag to `planner/cli.py`.
+   - Default to enabled. Users can skip it for speed during iteration.
+
+### Cost / risk assessment
+
+- **LLM cost:** One additional LLM call for the review, plus potentially one more
+  for revision. At `high` reasoning, ~$0.10–0.50 per call. Total planner cost
+  roughly doubles.
+- **Latency:** 10–30 minutes for the reviewer call, plus 10–30 for revision if
+  needed. Total compile time could be 30–90 minutes in the worst case. Acceptable
+  per user's stated preference for correctness over speed.
+- **Risk:** Moderate. The reviewer LLM may itself hallucinate errors (false positives)
+  or miss real ones (false negatives). The revision prompt must be carefully designed
+  to avoid the planner "fixing" things that weren't broken. Mitigation: the reviewer
+  should output specific, verifiable claims ("WO-04 acceptance calls load_maze_text
+  with a dict; WO-03 notes say it returns a dict from BUILTIN_MAZES"). The planner
+  can then decide whether to act on each claim.
+- **Complexity:** Moderate. Adds a new prompt template, a new LLM call, and a review
+  loop to the compiler. The reviewer is a separate concern from the planner — it
+  doesn't generate work orders, it only critiques them.
+- **Files affected:** `planner/compiler.py`, new `planner/REVIEWER_PROMPT.md`,
+  `planner/cli.py` (new flag). No factory changes.
+
+### Dependencies
+
+- W2 should be implemented AFTER W1. The deterministic feedback loop catches cheap
+  errors first, so the reviewer only needs to focus on semantic issues. Without W1,
+  the reviewer would waste tokens flagging syntax errors that `ast.parse` could have
+  caught for free.
+- W2 benefits from fix S1 (relaxed `context_files`). With richer context available
+  to the executor, some semantic mismatches in acceptance commands become less critical
+  — the executor can write correct code even if the acceptance command is imperfect.
+  But the acceptance command itself would still be wrong, so W2 remains valuable.
+
+### Open questions
+
+- **Should the reviewer use the same model as the planner, or a different one?**
+  Using the same model risks the same blind spots. A different model (e.g., a
+  non-reasoning model for the review, since it's a checking task not a generation
+  task) could provide genuine diversity. However, this adds configuration complexity.
+
+- **Can the reviewer be run in parallel with deterministic validation?**
+  Yes — the reviewer doesn't depend on W1. But running them sequentially lets you
+  skip the reviewer entirely when W1 catches errors (cheaper).
+
+- **Should the reviewer check the planner's notes for internal consistency too?**
+  E.g., WO-05's notes say "use GridworldEnv" but WO-05's allowed_files doesn't
+  include the file where GridworldEnv lives. This is a context_files completeness
+  issue that overlaps with S1 / W1.
+
+---
+
 ## Current State of Modified Files
 
 ### `planner/PLANNER_PROMPT.md` (219 lines)
@@ -275,15 +453,26 @@ Changes from original:
 
 ## Recommended Next Steps (in priority order)
 
-1. **S1: Relax `context_files ⊆ allowed_files`** — This is the most impactful remaining fix.
-   It directly caused failures in WO-04 and WO-05 across multiple runs. Clean schema change,
-   low risk, no factory logic changes needed.
+1. **DONE — S1: Relax `context_files ⊆ allowed_files`** — Subset constraint removed from
+   `factory/schemas.py`. Prompt updated. Test updated. The planner can now include
+   read-only upstream dependencies in `context_files`.
 
-2. **Prompt: simplify acceptance command guidance** — Add to `PLANNER_PROMPT.md` that
+2. **W1: Deterministic feedback loop** — Highest priority remaining work. Adds `ast.parse`
+   validation for `python -c` commands and a compile-retry loop in `compiler.py`. Low risk,
+   catches an entire class of syntax errors that currently waste factory runs. See detailed
+   workplan above.
+
+3. **W2: LLM reviewer pass** — Implement after W1. Catches semantic API mismatches that
+   deterministic checks cannot. Higher cost and complexity than W1 but addresses the I9
+   class of failures that no amount of prompt hardening can fully eliminate. See detailed
+   workplan above.
+
+4. **Prompt: simplify acceptance command guidance** — Add to `PLANNER_PROMPT.md` that
    acceptance commands should test imports, basic construction, and simple assertions only.
-   Complex multi-module integration flows should be deferred to later work orders.
+   Complex multi-module integration flows should be deferred to later work orders. Can be
+   done independently of W1/W2.
 
-3. **Option C or D** — Evaluate after running the system on 3+ different specs. If WO-01
+5. **Option C or D** — Evaluate after running the system on 3+ different specs. If WO-01
    keeps causing issues, implement C. If new types of special work orders emerge, implement D.
 
 ---
