@@ -62,12 +62,13 @@ class TestWorkOrder:
         with pytest.raises(ValidationError, match="non-empty"):
             self._valid(acceptance_commands=[])
 
-    def test_context_files_subset_enforced(self):
-        with pytest.raises(ValidationError, match="subset"):
-            self._valid(
-                allowed_files=["a.py"],
-                context_files=["b.py"],
-            )
+    def test_context_files_not_restricted_to_allowed(self):
+        """context_files may include read-only upstream deps outside allowed_files."""
+        wo = self._valid(
+            allowed_files=["a.py"],
+            context_files=["a.py", "b.py"],
+        )
+        assert wo.context_files == ["a.py", "b.py"]
 
     def test_context_files_max_10(self):
         files = [f"f{i}.py" for i in range(11)]

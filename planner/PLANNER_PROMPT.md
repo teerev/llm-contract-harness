@@ -119,7 +119,10 @@ Each work order MUST include these exact keys and no others:
 - `allowed_files`: list of strings, explicit relative file paths (no globs)
 - `forbidden`: list of strings, explicit prohibitions
 - `acceptance_commands`: list of strings, must include `bash scripts/verify.sh`
-- `context_files`: list of strings, subset of allowed_files
+- `context_files`: list of strings — files the executor needs to see.
+    MUST include all `allowed_files`. MAY also include read-only upstream
+    dependencies (modules the executor must understand but must not modify).
+    Maximum 10 entries.
 - `notes`: string or null, implementation guidance for the coding agent
 
 ────────────────────────────────

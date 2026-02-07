@@ -61,13 +61,6 @@ class WorkOrder(BaseModel):
     def _check_context_constraints(self) -> "WorkOrder":
         if len(self.context_files) > 10:
             raise ValueError("context_files must have at most 10 entries")
-        allowed_set = set(self.allowed_files)
-        for cf in self.context_files:
-            if cf not in allowed_set:
-                raise ValueError(
-                    f"context_files must be a subset of allowed_files: "
-                    f"{cf!r} not in allowed_files"
-                )
         return self
 
 
