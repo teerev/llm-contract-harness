@@ -23,8 +23,8 @@ RESPONSES_ENDPOINT = f"{OPENAI_API_BASE}/responses"
 # Defaults (tune these first)
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "gpt-5.2-codex"
-DEFAULT_REASONING_EFFORT = "low"       # low worked; medium/high disconnect
-DEFAULT_MAX_OUTPUT_TOKENS = 16000      # needs headroom for reasoning + output
+DEFAULT_REASONING_EFFORT = "high"      # high for thorough planning; low was fast but produced syntax errors
+DEFAULT_MAX_OUTPUT_TOKENS = 32000      # reasoning at "high" can use 10-20k tokens; visible output ~3-5k
 
 # ---------------------------------------------------------------------------
 # Transport / retry / polling
@@ -38,7 +38,7 @@ MAX_TRANSPORT_RETRIES = 3
 TRANSPORT_RETRY_BASE_S = 3.0
 
 POLL_INTERVAL_S = 5.0     # seconds between status polls
-POLL_DEADLINE_S = 600.0   # total wait before giving up
+POLL_DEADLINE_S = 2400.0  # 40 minutes — high reasoning effort can take 15-30 min
 
 MAX_INCOMPLETE_RETRIES = 1  # retry once with higher budget if incomplete
 
@@ -97,7 +97,7 @@ class OpenAIResponsesClient:
         """
         budgets = [
             self.cfg.max_output_tokens,
-            min(self.cfg.max_output_tokens * 2, 32000),
+            min(self.cfg.max_output_tokens * 2, 65000),
         ]
 
         for i, budget in enumerate(budgets):
