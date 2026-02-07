@@ -129,13 +129,49 @@ class TestFullPassPath:
         assert len(final["attempts"]) == 1
         assert final["repo_tree_hash_after"] is not None
 
-        # Artifacts exist
+        # --- Content-aware artifact assertions (Action 3 hardening) ---
         attempt_dir = make_attempt_dir(out, run_id, 1)
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_SE_PROMPT))
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_PROPOSED_WRITES))
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT))
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT))
+
+        # se_prompt.txt: exists and non-empty
+        prompt_path = os.path.join(attempt_dir, ARTIFACT_SE_PROMPT)
+        assert os.path.isfile(prompt_path)
+        assert os.path.getsize(prompt_path) > 0
+
+        # proposed_writes.json: valid JSON with expected schema
+        pw = load_json(os.path.join(attempt_dir, ARTIFACT_PROPOSED_WRITES))
+        assert isinstance(pw["summary"], str)
+        assert isinstance(pw["writes"], list)
+        assert len(pw["writes"]) > 0
+        assert "path" in pw["writes"][0]
+        assert "base_sha256" in pw["writes"][0]
+        assert "content" in pw["writes"][0]
+
+        # write_result.json: write_ok True, non-empty touched_files, empty errors
+        wr = load_json(os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT))
+        assert wr["write_ok"] is True
+        assert isinstance(wr["touched_files"], list)
+        assert len(wr["touched_files"]) > 0
+        assert isinstance(wr["errors"], list)
+        assert len(wr["errors"]) == 0
+
+        # verify_result.json: list of CmdResult dicts, all exit 0
+        vr = load_json(os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
+        assert isinstance(vr, list)
+        assert len(vr) > 0
+        for cmd_res in vr:
+            assert "exit_code" in cmd_res
+            assert "command" in cmd_res
+            assert "duration_seconds" in cmd_res
+            assert cmd_res["exit_code"] == 0
+
+        # acceptance_result.json: list of CmdResult dicts, all exit 0
+        ar = load_json(os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT))
+        assert isinstance(ar, list)
+        assert len(ar) > 0
+        for cmd_res in ar:
+            assert "exit_code" in cmd_res
+            assert "command" in cmd_res
+            assert cmd_res["exit_code"] == 0
 
         # File was written to repo
         with open(os.path.join(repo, "hello.txt")) as f:
@@ -207,9 +243,31 @@ class TestAcceptanceFailureAndRollback:
 
         # Artifacts in out_dir survive rollback (out_dir is outside repo)
         attempt_dir = make_attempt_dir(out, run_id, 1)
-        assert os.path.isfile(os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF))
+
+        # failure_brief.json: content-aware check (Action 3 hardening)
         fb = load_json(os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF))
         assert fb["stage"] == "acceptance_failed"
+        assert isinstance(fb["primary_error_excerpt"], str)
+        assert isinstance(fb["constraints_reminder"], str)
+        assert fb["exit_code"] is not None
+        assert isinstance(fb["command"], str)
+
+        # write_result.json: writes succeeded before acceptance failed
+        wr = load_json(os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT))
+        assert wr["write_ok"] is True
+        assert isinstance(wr["touched_files"], list)
+
+        # verify_result.json: verify passed
+        vr = load_json(os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
+        assert isinstance(vr, list)
+        assert len(vr) > 0
+        assert vr[0]["exit_code"] == 0
+
+        # acceptance_result.json: acceptance failed
+        ar = load_json(os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT))
+        assert isinstance(ar, list)
+        assert len(ar) > 0
+        assert ar[0]["exit_code"] != 0
 
 
 # ---------------------------------------------------------------------------

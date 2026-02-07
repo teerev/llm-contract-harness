@@ -115,6 +115,40 @@ def make_valid_proposal_json(repo_root: str, writes: list[dict] | None = None) -
     return json.dumps(proposal)
 
 
+def init_multi_file_git_repo(path: str) -> str:
+    """Create a git repo with two committed files: hello.txt and second.txt."""
+    os.makedirs(path, exist_ok=True)
+    _git(["init"], cwd=path)
+    _git(["config", "user.email", "test@test.com"], cwd=path)
+    _git(["config", "user.name", "Test"], cwd=path)
+    for name, content in [("hello.txt", "hello\n"), ("second.txt", "second\n")]:
+        with open(os.path.join(path, name), "w") as f:
+            f.write(content)
+    _git(["add", "."], cwd=path)
+    _git(["commit", "-m", "init"], cwd=path)
+    return path
+
+
+def add_verify_script(repo_root: str, exit_code: int = 0) -> None:
+    """Add and commit a scripts/verify.sh to the repo."""
+    scripts_dir = os.path.join(repo_root, "scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
+    with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+        f.write(f"#!/bin/bash\nexit {exit_code}\n")
+    _git(["add", "."], cwd=repo_root)
+    _git(["commit", "-m", "add verify"], cwd=repo_root)
+
+
+def make_multi_file_proposal_json(repo_root: str) -> str:
+    """Build a valid LLM response that writes both hello.txt and second.txt."""
+    writes = []
+    for name, new_content in [("hello.txt", "hello changed\n"), ("second.txt", "second changed\n")]:
+        fpath = os.path.join(repo_root, name)
+        h = file_sha256(fpath)
+        writes.append({"path": name, "base_sha256": h, "content": new_content})
+    return json.dumps({"summary": "multi-write test", "writes": writes})
+
+
 # ---------------------------------------------------------------------------
 # Pytest fixtures
 # ---------------------------------------------------------------------------

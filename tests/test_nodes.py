@@ -28,6 +28,7 @@ from tests.conftest import (
     EMPTY_SHA256,
     file_sha256,
     init_git_repo,
+    init_multi_file_git_repo,
     make_valid_proposal_json,
     minimal_work_order,
 )
@@ -294,6 +295,54 @@ class TestTRNode:
 
         assert result["write_ok"] is False
         assert result["failure_brief"]["stage"] == "write_failed"
+
+    def test_multi_file_stale_context_no_partial_writes(self, tmp_path):
+        """All hashes are checked BEFORE any writes — no partial writes on stale_context.
+
+        Adversarial review §3.4: if check-then-write were interleaved per file,
+        file A would be modified before stale detection on file B.  This test
+        locks the batch-check-before-any-write invariant.
+        """
+        repo = init_multi_file_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        os.makedirs(out)
+
+        h_hello = file_sha256(os.path.join(repo, "hello.txt"))
+
+        # File A (hello.txt) has CORRECT hash, file B (second.txt) has WRONG hash.
+        # If TR checked-then-wrote per file, hello.txt would be modified.
+        proposal = {
+            "summary": "multi-write stale",
+            "writes": [
+                {"path": "hello.txt", "base_sha256": h_hello, "content": "changed hello\n"},
+                {"path": "second.txt", "base_sha256": "wrong_hash_value", "content": "changed\n"},
+            ],
+        }
+
+        wo = minimal_work_order(
+            allowed_files=["hello.txt", "second.txt"],
+            context_files=["hello.txt", "second.txt"],
+        )
+
+        state = {
+            "work_order": wo,
+            "repo_root": repo,
+            "attempt_index": 1,
+            "run_id": "test",
+            "out_dir": out,
+            "proposal": proposal,
+        }
+
+        result = tr_node(state)
+
+        assert result["write_ok"] is False
+        assert result["failure_brief"]["stage"] == "stale_context"
+
+        # CRITICAL: hello.txt must NOT have been modified (batch-check invariant)
+        with open(os.path.join(repo, "hello.txt")) as f:
+            assert f.read() == "hello\n", "File A must not be written when file B has stale hash"
+        with open(os.path.join(repo, "second.txt")) as f:
+            assert f.read() == "second\n", "File B must not be written either"
 
 
 # ---------------------------------------------------------------------------
