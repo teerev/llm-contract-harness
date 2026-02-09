@@ -156,9 +156,9 @@ def compile_plan(
     )
 
     # --- Validate ---
-    work_orders, errors = parse_and_validate(parsed)
+    work_orders, validation_errors = parse_and_validate(parsed)
     result.work_orders = work_orders
-    result.errors = errors
+    result.errors = [str(e) for e in validation_errors]
 
     # Build normalized manifest
     manifest: dict[str, Any] = {
@@ -171,14 +171,17 @@ def compile_plan(
         os.path.join(compile_artifacts, "manifest_normalized.json"), manifest
     )
 
-    if errors:
+    if validation_errors:
+        # Write structured errors (list of dicts) for machine consumption,
+        # plus the string list via result.errors for CLI / summary.
+        structured = [e.to_dict() for e in validation_errors]
         write_json_artifact(
-            os.path.join(compile_artifacts, "validation_errors.json"), errors
+            os.path.join(compile_artifacts, "validation_errors.json"), structured
         )
         # Also write to outdir for visibility
         os.makedirs(outdir, exist_ok=True)
         write_json_artifact(
-            os.path.join(outdir, "validation_errors.json"), errors
+            os.path.join(outdir, "validation_errors.json"), structured
         )
         _write_summary(result, compile_artifacts, ts_start, spec_path, template_path)
         return result

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import shlex
+from dataclasses import dataclass, field as dc_field
 from typing import Any
 
 from factory.schemas import WorkOrder
@@ -16,6 +18,55 @@ GLOB_CHARS = set("*?[")
 # Checked against individual tokens after shlex.split, so semicolons and
 # other characters *inside* quoted strings (e.g. python -c "a; b") are safe.
 SHELL_OPERATOR_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<", "<<"})
+
+
+# ---------------------------------------------------------------------------
+# Structured validation errors
+# ---------------------------------------------------------------------------
+
+# Error code constants — machine-readable, stable across versions.
+E000_STRUCTURAL = "E000"  # Top-level structure errors (empty list, bad JSON shape)
+E001_ID = "E001"          # ID format / contiguity
+E002_VERIFY = "E002"      # Verify command missing in acceptance
+E003_SHELL_OP = "E003"    # Shell operator in acceptance command
+E004_GLOB = "E004"        # Glob character in path
+E005_SCHEMA = "E005"      # Pydantic schema validation failed
+E006_SYNTAX = "E006"      # Python syntax error in python -c command
+
+
+@dataclass(frozen=True)
+class ValidationError:
+    """A structured validation error with a machine-readable code.
+
+    Designed so that error codes can be fed back to the planner LLM in a
+    revision prompt (M5 compile retry loop) for precise self-correction.
+    """
+
+    code: str
+    wo_id: str | None
+    message: str
+    field: str | None = None
+
+    def __str__(self) -> str:
+        parts = [f"[{self.code}]"]
+        if self.wo_id:
+            parts.append(f"{self.wo_id}:")
+        parts.append(self.message)
+        return " ".join(parts)
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict for JSON artifact output."""
+        return {
+            "code": self.code,
+            "wo_id": self.wo_id,
+            "message": self.message,
+            "field": self.field,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Normalization helpers
+# ---------------------------------------------------------------------------
 
 
 def _strip_strings(obj: Any) -> Any:
@@ -50,15 +101,62 @@ def normalize_work_order(raw: dict) -> dict:
     return cleaned
 
 
-def validate_plan(work_orders_raw: list[dict]) -> list[str]:
-    """Validate a list of raw work-order dicts. Return a list of error strings.
+# ---------------------------------------------------------------------------
+# Python -c syntax checking
+# ---------------------------------------------------------------------------
 
-    An empty list means all validations passed.
+
+def _check_python_c_syntax(
+    cmd_str: str, wo_id: str
+) -> ValidationError | None:
+    """If *cmd_str* is a ``python -c "..."`` command, syntax-check the code.
+
+    Returns a ``ValidationError`` with code ``E006`` on ``SyntaxError``,
+    or ``None`` if the command is not a ``python -c`` invocation or the
+    syntax is valid.
     """
-    errors: list[str] = []
+    try:
+        tokens = shlex.split(cmd_str)
+    except ValueError:
+        return None  # shlex parse errors are surfaced by the shell-op check
+
+    if len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-c":
+        code = tokens[2]
+        try:
+            ast.parse(code)
+        except SyntaxError as exc:
+            line_info = f" (line {exc.lineno})" if exc.lineno else ""
+            return ValidationError(
+                code=E006_SYNTAX,
+                wo_id=wo_id,
+                message=(
+                    f"Python syntax error in acceptance command{line_info}: "
+                    f"{exc.msg}: {cmd_str!r}"
+                ),
+                field="acceptance_commands",
+            )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Core validation
+# ---------------------------------------------------------------------------
+
+
+def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
+    """Validate a list of raw work-order dicts.
+
+    Returns a list of ``ValidationError`` objects. An empty list means all
+    validations passed.
+    """
+    errors: list[ValidationError] = []
 
     if not work_orders_raw:
-        errors.append("work_orders list is empty")
+        errors.append(ValidationError(
+            code=E000_STRUCTURAL,
+            wo_id=None,
+            message="work_orders list is empty",
+        ))
         return errors
 
     # --- Normalize all work orders first ---
@@ -69,14 +167,22 @@ def validate_plan(work_orders_raw: list[dict]) -> list[str]:
         wo_id = wo.get("id", "")
         expected_id = f"WO-{i + 1:02d}"
         if not WO_ID_PATTERN.match(wo_id):
-            errors.append(
-                f"Work order {i}: id {wo_id!r} does not match pattern WO-NN"
-            )
+            errors.append(ValidationError(
+                code=E001_ID,
+                wo_id=wo_id or f"index-{i}",
+                message=f"id {wo_id!r} does not match pattern WO-NN",
+                field="id",
+            ))
         elif wo_id != expected_id:
-            errors.append(
-                f"Work order {i}: id {wo_id!r} should be {expected_id!r} "
-                f"(must be contiguous from WO-01)"
-            )
+            errors.append(ValidationError(
+                code=E001_ID,
+                wo_id=wo_id,
+                message=(
+                    f"id {wo_id!r} should be {expected_id!r} "
+                    f"(must be contiguous from WO-01)"
+                ),
+                field="id",
+            ))
 
     # --- 2) Per-work-order checks ---
     for i, wo in enumerate(normalized):
@@ -90,14 +196,17 @@ def validate_plan(work_orders_raw: list[dict]) -> list[str]:
         allowed = wo.get("allowed_files", [])
         is_bootstrap = wo.get("id") == "WO-01" and VERIFY_SCRIPT_PATH in allowed
         if not is_bootstrap and VERIFY_COMMAND not in acceptance:
-            errors.append(
-                f"{wo_id}: acceptance_commands must contain '{VERIFY_COMMAND}'"
-            )
+            errors.append(ValidationError(
+                code=E002_VERIFY,
+                wo_id=wo_id,
+                message=f"acceptance_commands must contain '{VERIFY_COMMAND}'",
+                field="acceptance_commands",
+            ))
 
         # Shell operators — commands run with shell=False, so pipes,
         # redirects, and chaining operators will not work.  We check the
         # shlex-split tokens (not the raw string) so that characters inside
-        # quoted arguments (e.g. python -c "a; b") are not flagged.
+        # quoted arguments (e.g. python -c "a; b") are safe.
         for cmd_str in acceptance:
             try:
                 tokens = shlex.split(cmd_str)
@@ -105,40 +214,68 @@ def validate_plan(work_orders_raw: list[dict]) -> list[str]:
                 continue  # shlex parse errors are caught elsewhere
             bad = [t for t in tokens if t in SHELL_OPERATOR_TOKENS]
             if bad:
-                errors.append(
-                    f"{wo_id}: acceptance command contains shell operator "
-                    f"token(s) {bad} which are incompatible with shell=False "
-                    f"execution: {cmd_str!r}"
-                )
+                errors.append(ValidationError(
+                    code=E003_SHELL_OP,
+                    wo_id=wo_id,
+                    message=(
+                        f"acceptance command contains shell operator "
+                        f"token(s) {bad} which are incompatible with shell=False "
+                        f"execution: {cmd_str!r}"
+                    ),
+                    field="acceptance_commands",
+                ))
+
+        # Python -c syntax check
+        for cmd_str in acceptance:
+            err = _check_python_c_syntax(cmd_str, wo_id)
+            if err is not None:
+                errors.append(err)
 
         # Path hygiene — reject glob characters
-        for field in ("allowed_files", "context_files"):
-            for path in wo.get(field, []):
+        for field_name in ("allowed_files", "context_files"):
+            for path in wo.get(field_name, []):
                 if any(c in path for c in GLOB_CHARS):
-                    errors.append(
-                        f"{wo_id}: {field} contains glob character in '{path}'"
-                    )
+                    errors.append(ValidationError(
+                        code=E004_GLOB,
+                        wo_id=wo_id,
+                        message=f"{field_name} contains glob character in '{path}'",
+                        field=field_name,
+                    ))
 
         # Validate against WorkOrder schema
         try:
             WorkOrder(**wo)
         except Exception as exc:
-            errors.append(f"{wo_id}: schema validation failed: {exc}")
+            errors.append(ValidationError(
+                code=E005_SCHEMA,
+                wo_id=wo_id,
+                message=f"schema validation failed: {exc}",
+            ))
 
     return errors
 
 
-def parse_and_validate(raw_json: dict) -> tuple[list[dict], list[str]]:
+def parse_and_validate(
+    raw_json: dict,
+) -> tuple[list[dict], list[ValidationError]]:
     """Parse the top-level LLM response, normalize, and validate.
 
-    Returns (normalized_work_orders, errors).
+    Returns ``(normalized_work_orders, errors)``.
     """
     if not isinstance(raw_json, dict):
-        return [], ["Top-level JSON must be an object"]
+        return [], [ValidationError(
+            code=E000_STRUCTURAL,
+            wo_id=None,
+            message="Top-level JSON must be an object",
+        )]
 
     work_orders_raw = raw_json.get("work_orders")
     if not isinstance(work_orders_raw, list):
-        return [], ["Missing or invalid 'work_orders' key in response"]
+        return [], [ValidationError(
+            code=E000_STRUCTURAL,
+            wo_id=None,
+            message="Missing or invalid 'work_orders' key in response",
+        )]
 
     # Normalize
     normalized = [normalize_work_order(wo) for wo in work_orders_raw]
