@@ -1,48 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: ./run_work_orders.sh <work-order-dir> [options]
-#   <work-order-dir>  Directory containing WO-*.json files (required)
-#   --repo            Product repo path       (default: /tmp/product_repo)
-#   --out             Artifact output dir      (default: ./artifacts)
-#   --model           LLM model name           (default: gpt-4o)
+# Usage: ./run_work_orders.sh --wo-dir DIR --target-repo DIR --artifacts-dir DIR [options]
+#
+# Required:
+#   --wo-dir          Directory containing WO-*.json files
+#   --target-repo     Product repo path
+#   --artifacts-dir   Artifact / output directory
+#
+# Optional:
+#   --model           LLM model name           (default: gpt-5.2)
 #   --max-attempts    Max attempts per WO      (default: 5)
 #   --no-init         Skip repo wipe/init (use existing repo as-is)
 
 # --- Defaults ---
-REPO="/Users/user/repos/wordgame"
-OUT_DIR="./artifacts14"
+WO_DIR=""
+TARGET_REPO=""
+ARTIFACTS_DIR=""
 MODEL="gpt-5.2"
 MAX_ATTEMPTS=5
 INIT_REPO=true
 
 # --- Parse arguments ---
-WO_DIR=""
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo)         REPO="$2";         shift 2 ;;
-    --out)          OUT_DIR="$2";      shift 2 ;;
-    --model)        MODEL="$2";        shift 2 ;;
-    --max-attempts) MAX_ATTEMPTS="$2"; shift 2 ;;
-    --no-init)      INIT_REPO=false;   shift   ;;
+    --wo-dir)        WO_DIR="$2";       shift 2 ;;
+    --target-repo)   TARGET_REPO="$2";  shift 2 ;;
+    --artifacts-dir) ARTIFACTS_DIR="$2"; shift 2 ;;
+    --model)         MODEL="$2";         shift 2 ;;
+    --max-attempts)  MAX_ATTEMPTS="$2";  shift 2 ;;
+    --no-init)       INIT_REPO=false;    shift   ;;
     -*)
       echo "ERROR: Unknown option: $1" >&2
       exit 1
       ;;
     *)
-      if [ -z "$WO_DIR" ]; then
-        WO_DIR="$1"; shift
-      else
-        echo "ERROR: Unexpected argument: $1" >&2
-        exit 1
-      fi
+      echo "ERROR: Unexpected argument: $1" >&2
+      exit 1
       ;;
   esac
 done
 
-if [ -z "$WO_DIR" ]; then
-  echo "Usage: $0 <work-order-dir> [--repo DIR] [--out DIR] [--model NAME] [--max-attempts N] [--no-init]" >&2
+if [ -z "$WO_DIR" ] || [ -z "$TARGET_REPO" ] || [ -z "$ARTIFACTS_DIR" ]; then
+  echo "Usage: $0 --wo-dir DIR --target-repo DIR --artifacts-dir DIR [--model NAME] [--max-attempts N] [--no-init]" >&2
   exit 1
 fi
 
@@ -66,20 +66,20 @@ if [ ${#WO_FILES[@]} -eq 0 ]; then
 fi
 
 echo "Found ${#WO_FILES[@]} work order(s) in $WO_DIR"
-echo "Repo:         $REPO"
-echo "Output:       $OUT_DIR"
+echo "Target repo:  $TARGET_REPO"
+echo "Artifacts:    $ARTIFACTS_DIR"
 echo "Model:        $MODEL"
 echo "Max attempts: $MAX_ATTEMPTS"
 echo ""
 
 # Init the product repo (wipe and recreate to guarantee clean state)
 if [ "$INIT_REPO" = true ]; then
-  if [ -d "$REPO" ]; then
-    echo "Removing existing repo at $REPO..."
-    rm -rf "$REPO"
+  if [ -d "$TARGET_REPO" ]; then
+    echo "Removing existing repo at $TARGET_REPO..."
+    rm -rf "$TARGET_REPO"
   fi
-  mkdir -p "$REPO"
-  cd "$REPO"
+  mkdir -p "$TARGET_REPO"
+  cd "$TARGET_REPO"
   git init
   # Set local identity so commits work in a fresh repo without global config
   git config user.email "factory@aos.local"
@@ -98,7 +98,7 @@ SEED
   git add -A
   git commit -m "init: seed repo with README and .gitignore"
   cd -
-  echo "Repo initialized at $REPO"
+  echo "Repo initialized at $TARGET_REPO"
   echo ""
 fi
 
@@ -114,15 +114,15 @@ for WO in "${WO_FILES[@]}"; do
   echo ""
 
   if python -m factory run \
-    --repo "$REPO" \
+    --repo "$TARGET_REPO" \
     --work-order "$WO" \
-    --out "$OUT_DIR" \
+    --out "$ARTIFACTS_DIR" \
     --llm-model "$MODEL" \
     --max-attempts "$MAX_ATTEMPTS"; then
 
     echo ""
     echo "$WO_NAME PASSED — committing..."
-    cd "$REPO"
+    cd "$TARGET_REPO"
     git add -A
     # --no-verify: skip hooks (e.g. pre-commit) that might fail on generated code
     git commit --no-verify -m "$WO_NAME: applied by factory" || echo "(nothing to commit)"
