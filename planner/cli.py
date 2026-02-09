@@ -35,6 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Artifacts directory (default: ./examples/artifacts or ./artifacts)",
     )
     compile_parser.add_argument(
+        "--repo",
+        default=None,
+        help=(
+            "Path to the target product repo. Used to build a file listing "
+            "for precondition validation. If omitted, a fresh (empty) repo "
+            "is assumed."
+        ),
+    )
+    compile_parser.add_argument(
         "--overwrite",
         action="store_true",
         default=False,
@@ -76,6 +85,7 @@ def _run_compile(args: argparse.Namespace) -> int:
             template_path=args.template,
             artifacts_dir=args.artifacts_dir,
             overwrite=args.overwrite,
+            repo_path=args.repo,
         )
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

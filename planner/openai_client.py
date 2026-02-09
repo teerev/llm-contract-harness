@@ -23,7 +23,7 @@ RESPONSES_ENDPOINT = f"{OPENAI_API_BASE}/responses"
 # Defaults (tune these first)
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "gpt-5.2-codex"
-DEFAULT_REASONING_EFFORT = "low"      # high for thorough planning; low was fast but produced syntax errors
+DEFAULT_REASONING_EFFORT = "medium"      # high for thorough planning; low was fast but produced syntax errors
 DEFAULT_MAX_OUTPUT_TOKENS = 64000      # reasoning at "high" can use 10-20k tokens; visible output ~3-5k
 
 # ---------------------------------------------------------------------------
