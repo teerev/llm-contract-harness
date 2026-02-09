@@ -15,6 +15,9 @@ from pydantic import BaseModel, field_validator, model_validator
 # Path validation
 # ---------------------------------------------------------------------------
 
+_GLOB_CHARS = frozenset("*?[")
+
+
 def _validate_relative_path(p: str) -> str:
     """Validate that *p* is a safe, relative path and return its normalized form."""
     if not p:
@@ -28,6 +31,9 @@ def _validate_relative_path(p: str) -> str:
     normalized = posixpath.normpath(p)
     if normalized.startswith(".."):
         raise ValueError(f"normalized path must not start with '..': {p}")
+    # Reject glob characters — paths must be literal, never patterns
+    if any(c in normalized for c in _GLOB_CHARS):
+        raise ValueError(f"path must not contain glob characters: {p}")
     return normalized
 
 

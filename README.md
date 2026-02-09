@@ -10,6 +10,40 @@ The harness (not the LLM) controls retries, rollback, routing, artifacts, and te
 
 ## Usage
 
+### Planner (compile spec → work orders)
+
+```bash
+python -m planner compile \
+  --spec spec.txt \
+  --outdir wo/ \
+  --repo /path/to/product
+```
+
+#### Required flags
+
+| Flag | Description |
+|------|-------------|
+| `--spec` | Path to the product spec text file |
+| `--outdir` | Output directory for `WO-*.json` and `manifest.json` |
+
+#### Optional flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--repo` | *(none — assumes empty repo)* | Path to the target product repo; used for precondition chain validation against the existing file listing |
+| `--template` | `./examples/CREATE_WORK_ORDERS_PROMPT.md` | Path to the prompt template |
+| `--artifacts-dir` | `./examples/artifacts` or `./artifacts` | Directory for compile artifacts (prompts, raw LLM responses, validation errors) |
+| `--overwrite` | `false` | Overwrite existing work orders in `--outdir` |
+| `--print-summary` | `false` | Print a one-line summary per work order to stdout |
+
+The planner calls the LLM (up to 3 attempts with automatic self-correction on validation errors), validates the output against both per-work-order structural checks (E0xx) and cross-work-order chain checks (E1xx), and writes individual `WO-*.json` files on success.
+
+Exit codes: `0` = success, `1` = general error, `2` = validation error, `3` = API/network error, `4` = JSON parse error.
+
+The `OPENAI_API_KEY` environment variable must be set.
+
+### Factory (execute a single work order)
+
 ```bash
 python -m factory run \
   --repo /path/to/product \
@@ -117,6 +151,17 @@ Each run produces artifacts under `<out>/<run_id>/`:
 ## Package tree
 
 ```
+planner/
+  __init__.py        # package marker (empty)
+  __main__.py        # python -m planner entry point
+  cli.py             # argparse wiring, compile command, console output
+  compiler.py        # compile loop: prompt → LLM → validate → revise → write
+  io.py              # file-writing helpers (work orders, artifacts)
+  openai_client.py   # OpenAI Responses API wrapper
+  prompt_template.py # template loading and rendering
+  validation.py      # structural + chain validators, compute_verify_exempt
+  PLANNER_PROMPT.md  # default prompt template
+
 factory/
   __init__.py        # package marker (empty)
   __main__.py        # argparse wiring → run.run_cli()

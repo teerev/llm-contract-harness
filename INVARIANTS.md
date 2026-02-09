@@ -265,7 +265,7 @@ on file A enables a stale write on file B.
 | F11 (clean tree) | `factory/run.py` preflight via `workspace.is_clean` | `sys.exit(1)` before graph invocation |
 | F12 (run summary) | `factory/run.py` normal path + emergency handler | `run_summary.json` always written |
 | C1 (shared schema) | `factory/schemas.py` imported by both `planner/validation.py` and factory nodes | Parse error on either side |
-| C2 (verify_exempt flow) | `planner/compiler.py` `compute_verify_exempt`; `factory/nodes_po.py` reads field | Incorrect verify behavior if violated |
+| C2 (verify_exempt flow) | `planner/validation.py` `compute_verify_exempt`; `factory/nodes_po.py` reads field | Incorrect verify behavior if violated |
 | C3 (precond enforced) | `planner/validation.py` E101; `factory/nodes_se.py` precondition gate | Compile error or `FailureBrief(stage="preflight")` |
 | C4 (postcond enforced) | `planner/validation.py` E103/E104; `factory/nodes_po.py` postcondition gate | Compile error or `FailureBrief(stage="acceptance_failed")` |
 | C5 (no output on error) | `planner/compiler.py` `compile_plan` early return on errors | No WO files; `success=False` |
