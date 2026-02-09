@@ -164,6 +164,58 @@ def se_node(state: dict) -> dict:
     attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # 0. Precondition gate — check BEFORE reading context or calling LLM.
+    #    A precondition failure is a PLANNER-CONTRACT BUG, not an executor
+    #    error.  The executor LLM cannot fix it, so retrying is pointless.
+    # ------------------------------------------------------------------
+    for cond in work_order.preconditions:
+        abs_path = os.path.join(repo_root, cond.path)
+        if cond.kind == "file_exists" and not os.path.isfile(abs_path):
+            fb = FailureBrief(
+                stage="preflight",
+                primary_error_excerpt=(
+                    f"PLANNER-CONTRACT BUG: precondition "
+                    f"file_exists('{cond.path}') is false. "
+                    f"The file does not exist."
+                ),
+                constraints_reminder=(
+                    "This is a plan-level error. The work order sequence "
+                    "is invalid. Re-run the planner."
+                ),
+            )
+            save_json(
+                fb.model_dump(),
+                os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF),
+            )
+            return {
+                "proposal": None,
+                "write_ok": False,
+                "failure_brief": fb.model_dump(),
+            }
+        elif cond.kind == "file_absent" and os.path.isfile(abs_path):
+            fb = FailureBrief(
+                stage="preflight",
+                primary_error_excerpt=(
+                    f"PLANNER-CONTRACT BUG: precondition "
+                    f"file_absent('{cond.path}') is false. "
+                    f"The file already exists."
+                ),
+                constraints_reminder=(
+                    "This is a plan-level error. The work order sequence "
+                    "is invalid. Re-run the planner."
+                ),
+            )
+            save_json(
+                fb.model_dump(),
+                os.path.join(attempt_dir, ARTIFACT_FAILURE_BRIEF),
+            )
+            return {
+                "proposal": None,
+                "write_ok": False,
+                "failure_brief": fb.model_dump(),
+            }
+
     # Failure brief from a prior attempt (if retrying)
     prev_fb: FailureBrief | None = None
     if state.get("failure_brief"):

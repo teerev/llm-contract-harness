@@ -397,3 +397,202 @@ class TestPONode:
 
         assert result["failure_brief"] is not None
         assert result["failure_brief"]["stage"] == "acceptance_failed"
+
+
+# ---------------------------------------------------------------------------
+# Precondition gate (SE node)
+# ---------------------------------------------------------------------------
+
+
+class TestPreconditionGate:
+    def test_file_exists_satisfied(self, git_repo, out_dir):
+        """Precondition file_exists for an existing file passes through to LLM."""
+        # hello.txt exists in the git_repo fixture
+        wo = minimal_work_order(
+            preconditions=[{"kind": "file_exists", "path": "hello.txt"}],
+        )
+        state = _base_state(git_repo, out_dir, work_order=wo)
+
+        valid_json = make_valid_proposal_json(git_repo)
+        with patch("factory.llm.complete", return_value=valid_json):
+            result = se_node(state)
+
+        # Should reach the LLM and produce a proposal
+        assert result["proposal"] is not None
+        assert result["failure_brief"] is None
+
+    def test_file_exists_fails(self, git_repo, out_dir):
+        """Precondition file_exists for a missing file → preflight FailureBrief."""
+        wo = minimal_work_order(
+            preconditions=[{"kind": "file_exists", "path": "nonexistent.py"}],
+        )
+        state = _base_state(git_repo, out_dir, work_order=wo)
+
+        # LLM should never be called
+        with patch("factory.llm.complete") as mock_llm:
+            result = se_node(state)
+            mock_llm.assert_not_called()
+
+        assert result["proposal"] is None
+        assert result["failure_brief"] is not None
+        assert result["failure_brief"]["stage"] == "preflight"
+        assert "PLANNER-CONTRACT BUG" in result["failure_brief"]["primary_error_excerpt"]
+        assert "nonexistent.py" in result["failure_brief"]["primary_error_excerpt"]
+
+    def test_file_absent_fails(self, git_repo, out_dir):
+        """Precondition file_absent for an existing file → preflight FailureBrief."""
+        wo = minimal_work_order(
+            preconditions=[{"kind": "file_absent", "path": "hello.txt"}],
+        )
+        state = _base_state(git_repo, out_dir, work_order=wo)
+
+        with patch("factory.llm.complete") as mock_llm:
+            result = se_node(state)
+            mock_llm.assert_not_called()
+
+        assert result["failure_brief"] is not None
+        assert result["failure_brief"]["stage"] == "preflight"
+        assert "PLANNER-CONTRACT BUG" in result["failure_brief"]["primary_error_excerpt"]
+        assert "file_absent" in result["failure_brief"]["primary_error_excerpt"]
+
+    def test_file_absent_satisfied(self, git_repo, out_dir):
+        """Precondition file_absent for a missing file passes through to LLM."""
+        wo = minimal_work_order(
+            preconditions=[{"kind": "file_absent", "path": "brand_new.py"}],
+        )
+        state = _base_state(git_repo, out_dir, work_order=wo)
+
+        valid_json = make_valid_proposal_json(git_repo)
+        with patch("factory.llm.complete", return_value=valid_json):
+            result = se_node(state)
+
+        assert result["proposal"] is not None
+        assert result["failure_brief"] is None
+
+    def test_empty_preconditions_noop(self, git_repo, out_dir):
+        """Empty preconditions → no gate, LLM is called normally."""
+        wo = minimal_work_order(preconditions=[])
+        state = _base_state(git_repo, out_dir, work_order=wo)
+
+        valid_json = make_valid_proposal_json(git_repo)
+        with patch("factory.llm.complete", return_value=valid_json):
+            result = se_node(state)
+
+        assert result["proposal"] is not None
+        assert result["failure_brief"] is None
+
+
+# ---------------------------------------------------------------------------
+# Postcondition gate (PO node)
+# ---------------------------------------------------------------------------
+
+
+class TestPostconditionGate:
+    def _po_state_with_postconds(self, git_repo, out_dir, postconditions,
+                                  acceptance_cmds=None):
+        """State for PO with a passing verify script and configurable postconditions."""
+        scripts_dir = os.path.join(git_repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 0\n")
+
+        if acceptance_cmds is None:
+            acceptance_cmds = ["python -c 'print(1)'"]
+
+        wo = minimal_work_order(
+            acceptance_commands=acceptance_cmds,
+            postconditions=postconditions,
+        )
+        return _base_state(git_repo, out_dir, work_order=wo)
+
+    def test_postcondition_satisfied(self, git_repo, out_dir):
+        """Postcondition file_exists for an existing file passes."""
+        state = self._po_state_with_postconds(
+            git_repo, out_dir,
+            postconditions=[{"kind": "file_exists", "path": "hello.txt"}],
+        )
+        result = po_node(state)
+        assert result["failure_brief"] is None
+
+    def test_postcondition_fails(self, git_repo, out_dir):
+        """Postcondition file_exists for a missing file → acceptance_failed."""
+        state = self._po_state_with_postconds(
+            git_repo, out_dir,
+            postconditions=[{"kind": "file_exists", "path": "should_exist.py"}],
+        )
+        result = po_node(state)
+
+        assert result["failure_brief"] is not None
+        assert result["failure_brief"]["stage"] == "acceptance_failed"
+        assert "should_exist.py" in result["failure_brief"]["primary_error_excerpt"]
+        assert "Postcondition" in result["failure_brief"]["primary_error_excerpt"]
+
+    def test_empty_postconditions_noop(self, git_repo, out_dir):
+        """Empty postconditions → no gate, acceptance runs normally."""
+        state = self._po_state_with_postconds(
+            git_repo, out_dir,
+            postconditions=[],
+        )
+        result = po_node(state)
+        assert result["failure_brief"] is None
+        assert len(result["acceptance_results"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# verify_exempt (PO node)
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyExempt:
+    def test_verify_exempt_skips_verify_sh(self, git_repo, out_dir):
+        """When verify_exempt=True, PO runs compileall instead of verify.sh."""
+        # Create a verify.sh that would FAIL if run
+        scripts_dir = os.path.join(git_repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 1\n")
+
+        wo = minimal_work_order(verify_exempt=True)
+        state = _base_state(git_repo, out_dir, work_order=wo)
+        result = po_node(state)
+
+        # Should pass because compileall is used, not the failing verify.sh
+        assert result["failure_brief"] is None
+        # Verify ran compileall (one command), not verify.sh
+        assert len(result["verify_results"]) == 1
+        assert result["verify_results"][0]["command"] == [
+            "python", "-m", "compileall", "-q", ".",
+        ]
+
+    def test_verify_exempt_false_runs_verify_sh(self, git_repo, out_dir):
+        """When verify_exempt=False, PO runs verify.sh as usual."""
+        scripts_dir = os.path.join(git_repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 0\n")
+
+        wo = minimal_work_order(verify_exempt=False)
+        state = _base_state(git_repo, out_dir, work_order=wo)
+        result = po_node(state)
+
+        assert result["failure_brief"] is None
+        assert result["verify_results"][0]["command"] == [
+            "bash", "scripts/verify.sh",
+        ]
+
+    def test_verify_exempt_default_false(self, git_repo, out_dir):
+        """Old-format WO (no verify_exempt) defaults to False → runs verify.sh."""
+        scripts_dir = os.path.join(git_repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 0\n")
+
+        # Use the standard minimal_work_order (no verify_exempt key)
+        wo = minimal_work_order()
+        state = _base_state(git_repo, out_dir, work_order=wo)
+        result = po_node(state)
+
+        assert result["failure_brief"] is None
+        assert result["verify_results"][0]["command"] == [
+            "bash", "scripts/verify.sh",
+        ]
