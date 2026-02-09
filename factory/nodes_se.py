@@ -62,90 +62,84 @@ def _read_context_files(work_order: WorkOrder, repo_root: str) -> list[dict]:
     return result
 
 
+_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "FACTORY_PROMPT.md"
+)
+
+
+def _load_se_template() -> str:
+    """Read the SE prompt template from disk."""
+    with open(_TEMPLATE_PATH, "r", encoding="utf-8") as fh:
+        return fh.read().rstrip("\n")
+
+
 def _build_prompt(
     work_order: WorkOrder,
     context_files: list[dict],
     failure_brief: FailureBrief | None,
 ) -> str:
-    """Construct the SE prompt for the LLM."""
-    lines: list[str] = []
+    """Render the SE prompt by filling dynamic values into the template.
 
-    lines.append(
-        "You are a software engineer. Propose DIRECT FILE WRITES to implement "
-        "the requested changes."
-    )
-    lines.append("")
+    The static prompt structure lives in ``FACTORY_PROMPT.md`` (next to
+    this module).  Dynamic sections — work-order fields, context-file
+    contents, and the optional retry failure brief — are substituted at
+    render time via ``str.replace`` calls, mirroring the planner's
+    template approach.
+    """
+    template = _load_se_template()
 
-    # --- Work-order details ---
-    lines.append("## Work Order")
-    lines.append(f"Title: {work_order.title}")
-    lines.append(f"Intent: {work_order.intent}")
-    lines.append("")
+    # ── Simple substitutions ──────────────────────────────────────────
+    allowed = "\n".join(f"  - {p}" for p in sorted(work_order.allowed_files))
 
-    lines.append("## Allowed Files (you may ONLY write to these paths)")
-    for p in sorted(work_order.allowed_files):
-        lines.append(f"  - {p}")
-    lines.append("")
-
+    # ── Conditional sections (empty string when absent) ───────────────
+    forbidden = ""
     if work_order.forbidden:
-        lines.append("## Forbidden")
-        for f in work_order.forbidden:
-            lines.append(f"  - {f}")
-        lines.append("")
+        items = "\n".join(f"  - {f}" for f in work_order.forbidden)
+        forbidden = f"## Forbidden\n{items}\n\n"
 
+    notes = ""
     if work_order.notes:
-        lines.append(f"## Notes\n{work_order.notes}")
-        lines.append("")
+        notes = f"## Notes\n{work_order.notes}\n\n"
 
-    # --- Context files ---
-    lines.append("## Current File Contents")
-    lines.append(
-        "Use the sha256 shown below as the `base_sha256` value in your writes."
-    )
-    lines.append(
-        "For files that do not exist yet, use the sha256 of empty bytes: "
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
-    lines.append("")
-
+    # ── Context files ─────────────────────────────────────────────────
+    blocks: list[str] = []
     for cf in context_files:
-        lines.append(f"### {cf['path']}")
-        lines.append(f"exists: {cf['exists']}")
-        lines.append(f"sha256: {cf['sha256']}")
+        parts = [
+            f"### {cf['path']}",
+            f"exists: {cf['exists']}",
+            f"sha256: {cf['sha256']}",
+        ]
         if cf["content"]:
-            lines.append(f"```\n{cf['content']}\n```")
+            parts.append(f"```\n{cf['content']}\n```")
         else:
-            lines.append("(empty / does not exist)")
-        lines.append("")
+            parts.append("(empty / does not exist)")
+        blocks.append("\n".join(parts))
+    ctx = "\n\n".join(blocks)
 
-    # --- Previous failure ---
+    # ── Failure brief (only on retry) ─────────────────────────────────
+    fb = ""
     if failure_brief is not None:
-        lines.append("## Previous Attempt FAILED — please fix the issues")
-        lines.append(f"Stage: {failure_brief.stage}")
+        fb_lines = ["## Previous Attempt FAILED — please fix the issues"]
+        fb_lines.append(f"Stage: {failure_brief.stage}")
         if failure_brief.command:
-            lines.append(f"Command: {failure_brief.command}")
+            fb_lines.append(f"Command: {failure_brief.command}")
         if failure_brief.exit_code is not None:
-            lines.append(f"Exit code: {failure_brief.exit_code}")
-        lines.append(f"Error excerpt:\n{failure_brief.primary_error_excerpt}")
-        lines.append(f"Reminder: {failure_brief.constraints_reminder}")
-        lines.append("")
+            fb_lines.append(f"Exit code: {failure_brief.exit_code}")
+        fb_lines.append(f"Error excerpt:\n{failure_brief.primary_error_excerpt}")
+        fb_lines.append(f"Reminder: {failure_brief.constraints_reminder}")
+        fb = "\n".join(fb_lines) + "\n\n"
 
-    # --- Output format ---
-    lines.append("## Required Output Format (STRICT — no deviations)")
-    lines.append("Output ONLY a single JSON object with exactly two keys:")
-    lines.append('  "summary"  — a brief description of what you changed')
-    lines.append('  "writes"   — an array of objects, each with:')
-    lines.append('      "path"        — relative file path (must be in allowed files)')
-    lines.append(
-        '      "base_sha256" — hex SHA256 of the file\'s current content '
-        "(from the sha256 values shown above)"
+    # ── Assemble ──────────────────────────────────────────────────────
+    return (
+        template
+        .replace("{{TITLE}}", work_order.title)
+        .replace("{{INTENT}}", work_order.intent)
+        .replace("{{ALLOWED_FILES}}", allowed)
+        .replace("{{FORBIDDEN}}", forbidden)
+        .replace("{{NOTES}}", notes)
+        .replace("{{CONTEXT_FILES}}", ctx)
+        .replace("{{FAILURE_BRIEF}}", fb)
     )
-    lines.append('      "content"     — the COMPLETE new file content as a string')
-    lines.append("")
-    lines.append("Do NOT wrap the JSON in markdown fences or add any other text.")
-    lines.append("Every write must contain the FULL file content, not a partial edit.")
-
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

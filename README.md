@@ -163,15 +163,16 @@ planner/
   PLANNER_PROMPT.md  # default prompt template
 
 factory/
-  __init__.py        # package marker (empty)
-  __main__.py        # argparse wiring → run.run_cli()
-  graph.py           # LangGraph StateGraph, routing, finalize node
-  llm.py             # thin OpenAI Chat Completions wrapper
-  nodes_po.py        # PO: verify + acceptance commands
-  nodes_se.py        # SE: prompt construction + LLM call + parse
-  nodes_tr.py        # TR: scope/hash checks + atomic writes
-  run.py             # CLI orchestration, preflight, RunSummary
-  schemas.py         # Pydantic models + load helpers
-  util.py            # hashing, truncation, JSON IO, command runner
-  workspace.py       # git helpers (is_clean, rollback, tree hash)
+  __init__.py            # package marker (empty)
+  __main__.py            # argparse wiring → run.run_cli()
+  FACTORY_PROMPT.md      # SE prompt template (static text + placeholders)
+  graph.py               # LangGraph StateGraph, routing, finalize node
+  llm.py                 # thin OpenAI Chat Completions wrapper
+  nodes_po.py            # PO: verify + acceptance commands
+  nodes_se.py            # SE: prompt rendering + LLM call + parse
+  nodes_tr.py            # TR: scope/hash checks + atomic writes
+  run.py                 # CLI orchestration, preflight, RunSummary
+  schemas.py             # Pydantic models + load helpers
+  util.py                # hashing, truncation, JSON IO, command runner
+  workspace.py           # git helpers (is_clean, rollback, tree hash)
 ```
