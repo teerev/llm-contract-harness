@@ -11,6 +11,7 @@ from factory.schemas import (
     ALLOWED_STAGES,
     MAX_FILE_WRITE_BYTES,
     MAX_TOTAL_WRITE_BYTES,
+    Condition,
     FailureBrief,
     FileWrite,
     WorkOrder,
@@ -85,6 +86,94 @@ class TestWorkOrder:
     def test_notes_optional(self):
         wo = self._valid()
         assert wo.notes is None
+
+    def test_backward_compatible_no_conditions(self):
+        """Old-format WO dict (no preconditions/postconditions/verify_exempt) parses."""
+        wo = self._valid()
+        assert wo.preconditions == []
+        assert wo.postconditions == []
+        assert wo.verify_exempt is False
+
+    def test_with_preconditions(self):
+        wo = self._valid(
+            preconditions=[{"kind": "file_exists", "path": "src/dep.py"}],
+        )
+        assert len(wo.preconditions) == 1
+        assert wo.preconditions[0].kind == "file_exists"
+        assert wo.preconditions[0].path == "src/dep.py"
+
+    def test_with_postconditions(self):
+        wo = self._valid(
+            postconditions=[{"kind": "file_exists", "path": "src/a.py"}],
+        )
+        assert len(wo.postconditions) == 1
+        assert wo.postconditions[0].kind == "file_exists"
+
+    def test_verify_exempt_default_false(self):
+        wo = self._valid()
+        assert wo.verify_exempt is False
+
+    def test_verify_exempt_set_true(self):
+        wo = self._valid(verify_exempt=True)
+        assert wo.verify_exempt is True
+
+    def test_postcondition_file_absent_rejected(self):
+        """Postconditions may only use file_exists, not file_absent."""
+        with pytest.raises(ValidationError, match="file_exists"):
+            self._valid(
+                postconditions=[{"kind": "file_absent", "path": "src/a.py"}],
+            )
+
+    def test_postcondition_mixed_rejected(self):
+        """Even one file_absent among valid postconditions is rejected."""
+        with pytest.raises(ValidationError, match="file_exists"):
+            self._valid(
+                postconditions=[
+                    {"kind": "file_exists", "path": "src/a.py"},
+                    {"kind": "file_absent", "path": "src/b.py"},
+                ],
+            )
+
+
+# ---------------------------------------------------------------------------
+# Condition
+# ---------------------------------------------------------------------------
+
+
+class TestCondition:
+    def test_file_exists_valid(self):
+        c = Condition(kind="file_exists", path="src/a.py")
+        assert c.kind == "file_exists"
+        assert c.path == "src/a.py"
+
+    def test_file_absent_valid(self):
+        c = Condition(kind="file_absent", path="src/b.py")
+        assert c.kind == "file_absent"
+        assert c.path == "src/b.py"
+
+    def test_invalid_kind_rejected(self):
+        with pytest.raises(ValidationError):
+            Condition(kind="file_modified", path="src/a.py")  # type: ignore[arg-type]
+
+    def test_absolute_path_rejected(self):
+        with pytest.raises(ValidationError, match="must be relative"):
+            Condition(kind="file_exists", path="/etc/passwd")
+
+    def test_empty_path_rejected(self):
+        with pytest.raises(ValidationError, match="must not be empty"):
+            Condition(kind="file_exists", path="")
+
+    def test_dotdot_path_rejected(self):
+        with pytest.raises(ValidationError, match="must not start with"):
+            Condition(kind="file_exists", path="../../etc/passwd")
+
+    def test_path_normalization(self):
+        c = Condition(kind="file_exists", path="./src/a.py")
+        assert c.path == "src/a.py"
+
+    def test_drive_letter_rejected(self):
+        with pytest.raises(ValidationError, match="drive letters"):
+            Condition(kind="file_exists", path="C:foo.txt")
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +276,50 @@ class TestLoadWorkOrder:
             json.dump(data, f)
         wo = load_work_order(p)
         assert wo.id == "wo1"
+
+    def test_load_old_format_gets_defaults(self, tmp_path):
+        """Old-format JSON (no conditions, no verify_exempt) loads with defaults."""
+        p = str(tmp_path / "wo_old.json")
+        data = {
+            "id": "wo1",
+            "title": "T",
+            "intent": "I",
+            "allowed_files": ["a.py"],
+            "forbidden": [],
+            "acceptance_commands": ["echo ok"],
+            "context_files": ["a.py"],
+        }
+        with open(p, "w") as f:
+            json.dump(data, f)
+        wo = load_work_order(p)
+        assert wo.preconditions == []
+        assert wo.postconditions == []
+        assert wo.verify_exempt is False
+
+    def test_load_with_conditions(self, tmp_path):
+        """JSON with conditions round-trips correctly."""
+        p = str(tmp_path / "wo_new.json")
+        data = {
+            "id": "wo1",
+            "title": "T",
+            "intent": "I",
+            "preconditions": [{"kind": "file_exists", "path": "scripts/verify.sh"}],
+            "postconditions": [{"kind": "file_exists", "path": "a.py"}],
+            "allowed_files": ["a.py"],
+            "forbidden": [],
+            "acceptance_commands": ["echo ok"],
+            "context_files": ["a.py"],
+            "verify_exempt": True,
+        }
+        with open(p, "w") as f:
+            json.dump(data, f)
+        wo = load_work_order(p)
+        assert len(wo.preconditions) == 1
+        assert wo.preconditions[0].kind == "file_exists"
+        assert wo.preconditions[0].path == "scripts/verify.sh"
+        assert len(wo.postconditions) == 1
+        assert wo.postconditions[0].path == "a.py"
+        assert wo.verify_exempt is True
 
     def test_load_missing_file(self, tmp_path):
         with pytest.raises(FileNotFoundError):
