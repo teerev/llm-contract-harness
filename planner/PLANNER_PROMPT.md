@@ -116,9 +116,22 @@ Each work order MUST include these exact keys and no others:
 - `id`: string, format WO-NN (monotonic from WO-01)
 - `title`: string, short descriptive title
 - `intent`: string, one sentence describing observable behaviour
+- `preconditions`: list of objects. Each object has:
+    - `kind`: `"file_exists"` or `"file_absent"`
+    - `path`: relative file path
+  Declares what must be true BEFORE this work order executes.
+  Use `file_exists` to declare dependencies on files created by prior work orders.
+  Use `file_absent` to assert a file does not yet exist (create-only safety).
+- `postconditions`: list of objects. Each object has:
+    - `kind`: `"file_exists"` (the only allowed kind for postconditions)
+    - `path`: relative file path
+  Declares what will be true AFTER this work order executes.
+  Every file in `allowed_files` MUST appear as a `file_exists` postcondition.
 - `allowed_files`: list of strings, explicit relative file paths (no globs)
 - `forbidden`: list of strings, explicit prohibitions
-- `acceptance_commands`: list of strings, must include `bash scripts/verify.sh`
+- `acceptance_commands`: list of strings. Each command independently verifies
+    the work order's specific intent. Do NOT include `bash scripts/verify.sh` —
+    the factory runs global verification automatically as a separate gate.
 - `context_files`: list of strings — files the executor needs to see.
     MUST include all `allowed_files`. MAY also include read-only upstream
     dependencies (modules the executor must understand but must not modify).
@@ -129,28 +142,31 @@ Each work order MUST include these exact keys and no others:
 WO-01 BOOTSTRAPPING CONTRACT (MANDATORY)
 ────────────────────────────────
 
-WO-01 is structurally special: it creates `scripts/verify.sh`, which defines the
-global verification command that every subsequent work order depends on. This
-introduces a bootstrapping constraint that must be handled explicitly.
+WO-01 creates `scripts/verify.sh`, which defines the global verification command.
+The factory runs this script automatically after every work order. Because no test
+files exist when WO-01 runs, the factory will **skip** global verify for WO-01
+(and any subsequent WO whose cumulative postconditions do not yet satisfy the
+`verify_contract`). This is handled automatically — you do not need special logic.
 
 WO-01 MUST:
 - Have `allowed_files` containing ONLY `scripts/verify.sh` (no other files).
+- Declare `postconditions: [{"kind": "file_exists", "path": "scripts/verify.sh"}]`.
+- Declare `preconditions: [{"kind": "file_absent", "path": "scripts/verify.sh"}]`
+  (or empty if the file might already exist).
 - Specify the EXACT, byte-level content of `scripts/verify.sh` in the `notes` field.
   Leave zero degrees of freedom for the coding agent. Example:
   "scripts/verify.sh must contain exactly: #!/usr/bin/env bash, set -euo pipefail,
   python -m pytest -q — three lines, nothing else."
 - Use an INDEPENDENT acceptance command — NOT `bash scripts/verify.sh`.
-  Rationale: you cannot verify with verify.sh when verify.sh is the file being created.
-  Use something like: python -c "import os; assert os.path.isfile('scripts/verify.sh')"
+  Use something like: `python -c "import os; assert os.path.isfile('scripts/verify.sh')"`
 
 WO-01 MUST NOT:
 - Bundle project skeleton, package init, or test files alongside verify.sh.
   Those belong in WO-02 or later.
-- Use `bash scripts/verify.sh` as an acceptance command (circular dependency).
+- Include `bash scripts/verify.sh` in `acceptance_commands` (the factory handles it).
 - Leave verify.sh content up to interpretation via loose notes.
 
-The verify.sh content should use a command that succeeds on any valid Python project
-regardless of test layout. Prefer `python -m pytest -q` or `python -m compileall -q .`.
+The verify.sh content should use `python -m pytest -q`.
 Do NOT use `python -m unittest discover` (it requires explicit `-s <dir>` flags that
 vary by project layout and is a known source of silent failures).
 
@@ -158,22 +174,22 @@ vary by project layout and is a known source of silent failures).
 ACCEPTANCE COMMAND DESIGN PRINCIPLE
 ────────────────────────────────
 
-Every work order — including WO-02 and beyond — MUST include at least one acceptance
-command that **independently verifies the work order's specific intent**, beyond just
-re-running `bash scripts/verify.sh`.
+Every work order MUST include at least one acceptance command that **independently
+verifies the work order's specific intent**.
 
-`bash scripts/verify.sh` is a global regression gate. It catches regressions but does
-not prove that the work order achieved its purpose. If the only acceptance command is
-the global verify, the work order has no per-feature acceptance and correctness is not
-enforced.
+The factory runs `bash scripts/verify.sh` automatically as a global regression gate.
+Do NOT include it in `acceptance_commands`. Acceptance commands are for per-feature
+verification only.
 
 Good patterns:
 - `python -c "from mypackage.module import MyClass; assert hasattr(MyClass, 'method')"`
 - `python -c "import mypackage; print(mypackage.__version__)"`
 - `python -m mypackage --help`
+- `python -c "import os; assert os.path.isfile('scripts/verify.sh')"`
 
-Bad pattern:
-- `acceptance_commands: ["bash scripts/verify.sh"]` with nothing else.
+Bad patterns:
+- `acceptance_commands: ["bash scripts/verify.sh"]` — never include the verify command.
+- `acceptance_commands: ["bash scripts/verify.sh", "python -c ..."]` — same problem.
 
 ────────────────────────────────
 GLOBAL CONSTRAINTS
@@ -199,23 +215,40 @@ Output a single JSON object with exactly these keys:
 
 {
   "system_overview": ["bullet 1", "bullet 2", ...],
+  "verify_contract": {
+    "command": "python -m pytest -q",
+    "requires": [
+      {"kind": "file_exists", "path": "scripts/verify.sh"},
+      {"kind": "file_exists", "path": "tests/test_placeholder.py"}
+    ]
+  },
   "work_orders": [
     {
       "id": "WO-01",
-      "title": "...",
-      "intent": "...",
-      "allowed_files": ["..."],
-      "forbidden": ["..."],
-      "acceptance_commands": ["bash scripts/verify.sh", "..."],
-      "context_files": ["..."],
+      "title": "Bootstrap verify script",
+      "intent": "Create scripts/verify.sh as the global verification command.",
+      "preconditions": [{"kind": "file_absent", "path": "scripts/verify.sh"}],
+      "postconditions": [{"kind": "file_exists", "path": "scripts/verify.sh"}],
+      "allowed_files": ["scripts/verify.sh"],
+      "forbidden": ["Do not create any other files."],
+      "acceptance_commands": ["python -c \"import os; assert os.path.isfile('scripts/verify.sh')\""],
+      "context_files": ["scripts/verify.sh"],
       "notes": "..."
     },
     ...
   ]
 }
 
+`verify_contract` declares the conditions required for `scripts/verify.sh` to
+succeed when run by the factory. The `requires` list must include
+`scripts/verify.sh` itself plus any files the verify command depends on (e.g.,
+at least one test file for pytest). The factory uses this to determine which
+early work orders are exempt from global verification (because their cumulative
+postconditions do not yet satisfy the contract).
+
 Do NOT wrap the output in markdown fences.
 Do NOT include any text outside the JSON object.
-Do NOT include extra keys in individual work orders.
+Do NOT include extra keys in individual work orders beyond those listed above.
+Do NOT include `bash scripts/verify.sh` in any work order's `acceptance_commands`.
 Do NOT include implementation details or code.
 Optimize for cumulative reliability and auditability.

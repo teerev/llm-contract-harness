@@ -7,7 +7,6 @@ import pytest
 from planner.validation import (
     E000_STRUCTURAL,
     E001_ID,
-    E002_VERIFY,
     E003_SHELL_OP,
     E004_GLOB,
     E005_SCHEMA,
@@ -28,24 +27,16 @@ from planner.validation import (
 def _wo(wo_id: str = "WO-01", **overrides) -> dict:
     """Build a minimal valid work order dict.
 
-    Includes ``bash scripts/verify.sh`` in acceptance so E002 doesn't fire
-    by default (except for WO-01 bootstrap which is exempt).
+    Does NOT include ``bash scripts/verify.sh`` in acceptance — the factory
+    handles global verify automatically, and including it is now banned (R7).
     """
-    is_bootstrap = wo_id == "WO-01" and "scripts/verify.sh" in overrides.get(
-        "allowed_files", []
-    )
-    default_acceptance = (
-        ['python -c "assert True"']
-        if is_bootstrap
-        else ["bash scripts/verify.sh", 'python -c "assert True"']
-    )
     base = {
         "id": wo_id,
         "title": f"Test {wo_id}",
         "intent": "test intent",
         "allowed_files": ["src/a.py"],
         "forbidden": [],
-        "acceptance_commands": default_acceptance,
+        "acceptance_commands": ['python -c "assert True"'],
         "context_files": ["src/a.py"],
         "notes": None,
     }
@@ -155,26 +146,20 @@ class TestE001Id:
 
 
 # ---------------------------------------------------------------------------
-# E002: Verify command presence
+# E002: Verify command in acceptance (REMOVED — rule was inverted to R7/E105)
 # ---------------------------------------------------------------------------
 
 
-class TestE002Verify:
-    def test_verify_present_passes(self):
-        wo = _wo("WO-02", acceptance_commands=[
-            "bash scripts/verify.sh",
-            'python -c "assert True"',
-        ])
-        errors = validate_plan([_wo("WO-01"), wo])
-        assert E002_VERIFY not in _codes_for_wo(errors, "WO-02")
-
-    def test_verify_missing_fails(self):
+class TestE002VerifyRemoved:
+    def test_acceptance_without_verify_passes(self):
+        """After M4, acceptance_commands without 'bash scripts/verify.sh' is valid."""
         wo = _wo("WO-02", acceptance_commands=['python -c "assert True"'])
         errors = validate_plan([_wo("WO-01"), wo])
-        assert E002_VERIFY in _codes_for_wo(errors, "WO-02")
+        # E002 should never appear — the rule no longer exists.
+        assert all(e.code != "E002" for e in errors)
 
-    def test_bootstrap_exempt(self):
-        """WO-01 creating verify.sh is exempt from the verify-in-acceptance rule."""
+    def test_wo01_bootstrap_no_special_case(self):
+        """WO-01 creating verify.sh no longer needs a bootstrap exemption."""
         wo = _wo(
             "WO-01",
             allowed_files=["scripts/verify.sh"],
@@ -182,18 +167,7 @@ class TestE002Verify:
             acceptance_commands=['python -c "assert True"'],
         )
         errors = validate_plan([wo])
-        assert E002_VERIFY not in _codes(errors)
-
-    def test_bootstrap_exempt_only_wo01(self):
-        """WO-02 creating verify.sh is NOT exempt."""
-        wo = _wo(
-            "WO-02",
-            allowed_files=["scripts/verify.sh"],
-            context_files=["scripts/verify.sh"],
-            acceptance_commands=['python -c "assert True"'],
-        )
-        errors = validate_plan([_wo("WO-01"), wo])
-        assert E002_VERIFY in _codes_for_wo(errors, "WO-02")
+        assert all(e.code != "E002" for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -392,17 +366,15 @@ class TestParseAndValidate:
     def test_multiple_errors_accumulated(self):
         """A plan with multiple problems returns all errors, not just the first."""
         wo1 = _wo("WO-01", acceptance_commands=[
-            "bash scripts/verify.sh",
-            'python -c "def foo(:"',  # E006
+            'python -c "def foo(:"',  # E006 — syntax error
         ])
         wo2 = _wo(
-            "WO-03",  # gap → E001
-            acceptance_commands=['python -c "assert True"'],  # no verify → E002
+            "WO-03",  # gap → E001 (should be WO-02)
+            acceptance_commands=['python -c "assert True"'],
         )
         _, errors = parse_and_validate({"work_orders": [wo1, wo2]})
         codes = _codes(errors)
         assert E001_ID in codes      # WO-03 should be WO-02
-        assert E002_VERIFY in codes  # WO-03 missing verify
         assert E006_SYNTAX in codes  # WO-01 has syntax error
 
 

@@ -25,6 +25,8 @@ SHELL_OPERATOR_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<", "<<"})
 # ---------------------------------------------------------------------------
 
 # Error code constants — machine-readable, stable across versions.
+#
+# E0xx — per-work-order structural checks (validate_plan)
 E000_STRUCTURAL = "E000"  # Top-level structure errors (empty list, bad JSON shape)
 E001_ID = "E001"          # ID format / contiguity
 E002_VERIFY = "E002"      # Verify command missing in acceptance
@@ -32,6 +34,15 @@ E003_SHELL_OP = "E003"    # Shell operator in acceptance command
 E004_GLOB = "E004"        # Glob character in path
 E005_SCHEMA = "E005"      # Pydantic schema validation failed
 E006_SYNTAX = "E006"      # Python syntax error in python -c command
+#
+# E1xx / W1xx — cross-work-order chain checks (validate_plan_v2)
+E101_PRECOND = "E101"            # Precondition unsatisfied
+E102_CONTRADICTION = "E102"      # Contradictory preconditions (same path, exists+absent)
+E103_POST_OUTSIDE = "E103"       # Postcondition path not in allowed_files
+E104_NO_POSTCOND = "E104"        # allowed_files entry has no postcondition
+E105_VERIFY_IN_ACC = "E105"      # bash scripts/verify.sh in acceptance_commands
+E106_VERIFY_CONTRACT = "E106"    # Verify contract never fully satisfied by plan
+W101_ACCEPTANCE_DEP = "W101"     # Acceptance command depends on file not in cumulative state
 
 
 @dataclass(frozen=True)
@@ -188,20 +199,14 @@ def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
     for i, wo in enumerate(normalized):
         wo_id = wo.get("id", f"index-{i}")
 
-        # Global verification command
-        # WO-01 is exempt when it creates verify.sh (bootstrapping constraint:
-        # it cannot use bash scripts/verify.sh as acceptance for the file it
-        # is itself creating). All other work orders must include it.
         acceptance = wo.get("acceptance_commands", [])
-        allowed = wo.get("allowed_files", [])
-        is_bootstrap = wo.get("id") == "WO-01" and VERIFY_SCRIPT_PATH in allowed
-        if not is_bootstrap and VERIFY_COMMAND not in acceptance:
-            errors.append(ValidationError(
-                code=E002_VERIFY,
-                wo_id=wo_id,
-                message=f"acceptance_commands must contain '{VERIFY_COMMAND}'",
-                field="acceptance_commands",
-            ))
+
+        # NOTE: The old E002 rule ("acceptance_commands must contain
+        # 'bash scripts/verify.sh'") and the WO-01 bootstrap exemption
+        # have been removed.  The factory runs global verify automatically
+        # via _get_verify_commands(); including it in acceptance was
+        # redundant and created bootstrap circularity.  The inverse rule
+        # (R7 — *ban* verify in acceptance) is enforced by validate_plan_v2.
 
         # Shell operators — commands run with shell=False, so pipes,
         # redirects, and chaining operators will not work.  We check the
@@ -284,3 +289,333 @@ def parse_and_validate(
     errors = validate_plan(work_orders_raw)
 
     return normalized, errors
+
+
+# ---------------------------------------------------------------------------
+# Acceptance-command dependency extraction
+# ---------------------------------------------------------------------------
+
+# Top-level stdlib module names; kept intentionally broad to avoid false
+# positives.  Expand as needed — a missed stdlib name only causes a spurious
+# W101 warning, never a hard error.
+_STDLIB_TOP_LEVEL = frozenset({
+    "abc", "ast", "asyncio", "base64", "builtins", "collections",
+    "contextlib", "copy", "csv", "dataclasses", "datetime", "decimal",
+    "enum", "functools", "glob", "hashlib", "importlib", "inspect",
+    "io", "itertools", "json", "logging", "math", "multiprocessing",
+    "operator", "os", "pathlib", "pickle", "pprint", "queue", "random",
+    "re", "shlex", "shutil", "signal", "socket", "sqlite3", "string",
+    "struct", "subprocess", "sys", "tempfile", "textwrap", "threading",
+    "time", "traceback", "typing", "unittest", "urllib", "uuid",
+    "warnings", "zipfile",
+    # Common third-party that should never appear as project modules:
+    "pytest", "pydantic", "numpy", "pip",
+})
+
+
+def _module_to_candidate_paths(module_name: str) -> list[str]:
+    """Map a dotted module name to candidate file paths.
+
+    ``mypackage.solver`` → ``["mypackage/solver.py", "mypackage/solver/__init__.py"]``
+    """
+    import posixpath
+
+    parts = module_name.split(".")
+    base = "/".join(parts)
+    return [
+        posixpath.normpath(f"{base}.py"),
+        posixpath.normpath(f"{base}/__init__.py"),
+    ]
+
+
+def _extract_import_groups(cmd_str: str) -> list[tuple[str, list[str]]]:
+    """Return ``[(module_name, [candidate_path, ...]), ...]`` for project imports.
+
+    Only processes ``python -c "..."`` commands.  Returns an empty list for
+    other command patterns or on parse failure.
+    """
+    try:
+        tokens = shlex.split(cmd_str)
+    except ValueError:
+        return []
+
+    if not (len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-c"):
+        return []
+
+    code = tokens[2]
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []  # syntax errors caught by E006
+
+    groups: list[tuple[str, list[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            top = node.module.split(".")[0]
+            if top not in _STDLIB_TOP_LEVEL:
+                groups.append((node.module, _module_to_candidate_paths(node.module)))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in _STDLIB_TOP_LEVEL:
+                    groups.append((alias.name, _module_to_candidate_paths(alias.name)))
+
+    return groups
+
+
+def extract_file_dependencies(cmd_str: str) -> list[str]:
+    """Return a flat, deduplicated list of project file paths that *cmd_str* requires.
+
+    Handles ``python -c "..."`` (via import analysis), ``bash path.sh``, and
+    ``python path.py``.  Standard-library modules are excluded.
+    """
+    import posixpath
+
+    try:
+        tokens = shlex.split(cmd_str)
+    except ValueError:
+        return []
+
+    deps: list[str] = []
+
+    # Case 1: python -c "..."
+    if len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-c":
+        for _module, candidates in _extract_import_groups(cmd_str):
+            deps.extend(candidates)
+
+    # Case 2: bash path/to/script.sh
+    elif len(tokens) >= 2 and tokens[0] == "bash":
+        deps.append(posixpath.normpath(tokens[1]))
+
+    # Case 3: python path/to/script.py
+    elif len(tokens) >= 2 and tokens[0] == "python" and tokens[1].endswith(".py"):
+        deps.append(posixpath.normpath(tokens[1]))
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    result: list[str] = []
+    for d in deps:
+        if d not in seen:
+            seen.add(d)
+            result.append(d)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Cross-work-order chain validator (validate_plan_v2)
+# ---------------------------------------------------------------------------
+
+
+def validate_plan_v2(
+    work_orders: list[dict],
+    verify_contract: dict | None,
+    repo_file_listing: set[str],
+) -> list[ValidationError]:
+    """Validate the full work-order sequence for cross-WO chain consistency.
+
+    This checks rules R1–R7 from the ACTION_PLAN.  It does **not** duplicate
+    the per-WO structural checks in :func:`validate_plan` (E001–E006).
+
+    Parameters
+    ----------
+    work_orders:
+        Normalized work-order dicts (from :func:`parse_and_validate`).
+    verify_contract:
+        The ``verify_contract`` dict from the plan manifest, or ``None``
+        for legacy plans without one.
+    repo_file_listing:
+        Set of relative file paths present in the target repo at baseline.
+        Use ``set()`` for a fresh (empty) repo.
+
+    Returns
+    -------
+    list[ValidationError]
+        Empty list on success.
+    """
+    errors: list[ValidationError] = []
+
+    # Cumulative file state: starts with the initial repo contents.
+    file_state: set[str] = set(repo_file_listing)
+
+    for wo in work_orders:
+        wo_id: str = wo.get("id", "?")
+        preconditions: list[dict] = wo.get("preconditions", [])
+        postconditions: list[dict] = wo.get("postconditions", [])
+        allowed_files: list[str] = wo.get("allowed_files", [])
+        acceptance: list[str] = wo.get("acceptance_commands", [])
+
+        # ── R7: Ban verify command in acceptance ─────────────────────
+        for cmd_str in acceptance:
+            if cmd_str.strip() == VERIFY_COMMAND:
+                errors.append(ValidationError(
+                    code=E105_VERIFY_IN_ACC,
+                    wo_id=wo_id,
+                    message=(
+                        f"'{VERIFY_COMMAND}' must not appear in "
+                        f"acceptance_commands — the factory runs it "
+                        f"automatically as a global gate"
+                    ),
+                    field="acceptance_commands",
+                ))
+
+        # ── R2: No contradictory preconditions ───────────────────────
+        if preconditions:
+            exists_paths = {
+                c["path"] for c in preconditions if c.get("kind") == "file_exists"
+            }
+            absent_paths = {
+                c["path"] for c in preconditions if c.get("kind") == "file_absent"
+            }
+            for p in sorted(exists_paths & absent_paths):
+                errors.append(ValidationError(
+                    code=E102_CONTRADICTION,
+                    wo_id=wo_id,
+                    message=(
+                        f"contradictory preconditions: '{p}' is declared "
+                        f"as both file_exists and file_absent"
+                    ),
+                    field="preconditions",
+                ))
+
+        # ── R1: Precondition satisfiability ──────────────────────────
+        for cond in preconditions:
+            kind = cond.get("kind")
+            path = cond.get("path", "")
+            if kind == "file_exists" and path not in file_state:
+                errors.append(ValidationError(
+                    code=E101_PRECOND,
+                    wo_id=wo_id,
+                    message=(
+                        f"precondition file_exists('{path}') not satisfied "
+                        f"— not in initial repo and no prior work order "
+                        f"declares it as a postcondition"
+                    ),
+                    field="preconditions",
+                ))
+            elif kind == "file_absent" and path in file_state:
+                errors.append(ValidationError(
+                    code=E101_PRECOND,
+                    wo_id=wo_id,
+                    message=(
+                        f"precondition file_absent('{path}') not satisfied "
+                        f"— file already exists in cumulative state"
+                    ),
+                    field="preconditions",
+                ))
+
+        # ── R3: Postcondition achievability ──────────────────────────
+        if postconditions:
+            allowed_set = set(allowed_files)
+            for cond in postconditions:
+                path = cond.get("path", "")
+                if path not in allowed_set:
+                    errors.append(ValidationError(
+                        code=E103_POST_OUTSIDE,
+                        wo_id=wo_id,
+                        message=(
+                            f"postcondition file_exists('{path}') but "
+                            f"path not in allowed_files"
+                        ),
+                        field="postconditions",
+                    ))
+
+        # ── R4: Allowed-files coverage ───────────────────────────────
+        # Only enforced when the WO declares postconditions (backward compat).
+        if postconditions:
+            post_paths = {c.get("path") for c in postconditions}
+            for path in allowed_files:
+                if path not in post_paths:
+                    errors.append(ValidationError(
+                        code=E104_NO_POSTCOND,
+                        wo_id=wo_id,
+                        message=(
+                            f"'{path}' is in allowed_files but has no "
+                            f"file_exists postcondition"
+                        ),
+                        field="allowed_files",
+                    ))
+
+        # ── R5: Acceptance command dependencies (warnings) ───────────
+        cumulative_after = file_state | {
+            c["path"]
+            for c in postconditions
+            if c.get("kind") == "file_exists"
+        }
+        for cmd_str in acceptance:
+            for module_name, candidates in _extract_import_groups(cmd_str):
+                if not any(c in cumulative_after for c in candidates):
+                    errors.append(ValidationError(
+                        code=W101_ACCEPTANCE_DEP,
+                        wo_id=wo_id,
+                        message=(
+                            f"acceptance command may depend on "
+                            f"'{module_name}' (checked paths: "
+                            f"{candidates}) which is not guaranteed "
+                            f"to exist: {cmd_str!r}"
+                        ),
+                        field="acceptance_commands",
+                    ))
+
+        # ── Advance cumulative state ─────────────────────────────────
+        for cond in postconditions:
+            if cond.get("kind") == "file_exists":
+                file_state.add(cond["path"])
+
+    # ── R6: Verify contract reachability ─────────────────────────────
+    if verify_contract is not None:
+        vc_requires = verify_contract.get("requires", [])
+        for req in vc_requires:
+            kind = req.get("kind")
+            path = req.get("path", "")
+            if kind == "file_exists" and path not in file_state:
+                errors.append(ValidationError(
+                    code=E106_VERIFY_CONTRACT,
+                    wo_id=None,
+                    message=(
+                        f"verify_contract is never fully satisfied by "
+                        f"the plan — file_exists('{path}') not in "
+                        f"cumulative state after last work order"
+                    ),
+                    field="verify_contract",
+                ))
+
+    return errors
+
+
+def compute_verify_exempt(
+    work_orders: list[dict],
+    verify_contract: dict,
+    repo_file_listing: set[str],
+) -> list[dict]:
+    """Compute ``verify_exempt`` for each work order and return updated dicts.
+
+    A work order is verify-exempt if the cumulative file state *after* it
+    does not satisfy every condition in ``verify_contract.requires``.
+
+    Returns a **new** list of dicts (shallow copies with ``verify_exempt``
+    injected).  The input list is not mutated.
+    """
+    vc_requires = verify_contract.get("requires", [])
+    if not vc_requires:
+        # No contract → nothing is exempt; return copies with False.
+        return [{**wo, "verify_exempt": False} for wo in work_orders]
+
+    file_state: set[str] = set(repo_file_listing)
+    result: list[dict] = []
+
+    for wo in work_orders:
+        postconditions: list[dict] = wo.get("postconditions", [])
+        # Advance state with this WO's postconditions
+        for cond in postconditions:
+            if cond.get("kind") == "file_exists":
+                file_state.add(cond["path"])
+
+        # Check if every verify-contract requirement is satisfied
+        satisfied = all(
+            req.get("path", "") in file_state
+            for req in vc_requires
+            if req.get("kind") == "file_exists"
+        )
+        result.append({**wo, "verify_exempt": not satisfied})
+
+    return result
