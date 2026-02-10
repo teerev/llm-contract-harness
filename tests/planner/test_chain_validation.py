@@ -354,6 +354,28 @@ class TestR7VerifyInAcceptance:
         errors = validate_plan_v2([wo], None, EMPTY_REPO)
         assert E105_VERIFY_IN_ACC in _codes(errors)
 
+    def test_verify_with_leading_trailing_whitespace_still_caught(self):
+        """E105 strips the command before comparing — leading/trailing ws is caught."""
+        wo = _wo("WO-01",
+                 acceptance_commands=["  bash scripts/verify.sh  "])
+        errors = validate_plan_v2([wo], None, EMPTY_REPO)
+        assert E105_VERIFY_IN_ACC in _codes(errors)
+
+    def test_verify_with_extra_internal_whitespace_bypasses(self):
+        """Documents: E105 is exact match after strip; double space bypasses."""
+        wo = _wo("WO-01",
+                 acceptance_commands=["bash  scripts/verify.sh"])
+        errors = validate_plan_v2([wo], None, EMPTY_REPO)
+        # This is NOT caught — exact match design decision.
+        assert E105_VERIFY_IN_ACC not in _codes(errors)
+
+    def test_verify_with_dot_slash_prefix_bypasses(self):
+        """Documents: './scripts/verify.sh' is not the same as 'scripts/verify.sh'."""
+        wo = _wo("WO-01",
+                 acceptance_commands=["bash ./scripts/verify.sh"])
+        errors = validate_plan_v2([wo], None, EMPTY_REPO)
+        assert E105_VERIFY_IN_ACC not in _codes(errors)
+
     def test_no_verify_in_acceptance_passes(self):
         wo = _wo("WO-01",
                  acceptance_commands=['python -c "assert True"'])
@@ -366,6 +388,16 @@ class TestR7VerifyInAcceptance:
                  acceptance_commands=["bash scripts/run.sh"])
         errors = validate_plan_v2([wo], None, EMPTY_REPO)
         assert E105_VERIFY_IN_ACC not in _codes(errors)
+
+    def test_verify_caught_across_multiple_wos(self):
+        """E105 is checked per-WO; flagged on whichever WO has it."""
+        wo1 = _wo("WO-01",
+                   acceptance_commands=['python -c "assert True"'])
+        wo2 = _wo("WO-02",
+                   acceptance_commands=["bash scripts/verify.sh"])
+        errors = validate_plan_v2([wo1, wo2], None, EMPTY_REPO)
+        assert E105_VERIFY_IN_ACC in _codes_for_wo(errors, "WO-02")
+        assert E105_VERIFY_IN_ACC not in _codes_for_wo(errors, "WO-01")
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +444,37 @@ class TestComputeVerifyExempt:
         result = compute_verify_exempt([wo], {"requires": []}, EMPTY_REPO)
         assert result[0]["verify_exempt"] is False
 
+    def test_three_wo_gradual_satisfaction(self):
+        """WO-01 and WO-02 exempt; WO-03 (final requirement) not exempt."""
+        three_req_contract = {
+            "command": "pytest",
+            "requires": [
+                {"kind": "file_exists", "path": "scripts/verify.sh"},
+                {"kind": "file_exists", "path": "src/core.py"},
+                {"kind": "file_exists", "path": "tests/test_core.py"},
+            ],
+        }
+        wo1 = _wo("WO-01",
+                   allowed_files=["scripts/verify.sh"],
+                   postconditions=[{"kind": "file_exists", "path": "scripts/verify.sh"}])
+        wo2 = _wo("WO-02",
+                   allowed_files=["src/core.py"],
+                   postconditions=[{"kind": "file_exists", "path": "src/core.py"}])
+        wo3 = _wo("WO-03",
+                   allowed_files=["tests/test_core.py"],
+                   postconditions=[{"kind": "file_exists", "path": "tests/test_core.py"}])
+
+        result = compute_verify_exempt([wo1, wo2, wo3], three_req_contract, EMPTY_REPO)
+        assert result[0]["verify_exempt"] is True   # 1/3 satisfied
+        assert result[1]["verify_exempt"] is True   # 2/3 satisfied
+        assert result[2]["verify_exempt"] is False  # 3/3 satisfied
+
+    def test_no_requires_key_all_false(self):
+        """verify_contract without 'requires' key → nothing is exempt."""
+        wo = _wo("WO-01")
+        result = compute_verify_exempt([wo], {"command": "pytest"}, EMPTY_REPO)
+        assert result[0]["verify_exempt"] is False
+
     def test_does_not_mutate_input(self):
         """Input list is not mutated; result is a new list."""
         wo = _wo("WO-01")
@@ -425,6 +488,41 @@ class TestComputeVerifyExempt:
 # ---------------------------------------------------------------------------
 # extract_file_dependencies
 # ---------------------------------------------------------------------------
+
+
+class TestCumulativeStateAdvancement:
+    """Verify that file_state is correctly advanced across work orders."""
+
+    def test_file_absent_after_prior_creates_it_fails(self):
+        """WO-02 claims file_absent for a path WO-01 created → E101."""
+        wo1 = _wo("WO-01",
+                   allowed_files=["src/a.py"],
+                   postconditions=[{"kind": "file_exists", "path": "src/a.py"}])
+        wo2 = _wo("WO-02",
+                   allowed_files=["src/b.py"],
+                   preconditions=[{"kind": "file_absent", "path": "src/a.py"}],
+                   postconditions=[{"kind": "file_exists", "path": "src/b.py"}])
+        errors = validate_plan_v2([wo1, wo2], None, EMPTY_REPO)
+        assert E101_PRECOND in _codes_for_wo(errors, "WO-02")
+
+    def test_three_wo_chain_all_satisfied(self):
+        """Three WOs with correct dependency chain → no errors."""
+        wo1 = _wo("WO-01",
+                   allowed_files=["src/base.py"],
+                   postconditions=[{"kind": "file_exists", "path": "src/base.py"}])
+        wo2 = _wo("WO-02",
+                   allowed_files=["src/derived.py"],
+                   preconditions=[{"kind": "file_exists", "path": "src/base.py"}],
+                   postconditions=[{"kind": "file_exists", "path": "src/derived.py"}])
+        wo3 = _wo("WO-03",
+                   allowed_files=["tests/test_all.py"],
+                   preconditions=[
+                       {"kind": "file_exists", "path": "src/base.py"},
+                       {"kind": "file_exists", "path": "src/derived.py"},
+                   ],
+                   postconditions=[{"kind": "file_exists", "path": "tests/test_all.py"}])
+        errors = validate_plan_v2([wo1, wo2, wo3], None, EMPTY_REPO)
+        assert E101_PRECOND not in _codes(errors)
 
 
 class TestExtractFileDeps:

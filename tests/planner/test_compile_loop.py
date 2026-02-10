@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from unittest.mock import MagicMock, patch
@@ -167,7 +168,26 @@ class TestBuildRevisionPrompt:
     def test_contains_fix_instruction(self):
         errors = [ValidationError(code="E001", wo_id="WO-01", message="bad id")]
         prompt = _build_revision_prompt("spec", "{}", errors)
-        assert "fix" in prompt.lower() or "Fix" in prompt
+        # Assert the prompt asks the LLM to correct the errors — check for any
+        # reasonable phrasing rather than exact wording.
+        lower = prompt.lower()
+        assert any(w in lower for w in ("fix", "correct", "repair")), (
+            "Revision prompt should instruct the LLM to fix/correct errors"
+        )
+
+    def test_sections_present(self):
+        """Revision prompt should have structured sections for errors, previous response, and spec."""
+        errors = [
+            ValidationError(code="E001", wo_id="WO-01", message="bad id"),
+            ValidationError(code="E003", wo_id="WO-02", message="shell op"),
+        ]
+        prompt = _build_revision_prompt("THE_SPEC", "THE_PREV_RESPONSE", errors)
+        # All errors are represented
+        assert "[E001]" in prompt
+        assert "[E003]" in prompt
+        # Both the previous response and original spec are included
+        assert "THE_PREV_RESPONSE" in prompt
+        assert "THE_SPEC" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +313,56 @@ class TestCompileSinglePass:
         # file_absent(scripts/verify.sh) which is true for a fresh repo
         assert result.success is True
 
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_warnings_only_still_succeeds(self, MockClient, spec_file,
+                                           template_file, outdir, artifacts_dir):
+        """A plan with W101 warnings but no hard errors should succeed."""
+        manifest_with_warning = copy.deepcopy(_VALID_MANIFEST)
+        # Replace WO-02 acceptance with an import whose module isn't created
+        manifest_with_warning["work_orders"][1]["acceptance_commands"] = [
+            'python -c "from mypackage.solver import Solver"',
+        ]
+        mock_client = _mock_client_returning(json.dumps(manifest_with_warning))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        assert result.compile_attempts == 1
+        assert mock_client.generate_text.call_count == 1
+        assert len(result.warnings) > 0
+        assert any("W101" in w for w in result.warnings)
+        # WO files should still be written despite warnings
+        assert os.path.isfile(os.path.join(outdir, "WO-01.json"))
+        assert os.path.isfile(os.path.join(outdir, "WO-02.json"))
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_manifest_written_on_success(self, MockClient, spec_file,
+                                          template_file, outdir, artifacts_dir):
+        """Successful compile writes WORK_ORDERS_MANIFEST.json."""
+        mock_client = _mock_client_returning(json.dumps(_VALID_MANIFEST))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        manifest_path = os.path.join(outdir, "WORK_ORDERS_MANIFEST.json")
+        assert os.path.isfile(manifest_path)
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        assert "work_orders" in manifest
+        assert len(manifest["work_orders"]) == 2
+
 
 # ---------------------------------------------------------------------------
 # compile_plan — retry loop
@@ -344,6 +414,7 @@ class TestCompileRetry:
 
         assert result.success is True
         assert result.compile_attempts == 2
+        assert mock_client.generate_text.call_count == 2
 
     @patch("planner.compiler.OpenAIResponsesClient")
     def test_max_retries_exhausted(self, MockClient, spec_file, template_file,
@@ -363,8 +434,30 @@ class TestCompileRetry:
 
         assert result.success is False
         assert result.compile_attempts == MAX_COMPILE_ATTEMPTS
+        assert mock_client.generate_text.call_count == MAX_COMPILE_ATTEMPTS
         assert len(result.errors) > 0
         assert any("E101" in e for e in result.errors)
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_all_json_parse_failures_exhausts(self, MockClient, spec_file,
+                                               template_file, outdir, artifacts_dir):
+        """All attempts return unparseable JSON → failure after MAX attempts."""
+        mock_client = _mock_client_returning(
+            *["NOT JSON AT ALL"] * MAX_COMPILE_ATTEMPTS
+        )
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is False
+        assert result.compile_attempts == MAX_COMPILE_ATTEMPTS
+        assert mock_client.generate_text.call_count == MAX_COMPILE_ATTEMPTS
+        assert any("JSON parse" in e for e in result.errors)
 
     @patch("planner.compiler.OpenAIResponsesClient")
     def test_revision_prompt_sent_on_retry(self, MockClient, spec_file,

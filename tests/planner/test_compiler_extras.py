@@ -50,6 +50,31 @@ class TestParseJson:
         result = _parse_json(raw)
         assert result["list"][0]["id"] == "WO-01"
 
+    def test_fences_with_trailing_content_on_fence_line(self):
+        """Closing fence line with trailing content is still stripped."""
+        raw = '```json\n{"a": 1}\n```   '
+        result = _parse_json(raw)
+        assert result == {"a": 1}
+
+    def test_fences_with_extra_blank_lines(self):
+        raw = '```json\n\n{"a": 1}\n\n```'
+        result = _parse_json(raw)
+        assert result == {"a": 1}
+
+    def test_no_fences_multiline(self):
+        """Multi-line JSON without fences parses correctly."""
+        raw = '{\n  "key": "value",\n  "n": 42\n}'
+        result = _parse_json(raw)
+        assert result == {"key": "value", "n": 42}
+
+    def test_empty_object(self):
+        assert _parse_json("{}") == {}
+
+    def test_fences_only_no_json_raises(self):
+        """Fences around garbage should still raise."""
+        with pytest.raises((json.JSONDecodeError, ValueError)):
+            _parse_json("```\nnot json\n```")
+
 
 # ---------------------------------------------------------------------------
 # _compute_compile_hash
@@ -70,6 +95,21 @@ class TestComputeCompileHash:
     def test_different_inputs_different_hash(self):
         h1 = _compute_compile_hash(b"spec1", b"tmpl", "model", "effort")
         h2 = _compute_compile_hash(b"spec2", b"tmpl", "model", "effort")
+        assert h1 != h2
+
+    def test_different_template_different_hash(self):
+        h1 = _compute_compile_hash(b"spec", b"tmpl1", "model", "effort")
+        h2 = _compute_compile_hash(b"spec", b"tmpl2", "model", "effort")
+        assert h1 != h2
+
+    def test_different_model_different_hash(self):
+        h1 = _compute_compile_hash(b"spec", b"tmpl", "model-a", "effort")
+        h2 = _compute_compile_hash(b"spec", b"tmpl", "model-b", "effort")
+        assert h1 != h2
+
+    def test_different_effort_different_hash(self):
+        h1 = _compute_compile_hash(b"spec", b"tmpl", "model", "low")
+        h2 = _compute_compile_hash(b"spec", b"tmpl", "model", "high")
         assert h1 != h2
 
 

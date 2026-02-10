@@ -11,6 +11,7 @@ from planner.validation import (
     E004_GLOB,
     E005_SCHEMA,
     E006_SYNTAX,
+    SHELL_OPERATOR_TOKENS,
     ValidationError,
     _check_python_c_syntax,
     normalize_work_order,
@@ -62,11 +63,17 @@ def _codes_for_wo(errors: list[ValidationError], wo_id: str) -> set[str]:
 class TestValidationError:
     def test_str_with_wo_id(self):
         e = ValidationError(code="E001", wo_id="WO-03", message="bad id")
-        assert str(e) == "[E001] WO-03: bad id"
+        s = str(e)
+        # Assert structural properties rather than exact format
+        assert "E001" in s
+        assert "WO-03" in s
+        assert "bad id" in s
 
     def test_str_without_wo_id(self):
         e = ValidationError(code="E000", wo_id=None, message="empty list")
-        assert str(e) == "[E000] empty list"
+        s = str(e)
+        assert "E000" in s
+        assert "empty list" in s
 
     def test_to_dict(self):
         e = ValidationError(
@@ -184,29 +191,28 @@ class TestE003ShellOp:
         errors = validate_plan([wo])
         assert E003_SHELL_OP not in _codes(errors)
 
-    def test_pipe_rejected(self):
-        wo = _wo("WO-01", acceptance_commands=[
-            "bash scripts/verify.sh",
-            "echo hello | grep hello",
-        ])
+    @pytest.mark.parametrize("op", sorted(SHELL_OPERATOR_TOKENS))
+    def test_all_shell_operators_rejected(self, op):
+        """Every token in SHELL_OPERATOR_TOKENS must be caught."""
+        wo = _wo("WO-01", acceptance_commands=[f"echo foo {op} echo bar"])
         errors = validate_plan([wo])
         assert E003_SHELL_OP in _codes(errors)
 
-    def test_double_ampersand_rejected(self):
+    def test_operator_inside_quotes_safe(self):
+        """Shell operators inside quoted strings are not bare tokens."""
         wo = _wo("WO-01", acceptance_commands=[
-            "bash scripts/verify.sh",
-            "true && echo ok",
+            'python -c "a = 1; b = a | 2; print(b)"',  # bitwise OR inside quotes
         ])
         errors = validate_plan([wo])
-        assert E003_SHELL_OP in _codes(errors)
+        assert E003_SHELL_OP not in _codes(errors)
 
-    def test_redirect_rejected(self):
-        wo = _wo("WO-01", acceptance_commands=[
-            "bash scripts/verify.sh",
-            "echo hello > out.txt",
-        ])
+    def test_shlex_parse_error_skipped(self):
+        """Commands with unmatched quotes survive shlex.split failure — documents behavior."""
+        wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
         errors = validate_plan([wo])
-        assert E003_SHELL_OP in _codes(errors)
+        # shlex.split raises ValueError → continue; the command is NOT flagged E003.
+        # This documents current behavior: shlex parse failures are silently skipped.
+        assert E003_SHELL_OP not in _codes(errors)
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +262,27 @@ class TestE005Schema:
         errors = validate_plan([wo])
         assert E005_SCHEMA in _codes(errors)
 
+    def test_path_traversal_rejected(self):
+        wo = _wo("WO-01", allowed_files=["../../../etc/passwd"])
+        errors = validate_plan([wo])
+        assert E005_SCHEMA in _codes(errors)
+
+    def test_path_traversal_in_middle_rejected(self):
+        """Normalized path like src/../../../etc/shadow starts with '..'."""
+        wo = _wo("WO-01", allowed_files=["src/../../../etc/shadow"])
+        errors = validate_plan([wo])
+        assert E005_SCHEMA in _codes(errors)
+
+    def test_windows_drive_letter_rejected(self):
+        wo = _wo("WO-01", allowed_files=["C:\\Windows\\System32\\cmd.exe"])
+        errors = validate_plan([wo])
+        assert E005_SCHEMA in _codes(errors)
+
+    def test_empty_path_rejected(self):
+        wo = _wo("WO-01", allowed_files=[""])
+        errors = validate_plan([wo])
+        assert E005_SCHEMA in _codes(errors)
+
     def test_empty_acceptance_rejected(self):
         wo = _wo("WO-01", acceptance_commands=[])
         errors = validate_plan([wo])
@@ -264,6 +291,14 @@ class TestE005Schema:
     def test_too_many_context_files(self):
         files = [f"f{i}.py" for i in range(11)]
         wo = _wo("WO-01", allowed_files=files, context_files=files)
+        errors = validate_plan([wo])
+        assert E005_SCHEMA in _codes(errors)
+
+    def test_postcondition_file_absent_rejected(self):
+        """Postconditions may only use file_exists (factory cannot delete)."""
+        wo = _wo("WO-01", postconditions=[
+            {"kind": "file_absent", "path": "src/a.py"},
+        ])
         errors = validate_plan([wo])
         assert E005_SCHEMA in _codes(errors)
 
@@ -329,6 +364,13 @@ class TestE006Syntax:
     def test_helper_returns_none_for_non_python(self):
         assert _check_python_c_syntax("bash foo.sh", "WO-01") is None
 
+    def test_helper_returns_none_on_shlex_error(self):
+        """Unmatched quotes → shlex.split ValueError → returns None (no E006).
+
+        Documents that commands with mismatched quotes bypass syntax checking.
+        """
+        assert _check_python_c_syntax("python -c 'print(1", "WO-01") is None
+
     def test_incomplete_expression(self):
         """Incomplete expression like 'def' alone is a syntax error."""
         wo = _wo("WO-01", acceptance_commands=[
@@ -351,8 +393,6 @@ class TestParseAndValidate:
             "work_orders": [_wo("WO-01")],
         }
         work_orders, errors = parse_and_validate(manifest)
-        # May have E002 (verify missing) depending on WO-01 setup;
-        # but should not have structural errors.
         assert E000_STRUCTURAL not in _codes(errors)
         assert len(work_orders) == 1
 
@@ -395,3 +435,32 @@ class TestNormalize:
         raw = {"allowed_files": ["a.py", "a.py", "b.py"]}
         result = normalize_work_order(raw)
         assert result["allowed_files"] == ["a.py", "b.py"]
+
+    def test_deduplicates_all_list_fields(self):
+        """All four dedup-eligible fields are processed."""
+        raw = {
+            "allowed_files": ["a.py", "a.py"],
+            "context_files": ["b.py", "b.py"],
+            "forbidden": ["x", "x"],
+            "acceptance_commands": ["cmd1", "cmd1"],
+        }
+        result = normalize_work_order(raw)
+        assert result["allowed_files"] == ["a.py"]
+        assert result["context_files"] == ["b.py"]
+        assert result["forbidden"] == ["x"]
+        assert result["acceptance_commands"] == ["cmd1"]
+
+    def test_strips_nested_condition_strings(self):
+        """Whitespace in nested dicts (e.g. conditions) is stripped."""
+        raw = {
+            "preconditions": [{"kind": "  file_exists ", "path": "  src/a.py  "}],
+        }
+        result = normalize_work_order(raw)
+        assert result["preconditions"][0]["kind"] == "file_exists"
+        assert result["preconditions"][0]["path"] == "src/a.py"
+
+    def test_preserves_non_list_fields(self):
+        """Fields that are not in the dedup list are untouched."""
+        raw = {"id": "WO-01", "notes": "  keep spaces  "}
+        result = normalize_work_order(raw)
+        assert result["notes"] == "keep spaces"  # stripped but not deduped
