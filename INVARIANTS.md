@@ -1,5 +1,14 @@
 # INVARIANTS.md — Non-Negotiable System Constraints
 
+**Scope:** These invariants describe the *structural enforcement layer* —
+the deterministic checks applied to LLM output before any side effects.
+They do not guarantee end-to-end outcomes. The LLM may produce
+nondeterministic output; the enforcement layer's verdicts (accept/reject)
+are deterministic given the same LLM output and the same repo state.
+Semantic correctness of generated code, host isolation, crash recovery,
+and artifact byte-reproducibility are outside this scope — see the
+Limitations section in README.md.
+
 ---
 
 ## 1. Definition of an Invariant
