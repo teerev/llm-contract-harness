@@ -35,9 +35,13 @@ to one or more findings in `FINDINGS_LEDGER.md`.
 
 ---
 
-## M-01  Never trust LLM-provided `verify_exempt` [CRITICAL]
+## M-01  Never trust LLM-provided `verify_exempt` [CRITICAL] ✅ DONE
 
 **Fixes:** AUD-03
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/compiler.py` — unconditional `verify_exempt` sanitization.
+Tests: `TestVerifyExemptSanitisation` in `tests/planner/test_compile_loop.py`
+(5 passing + 1 xfail pending M-03). Full suite: 386 passed.
 
 **Why this is #1:** This is the single most important finding in the entire
 audit. The planner only overwrites `verify_exempt` when `verify_contract` is

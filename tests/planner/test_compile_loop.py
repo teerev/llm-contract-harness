@@ -484,6 +484,154 @@ class TestCompileRetry:
 
 
 # ---------------------------------------------------------------------------
+# compile_plan — M-01: verify_exempt never trusted from LLM
+# ---------------------------------------------------------------------------
+
+# A valid one-WO manifest with NO verify_contract.
+# The LLM injects verify_exempt: true — the compiler must overwrite it to False.
+_MANIFEST_NO_CONTRACT_LLM_EXEMPT = {
+    "system_overview": ["test"],
+    # No verify_contract key at all
+    "work_orders": [
+        {
+            "id": "WO-01",
+            "title": "Create module",
+            "intent": "Create the main module.",
+            "preconditions": [],
+            "postconditions": [{"kind": "file_exists", "path": "src/main.py"}],
+            "allowed_files": ["src/main.py"],
+            "forbidden": [],
+            "acceptance_commands": [
+                'python -c "import os; assert os.path.isfile(\'src/main.py\')"',
+            ],
+            "context_files": ["src/main.py"],
+            "notes": None,
+            "verify_exempt": True,  # LLM-injected — must be overwritten
+        },
+    ],
+}
+
+
+class TestVerifyExemptSanitisation:
+    """M-01: The compiler must always overwrite verify_exempt, never preserve
+    the LLM-provided value."""
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_forced_false_when_no_contract(self, MockClient, spec_file,
+                                            template_file, outdir, artifacts_dir):
+        """When verify_contract is absent, verify_exempt must be False
+        regardless of what the LLM provided."""
+        mock_client = _mock_client_returning(
+            json.dumps(_MANIFEST_NO_CONTRACT_LLM_EXEMPT)
+        )
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        assert result.work_orders[0]["verify_exempt"] is False
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_forced_false_when_contract_null(self, MockClient, spec_file,
+                                              template_file, outdir, artifacts_dir):
+        """When verify_contract is explicitly None, verify_exempt must be False."""
+        manifest = copy.deepcopy(_MANIFEST_NO_CONTRACT_LLM_EXEMPT)
+        manifest["verify_contract"] = None
+        mock_client = _mock_client_returning(json.dumps(manifest))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        assert result.work_orders[0]["verify_exempt"] is False
+
+    @pytest.mark.xfail(
+        reason="Requires M-03 (type-guard validate_plan_v2 against non-dict "
+               "verify_contract) — currently crashes in validate_plan_v2 "
+               "before M-01's code runs.",
+        raises=AttributeError,
+        strict=True,
+    )
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_forced_false_when_contract_wrong_type(self, MockClient, spec_file,
+                                                    template_file, outdir,
+                                                    artifacts_dir):
+        """When verify_contract is a non-dict (e.g. a list), verify_exempt
+        must be False — not crash, not trust the LLM value."""
+        manifest = copy.deepcopy(_MANIFEST_NO_CONTRACT_LLM_EXEMPT)
+        manifest["verify_contract"] = ["not", "a", "dict"]
+        mock_client = _mock_client_returning(json.dumps(manifest))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        assert result.work_orders[0]["verify_exempt"] is False
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_llm_value_overwritten_when_contract_present(self, MockClient,
+                                                          spec_file, template_file,
+                                                          outdir, artifacts_dir):
+        """Even when verify_contract is valid, the LLM-provided verify_exempt
+        value must be overwritten by the computed value."""
+        manifest = copy.deepcopy(_VALID_MANIFEST)
+        # LLM sets verify_exempt: True on WO-02, but the computed value
+        # should be False (all verify_contract requirements are satisfied
+        # after WO-02's postconditions).
+        manifest["work_orders"][1]["verify_exempt"] = True
+        mock_client = _mock_client_returning(json.dumps(manifest))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        # WO-02 computed value should be False (contract satisfied), not the
+        # LLM-provided True.
+        assert result.work_orders[1]["verify_exempt"] is False
+
+    @patch("planner.compiler.OpenAIResponsesClient")
+    def test_verify_exempt_false_written_to_disk(self, MockClient, spec_file,
+                                                  template_file, outdir,
+                                                  artifacts_dir):
+        """The overwritten verify_exempt=False must survive to the WO JSON on disk."""
+        mock_client = _mock_client_returning(
+            json.dumps(_MANIFEST_NO_CONTRACT_LLM_EXEMPT)
+        )
+        MockClient.return_value = mock_client
+
+        compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        with open(os.path.join(outdir, "WO-01.json")) as f:
+            wo1_disk = json.load(f)
+        assert wo1_disk["verify_exempt"] is False
+
+
+# ---------------------------------------------------------------------------
 # compile_plan — summary artifacts
 # ---------------------------------------------------------------------------
 
