@@ -361,20 +361,19 @@ class TestR7VerifyInAcceptance:
         errors = validate_plan_v2([wo], None, EMPTY_REPO)
         assert E105_VERIFY_IN_ACC in _codes(errors)
 
-    def test_verify_with_extra_internal_whitespace_bypasses(self):
-        """Documents: E105 is exact match after strip; double space bypasses."""
+    def test_verify_with_extra_internal_whitespace_caught(self):
+        """M-08: Double space now caught via shlex.split normalization."""
         wo = _wo("WO-01",
                  acceptance_commands=["bash  scripts/verify.sh"])
         errors = validate_plan_v2([wo], None, EMPTY_REPO)
-        # This is NOT caught — exact match design decision.
-        assert E105_VERIFY_IN_ACC not in _codes(errors)
+        assert E105_VERIFY_IN_ACC in _codes(errors)
 
-    def test_verify_with_dot_slash_prefix_bypasses(self):
-        """Documents: './scripts/verify.sh' is not the same as 'scripts/verify.sh'."""
+    def test_verify_with_dot_slash_prefix_caught(self):
+        """M-08: './scripts/verify.sh' now caught via posixpath.normpath."""
         wo = _wo("WO-01",
                  acceptance_commands=["bash ./scripts/verify.sh"])
         errors = validate_plan_v2([wo], None, EMPTY_REPO)
-        assert E105_VERIFY_IN_ACC not in _codes(errors)
+        assert E105_VERIFY_IN_ACC in _codes(errors)
 
     def test_no_verify_in_acceptance_passes(self):
         wo = _wo("WO-01",

@@ -517,15 +517,23 @@ def validate_plan_v2(
         acceptance: list[str] = wo.get("acceptance_commands", [])
 
         # ── R7: Ban verify command in acceptance ─────────────────────
+        # M-08: Normalize via shlex.split + posixpath.normpath so that
+        # "bash  scripts/verify.sh", "bash ./scripts/verify.sh", etc.
+        # are all caught — not just the exact string.
         for cmd_str in acceptance:
-            if cmd_str.strip() == VERIFY_COMMAND:
+            try:
+                tokens = shlex.split(cmd_str)
+            except ValueError:
+                continue  # shlex errors handled by E007 (M-04)
+            normalized = tokens[:1] + [posixpath.normpath(t) for t in tokens[1:]]
+            if normalized == ["bash", VERIFY_SCRIPT_PATH]:
                 errors.append(ValidationError(
                     code=E105_VERIFY_IN_ACC,
                     wo_id=wo_id,
                     message=(
-                        f"'{VERIFY_COMMAND}' must not appear in "
+                        f"'{VERIFY_COMMAND}' (or equivalent) must not appear in "
                         f"acceptance_commands — the factory runs it "
-                        f"automatically as a global gate"
+                        f"automatically as a global gate: {cmd_str!r}"
                     ),
                     field="acceptance_commands",
                 ))

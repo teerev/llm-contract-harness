@@ -295,9 +295,15 @@ path escapes deterministic classification.
 
 ---
 
-## M-08  Normalize E105 verify-command match via `shlex.split` [LOW]
+## M-08  Normalize E105 verify-command match via `shlex.split` [LOW] ✅ DONE
 
 **Fixes:** AUD-07
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py::validate_plan_v2` — R7 check now uses
+`shlex.split` + `posixpath.normpath` instead of exact string equality.
+Tests: 2 existing bypass tests updated to assert E105 is now caught
+(`test_verify_with_extra_internal_whitespace_caught`,
+`test_verify_with_dot_slash_prefix_caught`). Full suite: 425 passed.
 
 **Why:** The E105 check uses `cmd_str.strip() == "bash scripts/verify.sh"`.
 Double spaces, `./` prefixes, and absolute paths bypass it. Both audits flag
