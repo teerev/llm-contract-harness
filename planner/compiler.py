@@ -15,6 +15,7 @@ from planner.io import (
     write_work_orders,
 )
 import planner.openai_client as _oai
+from planner import defaults as _pd
 from planner.defaults import (  # noqa: F401 — re-exported for backward compat
     COMPILE_HASH_HEX_LENGTH,
     DEFAULT_MAX_OUTPUT_TOKENS,
@@ -391,6 +392,24 @@ def _write_summary(
         "start_timestamp": ts_start,
         "end_timestamp": time.time(),
         "duration_seconds": round(time.time() - ts_start, 3),
+        "defaults_snapshot": {
+            "default_model": _pd.DEFAULT_MODEL,
+            "default_reasoning_effort": _pd.DEFAULT_REASONING_EFFORT,
+            "default_max_output_tokens": _pd.DEFAULT_MAX_OUTPUT_TOKENS,
+            "max_incomplete_token_cap": _pd.MAX_INCOMPLETE_TOKEN_CAP,
+            "connect_timeout": _pd.CONNECT_TIMEOUT,
+            "read_timeout": _pd.READ_TIMEOUT,
+            "write_timeout": _pd.WRITE_TIMEOUT,
+            "pool_timeout": _pd.POOL_TIMEOUT,
+            "max_transport_retries": _pd.MAX_TRANSPORT_RETRIES,
+            "transport_retry_base_s": _pd.TRANSPORT_RETRY_BASE_S,
+            "max_incomplete_retries": _pd.MAX_INCOMPLETE_RETRIES,
+            "poll_interval_s": _pd.POLL_INTERVAL_S,
+            "poll_deadline_s": _pd.POLL_DEADLINE_S,
+            "max_compile_attempts": _pd.MAX_COMPILE_ATTEMPTS,
+            "compile_hash_hex_length": _pd.COMPILE_HASH_HEX_LENGTH,
+            "max_json_payload_bytes": _pd.MAX_JSON_PAYLOAD_BYTES,
+        },
     }
     write_json_artifact(
         os.path.join(compile_artifacts, "compile_summary.json"), summary

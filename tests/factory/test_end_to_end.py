@@ -110,6 +110,14 @@ class TestEndToEndPassViaCLI:
         assert summary["repo_tree_hash_after"] is not None
         assert isinstance(summary["config"], dict)
         assert "llm_model" in summary["config"]
+        # M-18: config.defaults snapshot is present with key values
+        defaults = summary["config"]["defaults"]
+        assert isinstance(defaults, dict)
+        assert "max_file_write_bytes" in defaults
+        assert "git_timeout_seconds" in defaults
+        assert "max_context_bytes" in defaults
+        assert defaults["max_file_write_bytes"] == 200 * 1024
+        assert defaults["git_timeout_seconds"] == 30
         assert isinstance(summary["attempts"], list)
         assert len(summary["attempts"]) == 1
 

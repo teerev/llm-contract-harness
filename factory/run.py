@@ -6,6 +6,7 @@ import os
 import sys
 import traceback
 
+from factory import defaults as _fd
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
@@ -75,6 +76,20 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "timeout_seconds": args.timeout_seconds,
         "repo_root": repo_root,
         "out_dir": out_dir,
+        "defaults": {
+            "default_max_attempts": _fd.DEFAULT_MAX_ATTEMPTS,
+            "default_llm_temperature": _fd.DEFAULT_LLM_TEMPERATURE,
+            "default_timeout_seconds": _fd.DEFAULT_TIMEOUT_SECONDS,
+            "default_llm_timeout": _fd.DEFAULT_LLM_TIMEOUT,
+            "run_id_hex_length": _fd.RUN_ID_HEX_LENGTH,
+            "max_file_write_bytes": _fd.MAX_FILE_WRITE_BYTES,
+            "max_total_write_bytes": _fd.MAX_TOTAL_WRITE_BYTES,
+            "max_json_payload_bytes": _fd.MAX_JSON_PAYLOAD_BYTES,
+            "max_context_bytes": _fd.MAX_CONTEXT_BYTES,
+            "max_context_files": _fd.MAX_CONTEXT_FILES,
+            "max_excerpt_chars": _fd.MAX_EXCERPT_CHARS,
+            "git_timeout_seconds": _fd.GIT_TIMEOUT_SECONDS,
+        },
     }
 
     # ------------------------------------------------------------------
