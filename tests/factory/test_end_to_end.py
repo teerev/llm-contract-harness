@@ -284,6 +284,90 @@ class TestBaseExceptionRollback:
 
 
 # ---------------------------------------------------------------------------
+# M-09: rollback_failed field in run summary
+# ---------------------------------------------------------------------------
+
+
+class TestRollbackFailedField:
+    """M-09: run_summary.json must contain a machine-readable rollback_failed
+    field so downstream tooling can distinguish clean vs dirty repos."""
+
+    def test_rollback_failed_false_on_normal_error(self, tmp_path, capsys):
+        """When rollback succeeds, rollback_failed must be False."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        args = _make_args(repo, wo_path, out, max_attempts=1)
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.side_effect = RuntimeError("crash")
+
+        with patch("factory.run.build_graph", return_value=mock_graph):
+            with pytest.raises(SystemExit):
+                run_cli(args)
+
+        run_dirs = os.listdir(out)
+        run_dir = os.path.join(out, run_dirs[0])
+        summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
+
+        assert summary["rollback_failed"] is False
+        assert summary.get("remediation") is None
+
+    def test_rollback_failed_true_when_rollback_raises(self, tmp_path, capsys):
+        """When rollback fails, rollback_failed must be True with remediation."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        args = _make_args(repo, wo_path, out, max_attempts=1)
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.side_effect = RuntimeError("crash")
+
+        # is_clean must return True for preflight, then False for the
+        # post-rollback check inside the emergency handler.
+        is_clean_results = iter([True, False])
+
+        with patch("factory.run.build_graph", return_value=mock_graph), \
+             patch("factory.run.rollback", side_effect=RuntimeError("locked")), \
+             patch("factory.run.is_clean", side_effect=lambda _: next(is_clean_results)):
+            with pytest.raises(SystemExit):
+                run_cli(args)
+
+        run_dirs = os.listdir(out)
+        run_dir = os.path.join(out, run_dirs[0])
+        summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
+
+        assert summary["rollback_failed"] is True
+        assert isinstance(summary["remediation"], str)
+        assert "reset --hard" in summary["remediation"]
+
+    def test_rollback_failed_false_on_normal_pass(self, tmp_path, capsys):
+        """Normal PASS path also has rollback_failed=False explicitly."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        add_verify_script(repo)
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        args = _make_args(repo, wo_path, out)
+        valid_json = make_valid_proposal_json(repo)
+
+        with patch("factory.llm.complete", return_value=valid_json):
+            run_cli(args)
+
+        run_dirs = os.listdir(out)
+        run_dir = os.path.join(out, run_dirs[0])
+        summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
+
+        assert summary["verdict"] == "PASS"
+        assert summary["rollback_failed"] is False
+
+
+# ---------------------------------------------------------------------------
 # Action 4: Multi-write failure rollback — atomicity guarantee
 # ---------------------------------------------------------------------------
 

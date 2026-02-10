@@ -334,9 +334,15 @@ for both.
 
 ---
 
-## M-09  Add explicit `rollback_failed` status to run summary [LOW]
+## M-09  Add explicit `rollback_failed` status to run summary [LOW] ✅ DONE
 
 **Fixes:** AUD-06
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/run.py` — emergency handler checks `is_clean` after rollback
+and sets `rollback_failed` + `remediation` in summary. Normal-path summary
+sets `rollback_failed: false` explicitly.
+Tests: `TestRollbackFailedField` (3 tests) in `tests/factory/test_end_to_end.py`.
+Full suite: 428 passed.
 
 **Why:** If `git reset --hard` or `git clean -fdx` fails, the current code
 warns on stderr but still writes the emergency summary with `verdict: ERROR`

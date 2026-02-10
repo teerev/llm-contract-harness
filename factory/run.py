@@ -132,6 +132,20 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
                 file=sys.stderr,
             )
 
+        # M-09: Check whether rollback actually succeeded and record the
+        # result as a machine-readable field in the summary.
+        try:
+            _rollback_ok = is_clean(repo_root)
+        except BaseException:
+            _rollback_ok = False
+        if not _rollback_ok:
+            _remediation = (
+                f"git -C {repo_root} reset --hard {baseline_commit} "
+                f"&& git -C {repo_root} clean -fdx"
+            )
+        else:
+            _remediation = None
+
         # Write an emergency run_summary so the run is never invisible.
         summary_dict = {
             "run_id": run_id,
@@ -140,6 +154,8 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
             "total_attempts": 0,
             "baseline_commit": baseline_commit,
             "repo_tree_hash_after": None,
+            "rollback_failed": not _rollback_ok,
+            "remediation": _remediation,
             "config": run_config,
             "attempts": [],
             "error": str(exc),
@@ -179,6 +195,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "total_attempts": len(attempts),
         "baseline_commit": baseline_commit,
         "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
+        "rollback_failed": False,  # M-09: explicitly False on normal path
         "config": run_config,
         "attempts": attempts,
     }
