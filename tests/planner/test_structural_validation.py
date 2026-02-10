@@ -11,6 +11,7 @@ from planner.validation import (
     E004_GLOB,
     E005_SCHEMA,
     E006_SYNTAX,
+    E007_SHLEX,
     SHELL_OPERATOR_TOKENS,
     ValidationError,
     _check_python_c_syntax,
@@ -117,6 +118,44 @@ class TestE000Structural:
         assert errors[0].code == E000_STRUCTURAL
         assert "work_orders" in errors[0].message
 
+    # --- M-03: Non-dict elements in work_orders ---
+
+    def test_non_dict_int_element_via_validate_plan(self):
+        """validate_plan must not crash on non-dict elements — returns E000."""
+        errors = validate_plan([42, _wo("WO-01")])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("int" in e.message for e in errors)
+
+    def test_non_dict_string_element_via_validate_plan(self):
+        errors = validate_plan(["hello"])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("str" in e.message for e in errors)
+
+    def test_non_dict_list_element_via_validate_plan(self):
+        errors = validate_plan([[1, 2, 3]])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("list" in e.message for e in errors)
+
+    def test_non_dict_mixed_via_parse_and_validate(self):
+        """parse_and_validate must not crash on non-dict elements."""
+        wos, errors = parse_and_validate({
+            "work_orders": [42, "x", _wo("WO-01")],
+        })
+        # Should return errors, not raise AttributeError
+        assert len(errors) >= 2  # at least one per non-dict element
+        assert all(e.code == E000_STRUCTURAL for e in errors)
+        # No normalized work orders returned when non-dict elements present
+        assert wos == []
+
+    def test_all_non_dict_elements_via_parse_and_validate(self):
+        """All elements are non-dict — structured errors, no crash."""
+        wos, errors = parse_and_validate({
+            "work_orders": [42, None, True],
+        })
+        assert len(errors) == 3
+        assert all(e.code == E000_STRUCTURAL for e in errors)
+        assert wos == []
+
 
 # ---------------------------------------------------------------------------
 # E001: ID format and contiguity
@@ -206,13 +245,64 @@ class TestE003ShellOp:
         errors = validate_plan([wo])
         assert E003_SHELL_OP not in _codes(errors)
 
-    def test_shlex_parse_error_skipped(self):
-        """Commands with unmatched quotes survive shlex.split failure — documents behavior."""
+    def test_shlex_parse_error_emits_e007(self):
+        """M-04: Commands with unmatched quotes now produce E007 (not silent skip)."""
         wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
         errors = validate_plan([wo])
-        # shlex.split raises ValueError → continue; the command is NOT flagged E003.
-        # This documents current behavior: shlex parse failures are silently skipped.
-        assert E003_SHELL_OP not in _codes(errors)
+        assert E007_SHLEX in _codes(errors)
+        assert E003_SHELL_OP not in _codes(errors)  # E003 not reached — E007 replaces it
+
+
+# ---------------------------------------------------------------------------
+# E007: Unparseable acceptance commands (M-04)
+# ---------------------------------------------------------------------------
+
+
+class TestE007Shlex:
+    """M-04: shlex.split failure must produce E007, not silently pass."""
+
+    def test_unmatched_single_quote(self):
+        wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
+        errors = validate_plan([wo])
+        assert E007_SHLEX in _codes(errors)
+
+    def test_unmatched_double_quote(self):
+        wo = _wo("WO-01", acceptance_commands=['echo "unterminated'])
+        errors = validate_plan([wo])
+        assert E007_SHLEX in _codes(errors)
+
+    def test_valid_command_no_e007(self):
+        wo = _wo("WO-01", acceptance_commands=['python -c "print(1)"'])
+        errors = validate_plan([wo])
+        assert E007_SHLEX not in _codes(errors)
+
+    def test_multiple_bad_commands_multiple_e007(self):
+        """Each unparseable command gets its own E007."""
+        wo = _wo("WO-01", acceptance_commands=[
+            "echo 'a",
+            "echo \"b",
+        ])
+        errors = validate_plan([wo])
+        e007s = [e for e in errors if e.code == E007_SHLEX]
+        # At least 2 E007 errors (one from E003 loop, one from _check_python_c_syntax
+        # per command — but the E003 loop and python-c check may both fire for the same
+        # command). The important thing: no silent skip.
+        assert len(e007s) >= 2
+
+    def test_e007_via_parse_and_validate(self):
+        """Full pipeline: parse_and_validate catches shlex errors."""
+        _, errors = parse_and_validate({
+            "work_orders": [
+                _wo("WO-01", acceptance_commands=["echo 'bad"]),
+            ],
+        })
+        assert E007_SHLEX in _codes(errors)
+
+    def test_e007_message_contains_command(self):
+        wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
+        errors = validate_plan([wo])
+        e007s = [e for e in errors if e.code == E007_SHLEX]
+        assert any("unterminated" in e.message for e in e007s)
 
 
 # ---------------------------------------------------------------------------
@@ -364,12 +454,12 @@ class TestE006Syntax:
     def test_helper_returns_none_for_non_python(self):
         assert _check_python_c_syntax("bash foo.sh", "WO-01") is None
 
-    def test_helper_returns_none_on_shlex_error(self):
-        """Unmatched quotes → shlex.split ValueError → returns None (no E006).
-
-        Documents that commands with mismatched quotes bypass syntax checking.
-        """
-        assert _check_python_c_syntax("python -c 'print(1", "WO-01") is None
+    def test_helper_returns_e007_on_shlex_error(self):
+        """M-04: Unmatched quotes → shlex.split ValueError → returns E007."""
+        err = _check_python_c_syntax("python -c 'print(1", "WO-01")
+        assert err is not None
+        assert err.code == E007_SHLEX
+        assert "shlex" in err.message.lower()
 
     def test_incomplete_expression(self):
         """Incomplete expression like 'def' alone is a syntax error."""
@@ -464,3 +554,54 @@ class TestNormalize:
         raw = {"id": "WO-01", "notes": "  keep spaces  "}
         result = normalize_work_order(raw)
         assert result["notes"] == "keep spaces"  # stripped but not deduped
+
+    # --- M-06: posixpath.normpath on path fields ---
+
+    def test_normpath_allowed_files(self):
+        """./src/a.py and src/a.py collapse to one entry after normpath + dedup."""
+        raw = {"allowed_files": ["./src/a.py", "src/a.py", "src/./b.py"]}
+        result = normalize_work_order(raw)
+        assert result["allowed_files"] == ["src/a.py", "src/b.py"]
+
+    def test_normpath_context_files(self):
+        raw = {"context_files": ["./src/a.py", "src/a.py"]}
+        result = normalize_work_order(raw)
+        assert result["context_files"] == ["src/a.py"]
+
+    def test_normpath_precondition_paths(self):
+        raw = {
+            "preconditions": [
+                {"kind": "file_exists", "path": "./src/a.py"},
+                {"kind": "file_absent", "path": "src/./b.py"},
+            ],
+        }
+        result = normalize_work_order(raw)
+        assert result["preconditions"][0]["path"] == "src/a.py"
+        assert result["preconditions"][1]["path"] == "src/b.py"
+
+    def test_normpath_postcondition_paths(self):
+        raw = {
+            "postconditions": [
+                {"kind": "file_exists", "path": "./src/a.py"},
+            ],
+        }
+        result = normalize_work_order(raw)
+        assert result["postconditions"][0]["path"] == "src/a.py"
+
+    def test_normpath_does_not_touch_acceptance_commands(self):
+        """acceptance_commands are shell strings, not paths — must not be normpath'd."""
+        raw = {"acceptance_commands": ["python -c './test.py'"]}
+        result = normalize_work_order(raw)
+        assert result["acceptance_commands"] == ["python -c './test.py'"]
+
+    def test_normpath_does_not_touch_forbidden(self):
+        """forbidden entries are free text, not paths — must not be normpath'd."""
+        raw = {"forbidden": ["./do not do this"]}
+        result = normalize_work_order(raw)
+        assert result["forbidden"] == ["./do not do this"]
+
+    def test_normpath_already_clean_unchanged(self):
+        """Paths that are already normalized stay the same."""
+        raw = {"allowed_files": ["src/a.py", "lib/b.py"]}
+        result = normalize_work_order(raw)
+        assert result["allowed_files"] == ["src/a.py", "lib/b.py"]

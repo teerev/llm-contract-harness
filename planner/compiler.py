@@ -67,8 +67,15 @@ def _compute_compile_hash(
 # JSON parsing from LLM output
 # ---------------------------------------------------------------------------
 
+MAX_JSON_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MB — M-10 defense-in-depth
+
+
 def _parse_json(raw: str) -> dict:
     """Parse JSON from raw LLM output, stripping markdown fences if present."""
+    if len(raw) > MAX_JSON_PAYLOAD_BYTES:
+        raise ValueError(
+            f"JSON payload too large: {len(raw)} bytes (max {MAX_JSON_PAYLOAD_BYTES})"
+        )
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
@@ -326,11 +333,22 @@ def compile_plan(
         return result
 
     # ── Compute verify_exempt ─────────────────────────────────────────
+    # CRITICAL (M-01): Never trust LLM-provided verify_exempt.
+    # Always overwrite: compute from verify_contract if valid, else force False.
     verify_contract = final_parsed.get("verify_contract")
-    if verify_contract and final_work_orders:
+    if (
+        isinstance(verify_contract, dict)
+        and verify_contract.get("requires")
+        and final_work_orders
+    ):
         final_work_orders = compute_verify_exempt(
             final_work_orders, verify_contract, repo_file_listing,
         )
+    else:
+        # No valid verify_contract → nothing is exempt.
+        final_work_orders = [
+            {**wo, "verify_exempt": False} for wo in final_work_orders
+        ]
 
     result.work_orders = final_work_orders
 

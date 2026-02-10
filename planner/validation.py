@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import posixpath
 import re
 import shlex
 from dataclasses import dataclass, field as dc_field
@@ -34,6 +35,7 @@ E003_SHELL_OP = "E003"    # Shell operator in acceptance command
 E004_GLOB = "E004"        # Glob character in path
 E005_SCHEMA = "E005"      # Pydantic schema validation failed
 E006_SYNTAX = "E006"      # Python syntax error in python -c command
+E007_SHLEX = "E007"       # Unparseable acceptance command (shlex.split failure)
 #
 # E1xx / W1xx — cross-work-order chain checks (validate_plan_v2)
 E101_PRECOND = "E101"            # Precondition unsatisfied
@@ -104,8 +106,32 @@ def _deduplicate(items: list) -> list:
 
 
 def normalize_work_order(raw: dict) -> dict:
-    """Strip whitespace and deduplicate list fields. Returns a new dict."""
+    """Strip whitespace, normpath all path fields, and deduplicate list fields.
+
+    Returns a new dict.  M-06: applies ``posixpath.normpath`` to path-bearing
+    fields so that ``"./src/a.py"`` and ``"src/a.py"`` are treated identically
+    by the chain validator (matching the factory's schema-level normalization).
+    """
     cleaned = _strip_strings(raw)
+
+    # M-06: Normalize path strings so chain validation matches factory semantics.
+    # Guard: only normpath non-empty strings (normpath("") == "." which would
+    # hide empty-path errors from the schema validator).
+    def _normpath_safe(p: str) -> str:
+        return posixpath.normpath(p) if p else p
+
+    for path_key in ("allowed_files", "context_files"):
+        if path_key in cleaned and isinstance(cleaned[path_key], list):
+            cleaned[path_key] = [
+                _normpath_safe(p) if isinstance(p, str) else p
+                for p in cleaned[path_key]
+            ]
+    for cond_key in ("preconditions", "postconditions"):
+        if cond_key in cleaned and isinstance(cleaned[cond_key], list):
+            for cond in cleaned[cond_key]:
+                if isinstance(cond, dict) and isinstance(cond.get("path"), str):
+                    cond["path"] = _normpath_safe(cond["path"])
+
     for list_key in ("allowed_files", "context_files", "forbidden", "acceptance_commands"):
         if list_key in cleaned and isinstance(cleaned[list_key], list):
             cleaned[list_key] = _deduplicate(cleaned[list_key])
@@ -128,8 +154,17 @@ def _check_python_c_syntax(
     """
     try:
         tokens = shlex.split(cmd_str)
-    except ValueError:
-        return None  # shlex parse errors are surfaced by the shell-op check
+    except ValueError as exc:
+        # M-04: Emit E007 instead of silently skipping.
+        return ValidationError(
+            code=E007_SHLEX,
+            wo_id=wo_id,
+            message=(
+                f"acceptance command has invalid shell syntax "
+                f"(shlex.split failed: {exc}): {cmd_str!r}"
+            ),
+            field="acceptance_commands",
+        )
 
     if len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-c":
         code = tokens[2]
@@ -168,6 +203,19 @@ def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
             wo_id=None,
             message="work_orders list is empty",
         ))
+        return errors
+
+    # --- M-03: Reject non-dict elements before normalization ---
+    for i, wo in enumerate(work_orders_raw):
+        if not isinstance(wo, dict):
+            errors.append(ValidationError(
+                code=E000_STRUCTURAL,
+                wo_id=f"index-{i}",
+                message=(
+                    f"work_orders[{i}] is {type(wo).__name__}, expected dict"
+                ),
+            ))
+    if errors:
         return errors
 
     # --- Normalize all work orders first ---
@@ -215,8 +263,18 @@ def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
         for cmd_str in acceptance:
             try:
                 tokens = shlex.split(cmd_str)
-            except ValueError:
-                continue  # shlex parse errors are caught elsewhere
+            except ValueError as exc:
+                # M-04: Emit E007 instead of silently skipping.
+                errors.append(ValidationError(
+                    code=E007_SHLEX,
+                    wo_id=wo_id,
+                    message=(
+                        f"acceptance command has invalid shell syntax "
+                        f"(shlex.split failed: {exc}): {cmd_str!r}"
+                    ),
+                    field="acceptance_commands",
+                ))
+                continue
             bad = [t for t in tokens if t in SHELL_OPERATOR_TOKENS]
             if bad:
                 errors.append(ValidationError(
@@ -281,6 +339,20 @@ def parse_and_validate(
             wo_id=None,
             message="Missing or invalid 'work_orders' key in response",
         )]
+
+    # M-03: Reject non-dict elements before normalization to prevent crashes.
+    non_dict_errors: list[ValidationError] = []
+    for i, wo in enumerate(work_orders_raw):
+        if not isinstance(wo, dict):
+            non_dict_errors.append(ValidationError(
+                code=E000_STRUCTURAL,
+                wo_id=f"index-{i}",
+                message=(
+                    f"work_orders[{i}] is {type(wo).__name__}, expected dict"
+                ),
+            ))
+    if non_dict_errors:
+        return [], non_dict_errors
 
     # Normalize
     normalized = [normalize_work_order(wo) for wo in work_orders_raw]
@@ -445,15 +517,23 @@ def validate_plan_v2(
         acceptance: list[str] = wo.get("acceptance_commands", [])
 
         # ── R7: Ban verify command in acceptance ─────────────────────
+        # M-08: Normalize via shlex.split + posixpath.normpath so that
+        # "bash  scripts/verify.sh", "bash ./scripts/verify.sh", etc.
+        # are all caught — not just the exact string.
         for cmd_str in acceptance:
-            if cmd_str.strip() == VERIFY_COMMAND:
+            try:
+                tokens = shlex.split(cmd_str)
+            except ValueError:
+                continue  # shlex errors handled by E007 (M-04)
+            normalized = tokens[:1] + [posixpath.normpath(t) for t in tokens[1:]]
+            if normalized == ["bash", VERIFY_SCRIPT_PATH]:
                 errors.append(ValidationError(
                     code=E105_VERIFY_IN_ACC,
                     wo_id=wo_id,
                     message=(
-                        f"'{VERIFY_COMMAND}' must not appear in "
+                        f"'{VERIFY_COMMAND}' (or equivalent) must not appear in "
                         f"acceptance_commands — the factory runs it "
-                        f"automatically as a global gate"
+                        f"automatically as a global gate: {cmd_str!r}"
                     ),
                     field="acceptance_commands",
                 ))
@@ -562,6 +642,18 @@ def validate_plan_v2(
                 file_state.add(cond["path"])
 
     # ── R6: Verify contract reachability ─────────────────────────────
+    # M-03: Guard against non-dict verify_contract.
+    if verify_contract is not None and not isinstance(verify_contract, dict):
+        errors.append(ValidationError(
+            code=E000_STRUCTURAL,
+            wo_id=None,
+            message=(
+                f"verify_contract is {type(verify_contract).__name__}, "
+                f"expected dict or null"
+            ),
+            field="verify_contract",
+        ))
+        return errors
     if verify_contract is not None:
         vc_requires = verify_contract.get("requires", [])
         for req in vc_requires:
@@ -595,6 +687,10 @@ def compute_verify_exempt(
     Returns a **new** list of dicts (shallow copies with ``verify_exempt``
     injected).  The input list is not mutated.
     """
+    # M-03: Guard against non-dict verify_contract (consistent with M-01).
+    if not isinstance(verify_contract, dict):
+        return [{**wo, "verify_exempt": False} for wo in work_orders]
+
     vc_requires = verify_contract.get("requires", [])
     if not vc_requires:
         # No contract → nothing is exempt; return copies with False.

@@ -35,9 +35,13 @@ to one or more findings in `FINDINGS_LEDGER.md`.
 
 ---
 
-## M-01  Never trust LLM-provided `verify_exempt` [CRITICAL]
+## M-01  Never trust LLM-provided `verify_exempt` [CRITICAL] ✅ DONE
 
 **Fixes:** AUD-03
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/compiler.py` — unconditional `verify_exempt` sanitization.
+Tests: `TestVerifyExemptSanitisation` in `tests/planner/test_compile_loop.py`
+(5 passing + 1 xfail pending M-03). Full suite: 386 passed.
 
 **Why this is #1:** This is the single most important finding in the entire
 audit. The planner only overwrites `verify_exempt` when `verify_contract` is
@@ -72,9 +76,15 @@ LLM-provided value is gone.
 
 ---
 
-## M-02  Catch `BaseException` in the emergency handler [CRITICAL]
+## M-02  Catch `BaseException` in the emergency handler [CRITICAL] ✅ DONE
 
 **Fixes:** AUD-05
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/run.py` — `except BaseException`, type-specific exit codes
+(130 for KeyboardInterrupt, re-raise for SystemExit).
+Tests: `TestBaseExceptionRollback` in `tests/factory/test_end_to_end.py`
+(3 tests: rollback on Ctrl-C, dirty-repo restoration, SystemExit preserved).
+Full suite: 389 passed.
 
 **Why this matters:** Users routinely press Ctrl-C during long factory runs
 (LLM calls take minutes). `KeyboardInterrupt` inherits from `BaseException`,
@@ -106,9 +116,16 @@ Assert process exit code is 130.
 
 ---
 
-## M-03  Type-guard planner validation against non-dict inputs [HIGH]
+## M-03  Type-guard planner validation against non-dict inputs [HIGH] ✅ DONE
 
 **Fixes:** AUD-12
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py` — isinstance guards in `parse_and_validate`,
+`validate_plan`, `validate_plan_v2`, and `compute_verify_exempt`.
+Tests: 5 tests in `TestE000Structural` (`test_structural_validation.py`),
+5 tests in `TestVerifyContractTypeGuard` (`test_chain_validation.py`),
+plus M-01 xfail resolved to passing `test_wrong_type_contract_rejected_not_crash`.
+Full suite: 400 passed.
 
 **Why:** If the LLM emits `"work_orders": [42, "hello"]`, the planner calls
 `42.get("id")` and crashes with `AttributeError`. The CLI's broad
@@ -140,9 +157,14 @@ structured error, not crash.
 
 ---
 
-## M-04  Emit error code on `shlex.split` failure instead of silent skip [HIGH]
+## M-04  Emit error code on `shlex.split` failure instead of silent skip [HIGH] ✅ DONE
 
 **Fixes:** AUD-11
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py` — new `E007_SHLEX` constant; E007 emitted in
+the E003 shell-operator loop and in `_check_python_c_syntax` on `ValueError`.
+Tests: `TestE007Shlex` (6 tests) + 2 updated existing tests in
+`test_structural_validation.py`. Full suite: 406 passed.
 
 **Why:** A command with unmatched quotes (`python -c 'print(1`) silently
 passes E003 and E006 because `shlex.split` raises `ValueError` and the
@@ -170,9 +192,15 @@ acceptance commands. Assert `E007` in returned errors.
 
 ---
 
-## M-05  Make `save_json` atomic [HIGH]
+## M-05  Make `save_json` atomic [HIGH] ✅ DONE
 
 **Fixes:** AUD-04
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/util.py` — `save_json` now uses `tempfile.mkstemp` + `fsync`
++ `os.replace`, with `BaseException` cleanup. Matches `planner/io.py::_atomic_write`
+and `factory/nodes_tr.py::_atomic_write`.
+Tests: `TestSaveJsonAtomic` (6 tests) in `tests/factory/test_util.py`.
+Full suite: 412 passed.
 
 **Why:** `factory/util.py::save_json` uses bare `open()` + `json.dump()`.
 A kill -9, OOM-killer, or power loss mid-write corrupts the artifact — most
@@ -199,9 +227,16 @@ temp files remain.
 
 ---
 
-## M-06  Apply `posixpath.normpath` in `normalize_work_order` [MEDIUM]
+## M-06  Apply `posixpath.normpath` in `normalize_work_order` [MEDIUM] ✅ DONE
 
 **Fixes:** AUD-10
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py::normalize_work_order` — applies `posixpath.normpath`
+to `allowed_files`, `context_files`, and precondition/postcondition `path` values
+(with empty-string guard). Runs before deduplication so `./src/a.py` and `src/a.py`
+collapse to a single entry.
+Tests: 7 new tests in `TestNormalize` (`test_structural_validation.py`).
+Full suite: 419 passed.
 
 **Why:** The planner's chain validator tracks cumulative file state using
 raw (non-normpath'd) strings. `"./src/a.py"` and `"src/a.py"` are treated
@@ -228,9 +263,14 @@ element after normpath + dedup).
 
 ---
 
-## M-07  Reject `"."`, NUL, and control chars in path validator [MEDIUM]
+## M-07  Reject `"."`, NUL, and control chars in path validator [MEDIUM] ✅ DONE
 
 **Fixes:** AUD-13
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/schemas.py::_validate_relative_path` — rejects NUL bytes and
+control chars (ord < 0x20) before normalization, rejects `"."` after normpath.
+Tests: 6 new tests in `TestWorkOrder` (`tests/factory/test_schemas.py`).
+Full suite: 425 passed.
 
 **Why:** `_validate_relative_path` in `factory/schemas.py` rejects `..`,
 absolute paths, and glob chars, but accepts `"."` (which `normpath` keeps
@@ -255,9 +295,15 @@ path escapes deterministic classification.
 
 ---
 
-## M-08  Normalize E105 verify-command match via `shlex.split` [LOW]
+## M-08  Normalize E105 verify-command match via `shlex.split` [LOW] ✅ DONE
 
 **Fixes:** AUD-07
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py::validate_plan_v2` — R7 check now uses
+`shlex.split` + `posixpath.normpath` instead of exact string equality.
+Tests: 2 existing bypass tests updated to assert E105 is now caught
+(`test_verify_with_extra_internal_whitespace_caught`,
+`test_verify_with_dot_slash_prefix_caught`). Full suite: 425 passed.
 
 **Why:** The E105 check uses `cmd_str.strip() == "bash scripts/verify.sh"`.
 Double spaces, `./` prefixes, and absolute paths bypass it. Both audits flag
@@ -288,9 +334,15 @@ for both.
 
 ---
 
-## M-09  Add explicit `rollback_failed` status to run summary [LOW]
+## M-09  Add explicit `rollback_failed` status to run summary [LOW] ✅ DONE
 
 **Fixes:** AUD-06
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/run.py` — emergency handler checks `is_clean` after rollback
+and sets `rollback_failed` + `remediation` in summary. Normal-path summary
+sets `rollback_failed: false` explicitly.
+Tests: `TestRollbackFailedField` (3 tests) in `tests/factory/test_end_to_end.py`.
+Full suite: 428 passed.
 
 **Why:** If `git reset --hard` or `git clean -fdx` fails, the current code
 warns on stderr but still writes the emergency summary with `verdict: ERROR`
@@ -313,9 +365,14 @@ Assert `run_summary.json` contains `"rollback_failed": true`.
 
 ---
 
-## M-10  Add JSON payload size guard [LOW]
+## M-10  Add JSON payload size guard [LOW] ✅ DONE
 
 **Fixes:** AUD-08 (size component only)
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/compiler.py::_parse_json` and `factory/llm.py::parse_proposal_json`
+— reject payloads > 10 MB before `json.loads`.
+Tests: 2 tests each in `tests/planner/test_compiler_extras.py` and
+`tests/factory/test_llm.py`. Full suite: 432 passed.
 
 **Why:** Neither `_parse_json` (planner) nor `parse_proposal_json` (factory)
 enforces a maximum payload size before calling `json.loads`. In practice the

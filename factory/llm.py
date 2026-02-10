@@ -47,8 +47,15 @@ def complete(
     return content
 
 
+MAX_JSON_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MB — M-10 defense-in-depth
+
+
 def parse_proposal_json(raw: str) -> dict:
     """Parse the raw LLM output as JSON, stripping markdown fences if present."""
+    if len(raw) > MAX_JSON_PAYLOAD_BYTES:
+        raise ValueError(
+            f"JSON payload too large: {len(raw)} bytes (max {MAX_JSON_PAYLOAD_BYTES})"
+        )
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
