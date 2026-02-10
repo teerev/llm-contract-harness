@@ -136,6 +136,70 @@ class TestEndToEndPassViaCLI:
 
 
 # ---------------------------------------------------------------------------
+# M-21: Refuse to overwrite prior run artifacts
+# ---------------------------------------------------------------------------
+
+
+class TestArtifactOverwritePrevention:
+    """M-21: a second run with the same run_id must refuse, not overwrite."""
+
+    def test_refuses_when_summary_exists(self, tmp_path):
+        """If run_summary.json already exists, run_cli exits 1 without modifying it."""
+        from factory.util import compute_run_id, save_json
+        from factory.schemas import load_work_order
+        from factory.workspace import get_baseline_commit
+
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = write_work_order(str(tmp_path / "wo.json"))
+
+        # Compute the run_id that run_cli will derive
+        wo = load_work_order(wo_path)
+        baseline = get_baseline_commit(repo)
+        run_id = compute_run_id(wo.model_dump(), baseline)
+        run_dir = os.path.join(out, run_id)
+
+        # Plant a prior run_summary.json (simulating a completed first run)
+        os.makedirs(run_dir, exist_ok=True)
+        prior_summary = {"verdict": "PASS", "run_id": run_id, "prior": True}
+        summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
+        save_json(prior_summary, summary_path)
+        prior_mtime = os.path.getmtime(summary_path)
+
+        # Attempt to run — should refuse before calling the LLM
+        args = _make_args(repo, wo_path, out)
+        with pytest.raises(SystemExit) as exc_info:
+            with patch("factory.llm.complete", side_effect=AssertionError("LLM should not be called")):
+                run_cli(args)
+
+        assert exc_info.value.code == 1
+
+        # Prior summary must be intact and unmodified
+        assert os.path.getmtime(summary_path) == prior_mtime
+        assert load_json(summary_path) == prior_summary
+
+    def test_proceeds_when_no_prior_summary(self, tmp_path):
+        """A fresh run (no prior summary) proceeds normally."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        add_verify_script(repo)
+        out = str(tmp_path / "out")
+        wo_path = write_work_order(str(tmp_path / "wo.json"))
+
+        valid_json = make_valid_proposal_json(repo)
+        args = _make_args(repo, wo_path, out)
+
+        with patch("factory.llm.complete", return_value=valid_json):
+            run_cli(args)  # should PASS without error
+
+        run_dirs = os.listdir(out)
+        assert len(run_dirs) == 1
+        summary = load_json(
+            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+        )
+        assert summary["verdict"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
 # Action 2: Exit code 2 — emergency handler (last-resort safety net)
 # ---------------------------------------------------------------------------
 

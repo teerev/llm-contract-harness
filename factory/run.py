@@ -64,6 +64,19 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     # ------------------------------------------------------------------
     run_id = compute_run_id(work_order.model_dump(), baseline_commit)
     run_dir = os.path.join(out_dir, run_id)
+
+    # M-21: refuse to overwrite a prior run's artifacts.
+    prior_summary = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
+    if os.path.isfile(prior_summary):
+        print(
+            f"ERROR: A run summary already exists at {prior_summary}. "
+            "Re-running the same work order on the same baseline would "
+            "overwrite the prior run's artifacts. To re-run, delete or "
+            f"move the directory: {run_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     os.makedirs(run_dir, exist_ok=True)
 
     # Persist the work order and CLI config for post-mortem reproducibility
