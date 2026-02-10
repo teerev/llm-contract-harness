@@ -51,6 +51,15 @@ def main() -> None:
         default=DEFAULT_TIMEOUT_SECONDS,
         help=f"Per-command timeout in seconds (default: {DEFAULT_TIMEOUT_SECONDS})",
     )
+    run_parser.add_argument(
+        "--allow-verify-exempt",
+        action="store_true",
+        default=False,
+        help=(
+            "Honor verify_exempt=true in work orders (skip global verification). "
+            "Without this flag, verify_exempt is overridden to false with a warning."
+        ),
+    )
 
     args = parser.parse_args()
 

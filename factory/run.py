@@ -106,12 +106,24 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     }
 
     # ------------------------------------------------------------------
+    # M-22: Override verify_exempt unless explicitly allowed by operator
+    # ------------------------------------------------------------------
+    wo_dict = work_order.model_dump()
+    if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
+        print(
+            "WARNING: work order has verify_exempt=true but --allow-verify-exempt "
+            "was not passed. Overriding to false — full verification will run.",
+            file=sys.stderr,
+        )
+        wo_dict["verify_exempt"] = False
+
+    # ------------------------------------------------------------------
     # Build & invoke graph
     # ------------------------------------------------------------------
     graph = build_graph()
 
     initial_state: dict = {
-        "work_order": work_order.model_dump(),
+        "work_order": wo_dict,
         "repo_root": repo_root,
         "baseline_commit": baseline_commit,
         "max_attempts": args.max_attempts,

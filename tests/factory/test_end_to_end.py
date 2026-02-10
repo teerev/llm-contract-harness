@@ -53,6 +53,7 @@ def _make_args(repo: str, wo_path: str, out: str, **overrides) -> argparse.Names
         "llm_model": "test-model",
         "llm_temperature": 0,
         "timeout_seconds": 30,
+        "allow_verify_exempt": False,
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -190,6 +191,100 @@ class TestArtifactOverwritePrevention:
 
         with patch("factory.llm.complete", return_value=valid_json):
             run_cli(args)  # should PASS without error
+
+        run_dirs = os.listdir(out)
+        assert len(run_dirs) == 1
+        summary = load_json(
+            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+        )
+        assert summary["verdict"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# M-22: verify_exempt override unless --allow-verify-exempt
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyExemptOverride:
+    """M-22: verify_exempt=true must be overridden unless operator opts in."""
+
+    def test_verify_exempt_overridden_without_flag(self, tmp_path, capsys):
+        """verify_exempt=true without --allow-verify-exempt → full verify runs."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        # Create a verify.sh that FAILS — proving full verify ran.
+        scripts_dir = os.path.join(repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 1\n")
+        subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add failing verify"], cwd=repo, capture_output=True)
+
+        out = str(tmp_path / "out")
+        # WO with verify_exempt=true
+        wo_path = write_work_order(
+            str(tmp_path / "wo.json"),
+            verify_exempt=True,
+        )
+
+        valid_json = make_valid_proposal_json(repo)
+        # Default: allow_verify_exempt=False
+        args = _make_args(repo, wo_path, out)
+
+        with pytest.raises(SystemExit) as exc_info:
+            with patch("factory.llm.complete", return_value=valid_json):
+                run_cli(args)
+
+        # Verdict is FAIL because full verify ran (and verify.sh exits 1)
+        assert exc_info.value.code == 1
+
+        # Warning was printed
+        captured = capsys.readouterr()
+        assert "verify_exempt=true" in captured.err
+        assert "Overriding to false" in captured.err
+
+    def test_verify_exempt_honored_with_flag(self, tmp_path):
+        """verify_exempt=true with --allow-verify-exempt → lightweight verify only."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        # Create a verify.sh that FAILS — but verify_exempt should skip it.
+        scripts_dir = os.path.join(repo, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
+            f.write("#!/bin/bash\nexit 1\n")
+        subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add failing verify"], cwd=repo, capture_output=True)
+
+        out = str(tmp_path / "out")
+        wo_path = write_work_order(
+            str(tmp_path / "wo.json"),
+            verify_exempt=True,
+        )
+
+        valid_json = make_valid_proposal_json(repo)
+        # Explicitly allow verify_exempt
+        args = _make_args(repo, wo_path, out, allow_verify_exempt=True)
+
+        with patch("factory.llm.complete", return_value=valid_json):
+            run_cli(args)  # should PASS — verify.sh skipped, only compileall runs
+
+        run_dirs = os.listdir(out)
+        assert len(run_dirs) == 1
+        summary = load_json(
+            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+        )
+        assert summary["verdict"] == "PASS"
+
+    def test_verify_exempt_false_unaffected(self, tmp_path):
+        """verify_exempt=false is unaffected regardless of flag."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        add_verify_script(repo)  # verify.sh exits 0
+        out = str(tmp_path / "out")
+        wo_path = write_work_order(str(tmp_path / "wo.json"), verify_exempt=False)
+
+        valid_json = make_valid_proposal_json(repo)
+        args = _make_args(repo, wo_path, out)
+
+        with patch("factory.llm.complete", return_value=valid_json):
+            run_cli(args)
 
         run_dirs = os.listdir(out)
         assert len(run_dirs) == 1
