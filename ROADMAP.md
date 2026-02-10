@@ -14,16 +14,25 @@
   path normalization (M-06), NUL/control-char rejection (M-07), E105
   normalization (M-08), rollback_failed status (M-09), JSON size guards
   (M-10). Test suite: 432 passed.
+- **Configuration extraction (M-14–M-19):** All six milestones of the
+  Pattern A config centralization are implemented and tested. 50 constants
+  centralized into `planner/defaults.py` (26) and `factory/defaults.py` (26).
+  13 source files updated with import-only replacements; all original import
+  paths preserved via re-exports. Generated `docs/CONFIG_DEFAULTS.md`
+  reference from code. Config snapshot artifacts added to both
+  `run_summary.json` and `compile_summary.json`. 40 hardening tests guard
+  against value drift, shadowing, and doc staleness. Test suite: 472 passed.
 
-Three tracks of work remain, in priority order:
+Two tracks of work remain:
 
 1. **Prompt semantic hardening** (Part 2) — prompt template changes to reduce
    LLM-generated acceptance command failures. These improve LLM output quality
    but do not affect deterministic guarantees.
 2. **Artifact audit & light tidy** (Part 3) — naming/format review and
    optional observability improvements for CLI/cloud preparation.
-3. **Configuration extraction** (Part 4) — centralize all defaults into
-   dedicated modules, preparing for a unified `llmc` CLI.
+
+Part 4 (Configuration extraction) is complete. The milestones, inventory
+table, risk register, and open questions are preserved below as reference.
 
 ---
 ---
@@ -832,13 +841,16 @@ This is the only factory artifact written via bare `open(..., "w")` instead of `
 ---
 ---
 
-# Part 4: Configuration Extraction (Pattern A Centralization)
+# Part 4: Configuration Extraction (Pattern A Centralization) ✅ COMPLETE
+
+**Status:** All six milestones (M-14 through M-19) implemented and tested.
+Test suite: 472 passed. Zero behavioral changes.
 
 > Source of truth: `CONTROL_SURFACE.md` (forensic control-surface audit).
 > Every parameter, location, and value cited below is traceable to a named
 > section of that document. Section references use the notation `[CS §N.N]`.
 
-This part defines a milestone-by-milestone refactor to extract all
+This part defined a milestone-by-milestone refactor to extract all
 configuration defaults and tunable parameters out of buried locations into
 a "Pattern A" arrangement: centralized default-value modules (one per
 subsystem), with generated CONFIG documentation derived from code.
@@ -996,7 +1008,7 @@ Each row is a configuration candidate extracted from `CONTROL_SURFACE.md`.
 
 ## 5. Milestones
 
-### M-14: Scaffolding — Add defaults modules with no call-site changes
+### M-14: Scaffolding — Add defaults modules with no call-site changes ✅ DONE
 
 **Rationale:** Lay down the file structure and populate it with the
 authoritative value of every constant, annotated with category and
@@ -1035,7 +1047,7 @@ unchanged — no imports or behaviors changed.
 
 ---
 
-### M-15: Migrate planner defaults into `planner/defaults.py`
+### M-15: Migrate planner defaults into `planner/defaults.py` ✅ DONE
 
 **Rationale:** The planner has the densest cluster of buried constants
 (13+ values in `openai_client.py` alone [CS §3.1, §3.2]). Moving these
@@ -1101,7 +1113,7 @@ identical for the same inputs — the existing
 
 ---
 
-### M-16: Migrate factory defaults into `factory/defaults.py`
+### M-16: Migrate factory defaults into `factory/defaults.py` ✅ DONE
 
 **Rationale:** The factory has more constants but they are spread across
 more files (7 modules). This milestone is larger but still mechanical.
@@ -1172,7 +1184,7 @@ output. Verify the test still passes.
 
 ---
 
-### M-17: Add defaults documentation generator
+### M-17: Add defaults documentation generator ✅ DONE
 
 **Rationale:** The generated `docs/CONFIG_DEFAULTS.md` ensures that
 documentation stays in sync with code. It also serves as the reference
@@ -1220,7 +1232,7 @@ for future `llmc` CLI flag wiring.
 
 ---
 
-### M-18: Add resolved config snapshot artifacts
+### M-18: Add resolved config snapshot artifacts ✅ DONE
 
 **Rationale:** For post-mortem debugging and reproducibility, each run
 should record the effective configuration — defaults plus any CLI
@@ -1263,7 +1275,7 @@ files will see more data but no existing keys change.
 
 ---
 
-### M-19: Hardening — assert defaults in one place, prevent drift
+### M-19: Hardening — assert defaults in one place, prevent drift ✅ DONE
 
 **Rationale:** After extraction, the risk is that someone adds a new
 constant to an implementation module instead of `defaults.py`, or
