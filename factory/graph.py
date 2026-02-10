@@ -69,9 +69,18 @@ def _route_after_tr(state: dict) -> str:
     return "po"
 
 
+# Failure stages that are deterministic given the same repo + work order.
+# Retrying these cannot change the outcome; the router aborts immediately.
+_NON_RETRYABLE_STAGES = frozenset({"preflight", "write_failed"})
+
+
 def _route_after_finalize(state: dict) -> str:
-    """After finalize: END on PASS or exhausted attempts, else retry from SE."""
+    """After finalize: END on PASS, non-retryable failure, or exhausted attempts."""
     if state.get("verdict") == "PASS":
+        return END
+    # M-20: abort immediately for failures the executor LLM cannot fix.
+    fb = state.get("failure_brief")
+    if isinstance(fb, dict) and fb.get("stage") in _NON_RETRYABLE_STAGES:
         return END
     if state["attempt_index"] > state["max_attempts"]:
         return END

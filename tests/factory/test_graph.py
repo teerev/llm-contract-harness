@@ -71,6 +71,87 @@ class TestRouting:
         result = _route_after_finalize({"verdict": "FAIL", "attempt_index": 2, "max_attempts": 2})
         assert result == "se"
 
+    # M-20: non-retryable failure stages abort immediately
+
+    def test_finalize_end_on_preflight_failure(self):
+        """Preflight failures are non-retryable — abort even with attempts remaining."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "preflight"},
+        })
+        assert result == "__end__"
+
+    def test_finalize_end_on_write_failed(self):
+        """OS-level write failures are non-retryable."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "write_failed"},
+        })
+        assert result == "__end__"
+
+    def test_finalize_retries_verify_failed(self):
+        """verify_failed IS retryable (the intended retry case)."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "verify_failed"},
+        })
+        assert result == "se"
+
+    def test_finalize_retries_acceptance_failed(self):
+        """acceptance_failed IS retryable."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "acceptance_failed"},
+        })
+        assert result == "se"
+
+    def test_finalize_retries_llm_output_invalid(self):
+        """llm_output_invalid IS retryable (LLM is stochastic)."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "llm_output_invalid"},
+        })
+        assert result == "se"
+
+    def test_finalize_retries_exception(self):
+        """exception IS retryable (may be transient)."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": {"stage": "exception"},
+        })
+        assert result == "se"
+
+    def test_finalize_handles_missing_failure_brief(self):
+        """No failure_brief at all (shouldn't happen, but guard against crash)."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+        })
+        assert result == "se"
+
+    def test_finalize_handles_none_failure_brief(self):
+        """failure_brief=None with FAIL verdict — retries normally."""
+        result = _route_after_finalize({
+            "verdict": "FAIL",
+            "attempt_index": 1,
+            "max_attempts": 5,
+            "failure_brief": None,
+        })
+        assert result == "se"
+
 
 # ---------------------------------------------------------------------------
 # Full graph integration — PASS path
@@ -361,6 +442,101 @@ class TestMaxAttemptsStop:
 
         indices = [a["attempt_index"] for a in final["attempts"]]
         assert indices == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# M-20: Non-retryable failure stages abort immediately
+# ---------------------------------------------------------------------------
+
+
+class TestNonRetryableAbort:
+    """Preflight and write_failed stages must not be retried."""
+
+    def test_preflight_failure_produces_single_attempt(self, tmp_path):
+        """file_absent precondition on existing file → exactly 1 attempt, not max_attempts."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        os.makedirs(out)
+
+        baseline = get_baseline_commit(repo)
+        # hello.txt exists (created by init_git_repo), but precondition says it must be absent.
+        wo = minimal_work_order(
+            preconditions=[{"kind": "file_absent", "path": "hello.txt"}],
+        )
+        run_id = compute_run_id(wo, baseline)
+
+        initial_state = {
+            "work_order": wo,
+            "repo_root": repo,
+            "baseline_commit": baseline,
+            "max_attempts": 5,  # would be 5 retries without M-20
+            "timeout_seconds": 30,
+            "llm_model": "test",
+            "llm_temperature": 0,
+            "out_dir": out,
+            "run_id": run_id,
+            "attempt_index": 1,
+            "proposal": None,
+            "touched_files": [],
+            "write_ok": False,
+            "failure_brief": None,
+            "verify_results": [],
+            "acceptance_results": [],
+            "attempts": [],
+            "verdict": "",
+            "repo_tree_hash_after": None,
+        }
+
+        graph = build_graph()
+        final = graph.invoke(initial_state)
+
+        assert final["verdict"] == "FAIL"
+        # M-20: exactly 1 attempt, not 5
+        assert len(final["attempts"]) == 1
+        assert final["attempts"][0]["failure_brief"]["stage"] == "preflight"
+
+    def test_retryable_failure_still_retries(self, tmp_path):
+        """llm_output_invalid failures are still retried up to max_attempts."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        os.makedirs(out)
+
+        baseline = get_baseline_commit(repo)
+        wo = minimal_work_order()
+        run_id = compute_run_id(wo, baseline)
+
+        initial_state = {
+            "work_order": wo,
+            "repo_root": repo,
+            "baseline_commit": baseline,
+            "max_attempts": 3,
+            "timeout_seconds": 30,
+            "llm_model": "test",
+            "llm_temperature": 0,
+            "out_dir": out,
+            "run_id": run_id,
+            "attempt_index": 1,
+            "proposal": None,
+            "touched_files": [],
+            "write_ok": False,
+            "failure_brief": None,
+            "verify_results": [],
+            "acceptance_results": [],
+            "attempts": [],
+            "verdict": "",
+            "repo_tree_hash_after": None,
+        }
+
+        graph = build_graph()
+
+        with patch("factory.llm.complete", return_value="NOT JSON"):
+            final = graph.invoke(initial_state)
+
+        assert final["verdict"] == "FAIL"
+        # Retryable: all 3 attempts used
+        assert len(final["attempts"]) == 3
+        for attempt in final["attempts"]:
+            assert attempt["failure_brief"]["stage"] == "llm_output_invalid"
 
 
 # ---------------------------------------------------------------------------
