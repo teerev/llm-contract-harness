@@ -1,4 +1,4 @@
-# aos — Agentic Orchestration Service
+# llm-compiler
 
 A **deterministic contract layer** between LLM planning and LLM code execution.
 
