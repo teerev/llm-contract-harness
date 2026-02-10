@@ -81,16 +81,56 @@ models whose output cannot be fully trusted. Do not run on machines with
 access to production secrets, SSH keys, or cloud credentials without
 network isolation.
 
+## Prerequisites
+
+- **Git** installed and on `PATH`. The target repo must have at least one
+  commit.
+- **Python 3.10+** on `PATH` with `pip` and `pytest` available (used by
+  the default verify fallback).
+- **`OPENAI_API_KEY`** environment variable set.
+- **Unrestricted HTTPS access** to `api.openai.com` (no proxy support).
+- **Sole-writer access** to the target repo. The factory assumes it is the
+  only process modifying the repo during execution. There is no file
+  locking; concurrent modification is undefined behavior.
+- **Disposable target repo.** The factory runs `git reset --hard` +
+  `git clean -fdx` on failure. Do not point `--repo` at a repo with
+  uncommitted work you want to keep.
+
+## Guarantees
+
+The following properties hold under the prerequisites above:
+
+- **Enforcement checks are deterministic.** Given the same LLM output, the
+  same work order, and the same repo state, path validation, scope checks,
+  base-hash checks, and precondition/postcondition gates produce the same
+  verdict every time. No hidden state, no randomness.
+- **LLM non-determinism cannot bypass structural enforcement.** No matter
+  what the LLM outputs, it cannot write to files outside `allowed_files`,
+  write to paths outside the repo root, skip the hash check, or avoid
+  acceptance command execution.
+- **The planner validates work-order chains.** The compile-retry loop with
+  E0xx/E1xx error codes, cross-work-order precondition/postcondition
+  tracking, and `verify_exempt` computation is a genuine validation
+  pipeline.
+- **The factory rolls back on failure** (under normal process lifecycle).
+  `BaseException` handler and finalize-node rollback restore the repo to
+  baseline. Tested and verified.
+- **Comprehensive artifact trail.** Every attempt writes prompts, proposals,
+  write results, verify/acceptance output, and failure briefs. The run
+  summary aggregates per-attempt records.
+- **487 tests** cover enforcement invariants, including adversarial-audit
+  hardening (M-01–M-10) and credibility fixes (M-20–M-23).
+
 ## How it works
 
 ```
   Product Spec                    Work Orders (JSON)                Product Repo
        │                                │                                │
        ▼                                ▼                                ▼
-  ┌─────────┐   validate + emit    ┌─────────┐   execute + verify   ┌─────────┐
-  │ Planner │ ──────────────────►  │ WO-*.json│ ──────────────────► │  Repo   │
-  │  (LLM)  │   E0xx, E1xx chain  │ contract │   SE → TR → PO      │ (git)   │
-  └─────────┘   checks            └─────────┘   structural           └─────────┘
+  ┌─────────┐   validate + emit   ┌───────-──┐   execute + verify     ┌─────────┐
+  │ Planner │ ──────────────────► │ WO-*.json│ ─────────────────---─► │  Repo   │
+  │  (LLM)  │   E0xx, E1xx chain  │ contract │   SE → TR → PO         │ (git)   │
+  └─────────┘   checks            └────────-─┘   structural           └─────────┘
        │                                │           enforcement          │
        │  retry with                    │                                │
        │  revision prompt               │                                │  rollback
