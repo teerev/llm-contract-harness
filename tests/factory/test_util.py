@@ -232,3 +232,71 @@ class TestArtifactPaths:
         assert ARTIFACT_FAILURE_BRIEF == "failure_brief.json"
         assert ARTIFACT_WORK_ORDER == "work_order.json"
         assert ARTIFACT_RUN_SUMMARY == "run_summary.json"
+
+
+# ---------------------------------------------------------------------------
+# save_json / load_json — M-05: atomic writes
+# ---------------------------------------------------------------------------
+
+
+class TestSaveJsonAtomic:
+    """M-05: save_json must use tempfile + fsync + os.replace (atomic)."""
+
+    def test_basic_write_and_load(self, tmp_path):
+        """Baseline: save_json still works for normal use."""
+        path = str(tmp_path / "data.json")
+        save_json({"key": "value"}, path)
+        loaded = load_json(path)
+        assert loaded == {"key": "value"}
+
+    def test_creates_parent_dirs(self, tmp_path):
+        path = str(tmp_path / "deep" / "nested" / "data.json")
+        save_json({"x": 1}, path)
+        assert load_json(path) == {"x": 1}
+
+    def test_overwrites_existing(self, tmp_path):
+        path = str(tmp_path / "data.json")
+        save_json({"version": 1}, path)
+        save_json({"version": 2}, path)
+        assert load_json(path) == {"version": 2}
+
+    def test_original_intact_on_replace_failure(self, tmp_path):
+        """If os.replace fails, the original file must be unchanged."""
+        path = str(tmp_path / "data.json")
+        save_json({"original": True}, path)
+
+        from unittest.mock import patch
+        with patch("factory.util.os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                save_json({"corrupted": True}, path)
+
+        # Original file must be intact
+        assert load_json(path) == {"original": True}
+
+    def test_no_temp_files_left_on_failure(self, tmp_path):
+        """On failure, the temp file must be cleaned up."""
+        path = str(tmp_path / "data.json")
+        save_json({"original": True}, path)
+
+        from unittest.mock import patch
+        with patch("factory.util.os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                save_json({"bad": True}, path)
+
+        # Only the original file should remain — no .tmp files
+        files = list(tmp_path.iterdir())
+        assert len(files) == 1
+        assert files[0].name == "data.json"
+
+    def test_sorted_keys_and_indent(self, tmp_path):
+        """Output must be pretty-printed with sorted keys (backward compat)."""
+        path = str(tmp_path / "data.json")
+        save_json({"z": 1, "a": 2}, path)
+        with open(path) as f:
+            raw = f.read()
+        # Sorted keys: "a" appears before "z"
+        assert raw.index('"a"') < raw.index('"z"')
+        # Indented (not compact)
+        assert "\n" in raw
+        # Trailing newline
+        assert raw.endswith("\n")

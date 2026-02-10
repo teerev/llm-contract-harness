@@ -9,6 +9,7 @@ import pathlib
 import posixpath
 import shlex
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -67,11 +68,29 @@ def truncate(text: str, max_chars: int = MAX_EXCERPT_CHARS) -> str:
 
 
 def save_json(data: Any, path: str) -> None:
-    """Write *data* as pretty-printed, sorted-key JSON."""
-    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    """Write *data* as pretty-printed, sorted-key JSON, atomically.
+
+    Uses tempfile + fsync + os.replace so that a crash mid-write never
+    leaves a truncated file at *path*.  (M-05: matches the atomic pattern
+    already used by ``planner/io.py::_atomic_write`` and
+    ``factory/nodes_tr.py::_atomic_write``.)
+    """
+    content = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    parent = pathlib.Path(path).parent
+    parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_json(path: str) -> Any:

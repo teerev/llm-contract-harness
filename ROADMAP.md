@@ -192,9 +192,15 @@ acceptance commands. Assert `E007` in returned errors.
 
 ---
 
-## M-05  Make `save_json` atomic [HIGH]
+## M-05  Make `save_json` atomic [HIGH] ✅ DONE
 
 **Fixes:** AUD-04
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/util.py` — `save_json` now uses `tempfile.mkstemp` + `fsync`
++ `os.replace`, with `BaseException` cleanup. Matches `planner/io.py::_atomic_write`
+and `factory/nodes_tr.py::_atomic_write`.
+Tests: `TestSaveJsonAtomic` (6 tests) in `tests/factory/test_util.py`.
+Full suite: 412 passed.
 
 **Why:** `factory/util.py::save_json` uses bare `open()` + `json.dump()`.
 A kill -9, OOM-killer, or power loss mid-write corrupts the artifact — most
