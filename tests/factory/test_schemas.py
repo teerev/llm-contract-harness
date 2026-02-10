@@ -59,6 +59,34 @@ class TestWorkOrder:
         with pytest.raises(ValidationError, match="must not be empty"):
             self._valid(allowed_files=[""])
 
+    # --- M-07: ".", NUL, and control char rejection ---
+
+    def test_dot_path_rejected(self):
+        with pytest.raises(ValidationError, match="must not be '.'"):
+            self._valid(allowed_files=["."])
+
+    def test_dotslash_path_rejected(self):
+        """'.' is caught after normpath: './' normalizes to '.'."""
+        with pytest.raises(ValidationError, match="must not be '.'"):
+            self._valid(allowed_files=["./"])
+
+    def test_nul_byte_rejected(self):
+        with pytest.raises(ValidationError, match="NUL"):
+            self._valid(allowed_files=["src/a\x00b.py"])
+
+    def test_control_char_rejected(self):
+        with pytest.raises(ValidationError, match="control character"):
+            self._valid(allowed_files=["src/a\x01b.py"])
+
+    def test_tab_in_path_rejected(self):
+        with pytest.raises(ValidationError, match="control character"):
+            self._valid(allowed_files=["src/a\tb.py"])
+
+    def test_normal_path_still_passes(self):
+        """Sanity: normal paths are unaffected by the new checks."""
+        wo = self._valid(allowed_files=["src/main.py"])
+        assert wo.allowed_files == ["src/main.py"]
+
     def test_empty_acceptance_commands_rejected(self):
         with pytest.raises(ValidationError, match="non-empty"):
             self._valid(acceptance_commands=[])

@@ -28,9 +28,17 @@ def _validate_relative_path(p: str) -> str:
     # Reject Windows drive letters
     if re.match(r"^[A-Za-z]:", p):
         raise ValueError(f"path must not contain drive letters: {p}")
+    # M-07: Reject NUL bytes and control characters before normalization.
+    if "\x00" in p:
+        raise ValueError(f"path must not contain NUL byte: {p!r}")
+    if any(ord(c) < 0x20 for c in p):
+        raise ValueError(f"path must not contain control characters: {p!r}")
     normalized = posixpath.normpath(p)
     if normalized.startswith(".."):
         raise ValueError(f"normalized path must not start with '..': {p}")
+    # M-07: Reject "." — normpath preserves it but it resolves to the repo root.
+    if normalized == ".":
+        raise ValueError(f"path must not be '.': {p}")
     # Reject glob characters — paths must be literal, never patterns
     if any(c in normalized for c in _GLOB_CHARS):
         raise ValueError(f"path must not contain glob characters: {p}")

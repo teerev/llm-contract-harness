@@ -263,9 +263,14 @@ element after normpath + dedup).
 
 ---
 
-## M-07  Reject `"."`, NUL, and control chars in path validator [MEDIUM]
+## M-07  Reject `"."`, NUL, and control chars in path validator [MEDIUM] ✅ DONE
 
 **Fixes:** AUD-13
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/schemas.py::_validate_relative_path` — rejects NUL bytes and
+control chars (ord < 0x20) before normalization, rejects `"."` after normpath.
+Tests: 6 new tests in `TestWorkOrder` (`tests/factory/test_schemas.py`).
+Full suite: 425 passed.
 
 **Why:** `_validate_relative_path` in `factory/schemas.py` rejects `..`,
 absolute paths, and glob chars, but accepts `"."` (which `normpath` keeps
