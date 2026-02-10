@@ -2,7 +2,7 @@
 
 A **deterministic contract layer** between LLM planning and LLM code execution.
 
-`aos` splits autonomous software engineering into two isolated stages connected by a validated, machine-readable contract:
+This repository splits autonomous software engineering into two isolated stages connected by a validated, machine-readable contract:
 
 1. **Planner** -- an LLM decomposes a product spec into a sequence of work orders with preconditions, postconditions, file scopes, and acceptance tests.
 2. **Factory** -- a separate LLM executes each work order inside a deterministic harness (SE → TR → PO) that enforces scope, validates hashes, runs acceptance, and rolls back on failure.
