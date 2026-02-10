@@ -227,9 +227,16 @@ temp files remain.
 
 ---
 
-## M-06  Apply `posixpath.normpath` in `normalize_work_order` [MEDIUM]
+## M-06  Apply `posixpath.normpath` in `normalize_work_order` [MEDIUM] ✅ DONE
 
 **Fixes:** AUD-10
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py::normalize_work_order` — applies `posixpath.normpath`
+to `allowed_files`, `context_files`, and precondition/postcondition `path` values
+(with empty-string guard). Runs before deduplication so `./src/a.py` and `src/a.py`
+collapse to a single entry.
+Tests: 7 new tests in `TestNormalize` (`test_structural_validation.py`).
+Full suite: 419 passed.
 
 **Why:** The planner's chain validator tracks cumulative file state using
 raw (non-normpath'd) strings. `"./src/a.py"` and `"src/a.py"` are treated

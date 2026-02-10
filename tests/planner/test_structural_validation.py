@@ -554,3 +554,54 @@ class TestNormalize:
         raw = {"id": "WO-01", "notes": "  keep spaces  "}
         result = normalize_work_order(raw)
         assert result["notes"] == "keep spaces"  # stripped but not deduped
+
+    # --- M-06: posixpath.normpath on path fields ---
+
+    def test_normpath_allowed_files(self):
+        """./src/a.py and src/a.py collapse to one entry after normpath + dedup."""
+        raw = {"allowed_files": ["./src/a.py", "src/a.py", "src/./b.py"]}
+        result = normalize_work_order(raw)
+        assert result["allowed_files"] == ["src/a.py", "src/b.py"]
+
+    def test_normpath_context_files(self):
+        raw = {"context_files": ["./src/a.py", "src/a.py"]}
+        result = normalize_work_order(raw)
+        assert result["context_files"] == ["src/a.py"]
+
+    def test_normpath_precondition_paths(self):
+        raw = {
+            "preconditions": [
+                {"kind": "file_exists", "path": "./src/a.py"},
+                {"kind": "file_absent", "path": "src/./b.py"},
+            ],
+        }
+        result = normalize_work_order(raw)
+        assert result["preconditions"][0]["path"] == "src/a.py"
+        assert result["preconditions"][1]["path"] == "src/b.py"
+
+    def test_normpath_postcondition_paths(self):
+        raw = {
+            "postconditions": [
+                {"kind": "file_exists", "path": "./src/a.py"},
+            ],
+        }
+        result = normalize_work_order(raw)
+        assert result["postconditions"][0]["path"] == "src/a.py"
+
+    def test_normpath_does_not_touch_acceptance_commands(self):
+        """acceptance_commands are shell strings, not paths — must not be normpath'd."""
+        raw = {"acceptance_commands": ["python -c './test.py'"]}
+        result = normalize_work_order(raw)
+        assert result["acceptance_commands"] == ["python -c './test.py'"]
+
+    def test_normpath_does_not_touch_forbidden(self):
+        """forbidden entries are free text, not paths — must not be normpath'd."""
+        raw = {"forbidden": ["./do not do this"]}
+        result = normalize_work_order(raw)
+        assert result["forbidden"] == ["./do not do this"]
+
+    def test_normpath_already_clean_unchanged(self):
+        """Paths that are already normalized stay the same."""
+        raw = {"allowed_files": ["src/a.py", "lib/b.py"]}
+        result = normalize_work_order(raw)
+        assert result["allowed_files"] == ["src/a.py", "lib/b.py"]

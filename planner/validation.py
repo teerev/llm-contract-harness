@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import posixpath
 import re
 import shlex
 from dataclasses import dataclass, field as dc_field
@@ -105,8 +106,32 @@ def _deduplicate(items: list) -> list:
 
 
 def normalize_work_order(raw: dict) -> dict:
-    """Strip whitespace and deduplicate list fields. Returns a new dict."""
+    """Strip whitespace, normpath all path fields, and deduplicate list fields.
+
+    Returns a new dict.  M-06: applies ``posixpath.normpath`` to path-bearing
+    fields so that ``"./src/a.py"`` and ``"src/a.py"`` are treated identically
+    by the chain validator (matching the factory's schema-level normalization).
+    """
     cleaned = _strip_strings(raw)
+
+    # M-06: Normalize path strings so chain validation matches factory semantics.
+    # Guard: only normpath non-empty strings (normpath("") == "." which would
+    # hide empty-path errors from the schema validator).
+    def _normpath_safe(p: str) -> str:
+        return posixpath.normpath(p) if p else p
+
+    for path_key in ("allowed_files", "context_files"):
+        if path_key in cleaned and isinstance(cleaned[path_key], list):
+            cleaned[path_key] = [
+                _normpath_safe(p) if isinstance(p, str) else p
+                for p in cleaned[path_key]
+            ]
+    for cond_key in ("preconditions", "postconditions"):
+        if cond_key in cleaned and isinstance(cleaned[cond_key], list):
+            for cond in cleaned[cond_key]:
+                if isinstance(cond, dict) and isinstance(cond.get("path"), str):
+                    cond["path"] = _normpath_safe(cond["path"])
+
     for list_key in ("allowed_files", "context_files", "forbidden", "acceptance_commands"):
         if list_key in cleaned and isinstance(cleaned[list_key], list):
             cleaned[list_key] = _deduplicate(cleaned[list_key])
