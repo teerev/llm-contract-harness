@@ -1,0 +1,44 @@
+{
+  "id": "WO-06",
+  "title": "Add CLI game loop entrypoint",
+  "intent": "Provide a terminal game loop callable via hangman.cli.main and python -m hangman.",
+  "preconditions": [
+    {
+      "kind": "file_absent",
+      "path": "hangman/cli.py"
+    },
+    {
+      "kind": "file_absent",
+      "path": "hangman/__main__.py"
+    }
+  ],
+  "postconditions": [
+    {
+      "kind": "file_exists",
+      "path": "hangman/cli.py"
+    },
+    {
+      "kind": "file_exists",
+      "path": "hangman/__main__.py"
+    }
+  ],
+  "allowed_files": [
+    "hangman/cli.py",
+    "hangman/__main__.py"
+  ],
+  "forbidden": [
+    "Do not change existing logic or tests."
+  ],
+  "acceptance_commands": [
+    "python -c \"from hangman import cli; assert hasattr(cli,'main') and callable(cli.main); import hangman.__main__ as m; assert hasattr(m,'main') and callable(m.main)\""
+  ],
+  "context_files": [
+    "hangman/cli.py",
+    "hangman/__main__.py",
+    "hangman/words.py",
+    "hangman/logic.py",
+    "hangman/state.py"
+  ],
+  "notes": "Implement a simple input/print loop: choose a word, create initial GameState, repeatedly show masked word and guessed letters, prompt for a single-letter guess, apply_guess, and exit when is_won or is_lost. main() should return an int exit code (0). __main__.py should call cli.main() via SystemExit.",
+  "verify_exempt": false
+}

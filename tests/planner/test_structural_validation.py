@@ -11,6 +11,7 @@ from planner.validation import (
     E004_GLOB,
     E005_SCHEMA,
     E006_SYNTAX,
+    E007_SHLEX,
     SHELL_OPERATOR_TOKENS,
     ValidationError,
     _check_python_c_syntax,
@@ -244,13 +245,64 @@ class TestE003ShellOp:
         errors = validate_plan([wo])
         assert E003_SHELL_OP not in _codes(errors)
 
-    def test_shlex_parse_error_skipped(self):
-        """Commands with unmatched quotes survive shlex.split failure — documents behavior."""
+    def test_shlex_parse_error_emits_e007(self):
+        """M-04: Commands with unmatched quotes now produce E007 (not silent skip)."""
         wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
         errors = validate_plan([wo])
-        # shlex.split raises ValueError → continue; the command is NOT flagged E003.
-        # This documents current behavior: shlex parse failures are silently skipped.
-        assert E003_SHELL_OP not in _codes(errors)
+        assert E007_SHLEX in _codes(errors)
+        assert E003_SHELL_OP not in _codes(errors)  # E003 not reached — E007 replaces it
+
+
+# ---------------------------------------------------------------------------
+# E007: Unparseable acceptance commands (M-04)
+# ---------------------------------------------------------------------------
+
+
+class TestE007Shlex:
+    """M-04: shlex.split failure must produce E007, not silently pass."""
+
+    def test_unmatched_single_quote(self):
+        wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
+        errors = validate_plan([wo])
+        assert E007_SHLEX in _codes(errors)
+
+    def test_unmatched_double_quote(self):
+        wo = _wo("WO-01", acceptance_commands=['echo "unterminated'])
+        errors = validate_plan([wo])
+        assert E007_SHLEX in _codes(errors)
+
+    def test_valid_command_no_e007(self):
+        wo = _wo("WO-01", acceptance_commands=['python -c "print(1)"'])
+        errors = validate_plan([wo])
+        assert E007_SHLEX not in _codes(errors)
+
+    def test_multiple_bad_commands_multiple_e007(self):
+        """Each unparseable command gets its own E007."""
+        wo = _wo("WO-01", acceptance_commands=[
+            "echo 'a",
+            "echo \"b",
+        ])
+        errors = validate_plan([wo])
+        e007s = [e for e in errors if e.code == E007_SHLEX]
+        # At least 2 E007 errors (one from E003 loop, one from _check_python_c_syntax
+        # per command — but the E003 loop and python-c check may both fire for the same
+        # command). The important thing: no silent skip.
+        assert len(e007s) >= 2
+
+    def test_e007_via_parse_and_validate(self):
+        """Full pipeline: parse_and_validate catches shlex errors."""
+        _, errors = parse_and_validate({
+            "work_orders": [
+                _wo("WO-01", acceptance_commands=["echo 'bad"]),
+            ],
+        })
+        assert E007_SHLEX in _codes(errors)
+
+    def test_e007_message_contains_command(self):
+        wo = _wo("WO-01", acceptance_commands=["echo 'unterminated"])
+        errors = validate_plan([wo])
+        e007s = [e for e in errors if e.code == E007_SHLEX]
+        assert any("unterminated" in e.message for e in e007s)
 
 
 # ---------------------------------------------------------------------------
@@ -402,12 +454,12 @@ class TestE006Syntax:
     def test_helper_returns_none_for_non_python(self):
         assert _check_python_c_syntax("bash foo.sh", "WO-01") is None
 
-    def test_helper_returns_none_on_shlex_error(self):
-        """Unmatched quotes → shlex.split ValueError → returns None (no E006).
-
-        Documents that commands with mismatched quotes bypass syntax checking.
-        """
-        assert _check_python_c_syntax("python -c 'print(1", "WO-01") is None
+    def test_helper_returns_e007_on_shlex_error(self):
+        """M-04: Unmatched quotes → shlex.split ValueError → returns E007."""
+        err = _check_python_c_syntax("python -c 'print(1", "WO-01")
+        assert err is not None
+        assert err.code == E007_SHLEX
+        assert "shlex" in err.message.lower()
 
     def test_incomplete_expression(self):
         """Incomplete expression like 'def' alone is a syntax error."""

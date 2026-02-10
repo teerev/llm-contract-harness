@@ -157,9 +157,14 @@ structured error, not crash.
 
 ---
 
-## M-04  Emit error code on `shlex.split` failure instead of silent skip [HIGH]
+## M-04  Emit error code on `shlex.split` failure instead of silent skip [HIGH] ✅ DONE
 
 **Fixes:** AUD-11
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py` — new `E007_SHLEX` constant; E007 emitted in
+the E003 shell-operator loop and in `_check_python_c_syntax` on `ValueError`.
+Tests: `TestE007Shlex` (6 tests) + 2 updated existing tests in
+`test_structural_validation.py`. Full suite: 406 passed.
 
 **Why:** A command with unmatched quotes (`python -c 'print(1`) silently
 passes E003 and E006 because `shlex.split` raises `ValueError` and the

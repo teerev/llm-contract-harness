@@ -1,0 +1,31 @@
+{
+  "id": "WO-04",
+  "title": "Add built-in word list and selection",
+  "intent": "Provide a fixed built-in word list and a function to choose a word.",
+  "preconditions": [
+    {
+      "kind": "file_absent",
+      "path": "hangman/words.py"
+    }
+  ],
+  "postconditions": [
+    {
+      "kind": "file_exists",
+      "path": "hangman/words.py"
+    }
+  ],
+  "allowed_files": [
+    "hangman/words.py"
+  ],
+  "forbidden": [
+    "Do not add any game logic or CLI wiring."
+  ],
+  "acceptance_commands": [
+    "python -c \"from hangman.words import WORD_LIST, choose_word; assert isinstance(WORD_LIST,list) and len(WORD_LIST)>0; w=choose_word(); assert w in WORD_LIST\""
+  ],
+  "context_files": [
+    "hangman/words.py"
+  ],
+  "notes": "WORD_LIST should be a small hard-coded list of lowercase words (e.g., 5-10 items). choose_word() should return a single item from WORD_LIST, optionally using random.choice.",
+  "verify_exempt": false
+}

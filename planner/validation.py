@@ -34,6 +34,7 @@ E003_SHELL_OP = "E003"    # Shell operator in acceptance command
 E004_GLOB = "E004"        # Glob character in path
 E005_SCHEMA = "E005"      # Pydantic schema validation failed
 E006_SYNTAX = "E006"      # Python syntax error in python -c command
+E007_SHLEX = "E007"       # Unparseable acceptance command (shlex.split failure)
 #
 # E1xx / W1xx — cross-work-order chain checks (validate_plan_v2)
 E101_PRECOND = "E101"            # Precondition unsatisfied
@@ -128,8 +129,17 @@ def _check_python_c_syntax(
     """
     try:
         tokens = shlex.split(cmd_str)
-    except ValueError:
-        return None  # shlex parse errors are surfaced by the shell-op check
+    except ValueError as exc:
+        # M-04: Emit E007 instead of silently skipping.
+        return ValidationError(
+            code=E007_SHLEX,
+            wo_id=wo_id,
+            message=(
+                f"acceptance command has invalid shell syntax "
+                f"(shlex.split failed: {exc}): {cmd_str!r}"
+            ),
+            field="acceptance_commands",
+        )
 
     if len(tokens) >= 3 and tokens[0] == "python" and tokens[1] == "-c":
         code = tokens[2]
@@ -228,8 +238,18 @@ def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
         for cmd_str in acceptance:
             try:
                 tokens = shlex.split(cmd_str)
-            except ValueError:
-                continue  # shlex parse errors are caught elsewhere
+            except ValueError as exc:
+                # M-04: Emit E007 instead of silently skipping.
+                errors.append(ValidationError(
+                    code=E007_SHLEX,
+                    wo_id=wo_id,
+                    message=(
+                        f"acceptance command has invalid shell syntax "
+                        f"(shlex.split failed: {exc}): {cmd_str!r}"
+                    ),
+                    field="acceptance_commands",
+                ))
+                continue
             bad = [t for t in tokens if t in SHELL_OPERATOR_TOKENS]
             if bad:
                 errors.append(ValidationError(

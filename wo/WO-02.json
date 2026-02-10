@@ -1,0 +1,41 @@
+{
+  "id": "WO-02",
+  "title": "Create package skeleton and placeholder test",
+  "intent": "Establish the hangman package root and a minimal pytest test file.",
+  "preconditions": [
+    {
+      "kind": "file_absent",
+      "path": "hangman/__init__.py"
+    },
+    {
+      "kind": "file_absent",
+      "path": "tests/test_placeholder.py"
+    }
+  ],
+  "postconditions": [
+    {
+      "kind": "file_exists",
+      "path": "hangman/__init__.py"
+    },
+    {
+      "kind": "file_exists",
+      "path": "tests/test_placeholder.py"
+    }
+  ],
+  "allowed_files": [
+    "hangman/__init__.py",
+    "tests/test_placeholder.py"
+  ],
+  "forbidden": [
+    "Do not add any other modules or tests yet."
+  ],
+  "acceptance_commands": [
+    "python -c \"import os; assert os.path.isfile('hangman/__init__.py'); assert os.path.isfile('tests/test_placeholder.py'); import hangman\""
+  ],
+  "context_files": [
+    "hangman/__init__.py",
+    "tests/test_placeholder.py"
+  ],
+  "notes": "Keep hangman/__init__.py minimal (e.g., a short module docstring). tests/test_placeholder.py should define a single test that always passes.",
+  "verify_exempt": false
+}
