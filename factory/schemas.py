@@ -6,7 +6,7 @@ import json
 import pathlib
 import posixpath
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -14,6 +14,9 @@ from pydantic import BaseModel, field_validator, model_validator
 # ---------------------------------------------------------------------------
 # Path validation
 # ---------------------------------------------------------------------------
+
+_GLOB_CHARS = frozenset("*?[")
+
 
 def _validate_relative_path(p: str) -> str:
     """Validate that *p* is a safe, relative path and return its normalized form."""
@@ -28,7 +31,37 @@ def _validate_relative_path(p: str) -> str:
     normalized = posixpath.normpath(p)
     if normalized.startswith(".."):
         raise ValueError(f"normalized path must not start with '..': {p}")
+    # Reject glob characters — paths must be literal, never patterns
+    if any(c in normalized for c in _GLOB_CHARS):
+        raise ValueError(f"path must not contain glob characters: {p}")
     return normalized
+
+
+# ---------------------------------------------------------------------------
+# Condition (precondition / postcondition for work orders)
+# ---------------------------------------------------------------------------
+
+class Condition(BaseModel):
+    """A deterministically checkable assertion about the repo file state.
+
+    Used as a precondition (must be true *before* a work order runs) or a
+    postcondition (must be true *after* a work order runs).
+
+    ``kind`` values:
+    - ``"file_exists"``: the file at ``path`` must exist.
+    - ``"file_absent"``: the file at ``path`` must NOT exist.
+
+    Postconditions are restricted to ``file_exists`` only (the factory cannot
+    delete files).
+    """
+
+    kind: Literal["file_exists", "file_absent"]
+    path: str
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def _validate_path(cls, v: str) -> str:
+        return _validate_relative_path(v)
 
 
 # ---------------------------------------------------------------------------
@@ -39,11 +72,14 @@ class WorkOrder(BaseModel):
     id: str
     title: str
     intent: str
+    preconditions: list[Condition] = []
+    postconditions: list[Condition] = []
     allowed_files: list[str]
     forbidden: list[str]
     acceptance_commands: list[str]
     context_files: list[str]
     notes: Optional[str] = None
+    verify_exempt: bool = False
 
     @field_validator("allowed_files", "context_files", mode="before")
     @classmethod
@@ -61,12 +97,20 @@ class WorkOrder(BaseModel):
     def _check_context_constraints(self) -> "WorkOrder":
         if len(self.context_files) > 10:
             raise ValueError("context_files must have at most 10 entries")
-        allowed_set = set(self.allowed_files)
-        for cf in self.context_files:
-            if cf not in allowed_set:
+        return self
+
+    @model_validator(mode="after")
+    def _check_postconditions_file_exists_only(self) -> "WorkOrder":
+        """Postconditions may only use ``file_exists``.
+
+        The factory writes files; it cannot delete them.  A ``file_absent``
+        postcondition is therefore unsatisfiable and must be rejected.
+        """
+        for c in self.postconditions:
+            if c.kind != "file_exists":
                 raise ValueError(
-                    f"context_files must be a subset of allowed_files: "
-                    f"{cf!r} not in allowed_files"
+                    f"postconditions may only use 'file_exists', got "
+                    f"'{c.kind}' for path '{c.path}'"
                 )
         return self
 

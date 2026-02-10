@@ -77,7 +77,13 @@ def po_node(state: dict) -> dict:
     # ------------------------------------------------------------------
     # 1. Global verification
     # ------------------------------------------------------------------
-    verify_cmds = _get_verify_commands(repo_root)
+    # When verify_exempt is True (e.g. WO-01 bootstrap), skip the full
+    # verify script and run only a lightweight syntax check.
+    if work_order.verify_exempt:
+        verify_cmds = [["python", "-m", "compileall", "-q", "."]]
+    else:
+        verify_cmds = _get_verify_commands(repo_root)
+
     verify_results: list[dict] = []
 
     for idx, cmd in enumerate(verify_cmds):
@@ -108,7 +114,35 @@ def po_node(state: dict) -> dict:
     save_json(verify_results, os.path.join(attempt_dir, ARTIFACT_VERIFY_RESULT))
 
     # ------------------------------------------------------------------
-    # 2. Acceptance commands
+    # 2. Postcondition gate — check AFTER writes, BEFORE acceptance.
+    #    Postcondition failures are executor errors (retryable).
+    # ------------------------------------------------------------------
+    for cond in work_order.postconditions:
+        abs_path = os.path.join(repo_root, cond.path)
+        if cond.kind == "file_exists" and not os.path.isfile(abs_path):
+            fb = FailureBrief(
+                stage="acceptance_failed",
+                primary_error_excerpt=(
+                    f"Postcondition file_exists('{cond.path}') is false "
+                    f"after writes. The executor did not create the "
+                    f"expected file."
+                ),
+                constraints_reminder=(
+                    "The executor must create all files declared in "
+                    "postconditions."
+                ),
+            )
+            save_json(
+                [], os.path.join(attempt_dir, ARTIFACT_ACCEPTANCE_RESULT)
+            )
+            return {
+                "verify_results": verify_results,
+                "acceptance_results": [],
+                "failure_brief": fb.model_dump(),
+            }
+
+    # ------------------------------------------------------------------
+    # 3. Acceptance commands
     # ------------------------------------------------------------------
     acceptance_results: list[dict] = []
 
