@@ -1,16 +1,22 @@
-# Factory Harness (SE → TR → PO)
+# aos — Autonomous Operating System
 
-A minimal, deterministic **factory harness** that runs a strict **SE → TR → PO** loop using LangGraph:
+A **deterministic contract layer** between LLM planning and LLM code execution.
 
-- **SE (Software Engineer)**: an LLM proposes **direct file writes** (full new contents), as strict JSON.
-- **TR (Tool Runner / Applier)**: deterministically validates scope + preconditions and performs **in-situ atomic writes** to the product repo.
-- **PO (Verifier / Judge)**: deterministically runs **global verification** + **acceptance commands** and returns PASS/FAIL.
+`aos` splits autonomous software engineering into two isolated stages connected by a validated, machine-readable contract:
 
-The harness (not the LLM) controls retries, rollback, routing, artifacts, and termination.
+1. **Planner** -- an LLM decomposes a product spec into a sequence of work orders with preconditions, postconditions, file scopes, and acceptance tests.
+2. **Factory** -- a separate LLM executes each work order inside a deterministic harness (SE → TR → PO) that enforces scope, validates hashes, runs acceptance, and rolls back on failure.
 
-## Usage
+The work order JSON is the contract surface. Both sides parse it through the same Pydantic schema (`factory/schemas.py`). The planner validates the chain at compile time; the factory re-checks every constraint at runtime. LLM non-determinism cannot bypass deterministic enforcement.
 
-### Planner (compile spec → work orders)
+## Quick start
+
+```bash
+pip install pydantic langgraph openai httpx
+export OPENAI_API_KEY=sk-...
+```
+
+### Compile a spec into work orders
 
 ```bash
 python -m planner compile \
@@ -19,160 +25,119 @@ python -m planner compile \
   --repo /path/to/product
 ```
 
-#### Required flags
+This calls the planner LLM (up to 3 attempts with automatic self-correction), validates the output against structural checks (E0xx) and cross-work-order chain checks (E1xx), computes `verify_exempt` flags, and writes individual `WO-*.json` files plus a manifest.
 
-| Flag | Description |
-|------|-------------|
-| `--spec` | Path to the product spec text file |
-| `--outdir` | Output directory for `WO-*.json` and `manifest.json` |
-
-#### Optional flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--repo` | *(none — assumes empty repo)* | Path to the target product repo; used for precondition chain validation against the existing file listing |
-| `--template` | `./examples/CREATE_WORK_ORDERS_PROMPT.md` | Path to the prompt template |
-| `--artifacts-dir` | `./examples/artifacts` or `./artifacts` | Directory for compile artifacts (prompts, raw LLM responses, validation errors) |
-| `--overwrite` | `false` | Overwrite existing work orders in `--outdir` |
-| `--print-summary` | `false` | Print a one-line summary per work order to stdout |
-
-The planner calls the LLM (up to 3 attempts with automatic self-correction on validation errors), validates the output against both per-work-order structural checks (E0xx) and cross-work-order chain checks (E1xx), and writes individual `WO-*.json` files on success.
-
-Exit codes: `0` = success, `1` = general error, `2` = validation error, `3` = API/network error, `4` = JSON parse error.
-
-The `OPENAI_API_KEY` environment variable must be set.
-
-### Factory (execute a single work order)
+### Execute a single work order
 
 ```bash
 python -m factory run \
   --repo /path/to/product \
-  --work-order /path/to/work_order.json \
-  --out /path/to/outdir \
+  --work-order wo/WO-01.json \
+  --out artifacts/ \
   --llm-model gpt-4o
 ```
 
-### Required flags
+The factory preflight-checks the git repo, then runs an attempt loop: the SE LLM proposes file writes as JSON, the TR node validates scope and content hashes then applies atomic writes, and the PO node runs global verification and acceptance commands. On failure, the repo is rolled back and the loop retries.
 
-| Flag | Description |
-|------|-------------|
-| `--repo` | Path to the product git repo |
-| `--work-order` | Path to the work-order JSON file |
-| `--out` | Output directory for run artifacts |
-| `--llm-model` | LLM model name (e.g. `gpt-4o`, `gpt-4o-mini`) |
+## Planner CLI
 
-### Optional flags
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--spec` | yes | | Product spec text file |
+| `--outdir` | yes | | Output dir for `WO-*.json` and manifest |
+| `--repo` | no | *(empty repo)* | Target product repo for precondition validation |
+| `--template` | no | `planner/PLANNER_PROMPT.md` | Prompt template path |
+| `--artifacts-dir` | no | `./artifacts` | Compile artifacts (prompts, raw LLM responses, errors) |
+| `--overwrite` | no | `false` | Replace existing work orders in outdir |
+| `--print-summary` | no | `false` | Print one-line summary per WO to stdout |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--max-attempts` | `2` | Maximum SE → TR → PO attempts |
-| `--llm-temperature` | `0` | LLM sampling temperature |
-| `--timeout-seconds` | `600` | Per-command timeout in seconds |
+Exit codes: `0` success, `1` general error, `2` validation error, `3` API/network error, `4` JSON parse error.
 
-### Prerequisites
+## Factory CLI
 
-The product repo **must** be a git repo with a **clean working tree** (no staged, unstaged, or untracked changes). The `OPENAI_API_KEY` environment variable must be set.
-
-### Dependencies
-
-Install before use (no `requirements.txt` is shipped per the spec):
-
-```bash
-pip install pydantic langgraph openai
-```
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--repo` | yes | | Product git repo (must be clean) |
+| `--work-order` | yes | | Work order JSON file |
+| `--out` | yes | | Output dir for run artifacts |
+| `--llm-model` | yes | | LLM model name (e.g. `gpt-4o`) |
+| `--max-attempts` | no | `2` | Max SE → TR → PO attempts |
+| `--llm-temperature` | no | `0` | LLM sampling temperature |
+| `--timeout-seconds` | no | `600` | Per-command timeout |
 
 ## How it works
 
-1. **Preflight**: verify git repo + clean tree, record `baseline_commit`.
-2. **Attempt loop** (up to `--max-attempts`):
-   - **SE**: build prompt from work order + context files + prior failure, call LLM, parse `WriteProposal`.
-   - **TR**: validate scope (`writes[*].path ⊆ allowed_files`), validate `base_sha256` hashes, apply atomic file writes.
-   - **PO**: run global verification, then acceptance commands. Any nonzero exit → FAIL.
-3. **On FAIL**: rollback via `git reset --hard <baseline>` + `git clean -fd`, retry if attempts remain.
-4. **On PASS**: leave changes in repo (no auto-commit), compute `repo_tree_hash_after`.
-
-## Global verification (§6.5)
-
-If `scripts/verify.sh` exists in the product repo, run:
-
-- `bash scripts/verify.sh`
-
-Otherwise, run in order:
-
-1. `python -m compileall -q .`
-2. `python -m pip --version`
-3. `python -m pytest -q`
-
-## Artifacts
-
-Each run produces artifacts under `<out>/<run_id>/`:
-
 ```
-<out>/<run_id>/
-  run_summary.json
-  attempt_1/
-    proposed_writes.json
-    write_result.json
-    verify_result.json
-    acceptance_result.json
-    failure_brief.json          # (if failed)
-    verify_0_stdout.txt
-    verify_0_stderr.txt
-    acceptance_0_stdout.txt
-    acceptance_0_stderr.txt
-    ...
-  attempt_2/
-    ...
+  Product Spec                    Work Orders (JSON)                Product Repo
+       │                                │                                │
+       ▼                                ▼                                ▼
+  ┌─────────┐   validate + emit    ┌─────────┐   execute + verify   ┌─────────┐
+  │ Planner │ ──────────────────►  │ WO-*.json│ ──────────────────► │  Repo   │
+  │  (LLM)  │   E0xx, E1xx chain  │ contract │   SE → TR → PO      │ (git)   │
+  └─────────┘   checks            └─────────┘   deterministic       └─────────┘
+       │                                │           harness              │
+       │  retry with                    │                                │
+       │  revision prompt               │                                │  rollback
+       └────────┘                       │                                │  on failure
+                                        ▼                                └────────┘
+                                  Shared schema:
+                                  factory/schemas.py
 ```
 
-## Deterministic run ID
+**Planner stage:** Render prompt template with spec, call LLM, parse JSON, normalize, validate (structural + chain), retry with error feedback if invalid, compute `verify_exempt`, write `WO-*.json`.
 
-`run_id` = first 16 hex chars of `sha256(canonical_json(work_order) + "\n" + baseline_commit)`.
+**Factory stage per work order:**
+1. Preflight: verify clean git tree, check preconditions.
+2. SE node: render prompt with work order + context files + prior failure brief, call LLM, parse `WriteProposal`.
+3. TR node: validate all write paths against `allowed_files`, batch-check `base_sha256` hashes, apply atomic file writes.
+4. PO node: run global verification (or `compileall` if verify-exempt), check postconditions, run acceptance commands.
+5. On failure: rollback via `git reset --hard`, retry if attempts remain. On pass: leave changes in repo.
+
+## Validation error codes
+
+| Code | Scope | Rule |
+|------|-------|------|
+| E000 | Structural | Empty/malformed work orders list |
+| E001 | Per-WO | ID format or contiguity violation |
+| E003 | Per-WO | Shell operator in acceptance command |
+| E004 | Per-WO | Glob character in path |
+| E005 | Per-WO | Pydantic schema validation failure |
+| E006 | Per-WO | Python syntax error in `python -c` command |
+| E101 | Chain | Precondition not satisfiable by cumulative state |
+| E102 | Chain | Contradictory preconditions (exists + absent) |
+| E103 | Chain | Postcondition path not in `allowed_files` |
+| E104 | Chain | `allowed_files` entry has no postcondition |
+| E105 | Chain | `bash scripts/verify.sh` in acceptance (banned) |
+| E106 | Chain | Verify contract never satisfied by plan |
+| W101 | Chain | Acceptance command depends on missing file (warning) |
 
 ## Size limits
 
 | Limit | Value |
 |-------|-------|
-| Max file write size | 200 KB per file |
-| Max total write size | 500 KB across all files |
-| Max context files | 10 files |
-| Max context read budget | 200 KB total |
-| Max error excerpt | 2000 chars |
+| Max file write | 200 KB per file |
+| Max total writes | 500 KB across all files |
+| Max context files | 10 per work order |
 
-## Assumptions
-
-- `context_files` must be a strict subset of `allowed_files`. This is enforced during work-order validation to ensure the LLM only reads files it is allowed to write.
-- Global verification fallback always runs `pytest`; if `pytest` is not installed, verification fails unless `scripts/verify.sh` exists.
-- An empty `factory/__init__.py` is created (not listed in the spec's file tree but required for reliable Python package imports).
-- Acceptance commands are split via `shlex.split` and executed without a shell.
-- On failure, rollback is always performed (even if no writes were applied) since it is idempotent and safe.
-- `repo_tree_hash_after` is computed by staging all changes (`git add -A`) then running `git write-tree`. Changes remain staged but not committed.
-
-## Package tree
+## Package layout
 
 ```
-planner/
-  __init__.py        # package marker (empty)
-  __main__.py        # python -m planner entry point
-  cli.py             # argparse wiring, compile command, console output
-  compiler.py        # compile loop: prompt → LLM → validate → revise → write
-  io.py              # file-writing helpers (work orders, artifacts)
-  openai_client.py   # OpenAI Responses API wrapper
-  prompt_template.py # template loading and rendering
-  validation.py      # structural + chain validators, compute_verify_exempt
-  PLANNER_PROMPT.md  # default prompt template
+planner/              Factory contract compiler
+  cli.py              Argparse, exit codes
+  compiler.py         Compile loop: prompt → LLM → validate → revise → write
+  validation.py       Structural + chain validators, verify_exempt
+  prompt_template.py  Template loading and rendering
+  io.py               Atomic file writes, overwrite logic
+  openai_client.py    OpenAI Responses API (background polling)
 
-factory/
-  __init__.py            # package marker (empty)
-  __main__.py            # argparse wiring → run.run_cli()
-  FACTORY_PROMPT.md      # SE prompt template (static text + placeholders)
-  graph.py               # LangGraph StateGraph, routing, finalize node
-  llm.py                 # thin OpenAI Chat Completions wrapper
-  nodes_po.py            # PO: verify + acceptance commands
-  nodes_se.py            # SE: prompt rendering + LLM call + parse
-  nodes_tr.py            # TR: scope/hash checks + atomic writes
-  run.py                 # CLI orchestration, preflight, RunSummary
-  schemas.py             # Pydantic models + load helpers
-  util.py                # hashing, truncation, JSON IO, command runner
-  workspace.py           # git helpers (is_clean, rollback, tree hash)
+factory/              Deterministic execution harness
+  graph.py            LangGraph state machine (SE → TR → PO)
+  nodes_se.py         SE: prompt + LLM call + parse WriteProposal
+  nodes_tr.py         TR: scope/hash checks + atomic writes
+  nodes_po.py         PO: verify + acceptance commands
+  schemas.py          Shared Pydantic models (WorkOrder, WriteProposal, etc.)
+  workspace.py        Git helpers (clean check, rollback, tree hash)
+  run.py              CLI orchestration, preflight, RunSummary
 ```
+
+See [INVARIANTS.md](INVARIANTS.md) for the complete list of non-negotiable system constraints and where each is enforced.
