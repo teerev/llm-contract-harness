@@ -10,15 +10,15 @@ from dataclasses import dataclass, field as dc_field
 from typing import Any
 
 from factory.schemas import WorkOrder
+from planner.defaults import (  # noqa: F401 — re-exported for backward compat
+    SHELL_OPERATOR_TOKENS,
+    VERIFY_COMMAND,
+    VERIFY_SCRIPT_PATH,
+    WO_ID_PATTERN_STR,
+)
 
-VERIFY_COMMAND = "bash scripts/verify.sh"
-VERIFY_SCRIPT_PATH = "scripts/verify.sh"
-WO_ID_PATTERN = re.compile(r"^WO-\d{2}$")
+WO_ID_PATTERN = re.compile(WO_ID_PATTERN_STR)
 GLOB_CHARS = set("*?[")
-# Bare tokens that indicate shell operators — incompatible with shell=False.
-# Checked against individual tokens after shlex.split, so semicolons and
-# other characters *inside* quoted strings (e.g. python -c "a; b") are safe.
-SHELL_OPERATOR_TOKENS = frozenset({"|", "||", "&&", ";", ">", ">>", "<", "<<"})
 
 
 # ---------------------------------------------------------------------------

@@ -15,12 +15,16 @@ from planner.io import (
     write_work_orders,
 )
 import planner.openai_client as _oai
-from planner.openai_client import (
+from planner.defaults import (  # noqa: F401 — re-exported for backward compat
+    COMPILE_HASH_HEX_LENGTH,
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_REASONING_EFFORT,
-    OpenAIResponsesClient,
+    MAX_COMPILE_ATTEMPTS,
+    MAX_JSON_PAYLOAD_BYTES,
+    SKIP_DIRS as _SKIP_DIRS,
 )
+from planner.openai_client import OpenAIResponsesClient
 from planner.prompt_template import load_template, render_prompt, resolve_template_path
 from planner.validation import (
     ValidationError,
@@ -28,17 +32,6 @@ from planner.validation import (
     parse_and_validate,
     validate_plan_v2,
 )
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-MAX_COMPILE_ATTEMPTS = 3  # 1 initial + up to 2 retries
-
-# Directories to skip when building repo file listing
-_SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules",
-              ".mypy_cache", ".tox", ".venv", "venv", ".eggs"}
 
 
 # ---------------------------------------------------------------------------
@@ -60,14 +53,12 @@ def _compute_compile_hash(
     h.update(model.encode("utf-8"))
     h.update(b"\n")
     h.update(reasoning_effort.encode("utf-8"))
-    return h.hexdigest()[:16]
+    return h.hexdigest()[:COMPILE_HASH_HEX_LENGTH]
 
 
 # ---------------------------------------------------------------------------
 # JSON parsing from LLM output
 # ---------------------------------------------------------------------------
-
-MAX_JSON_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MB — M-10 defense-in-depth
 
 
 def _parse_json(raw: str) -> dict:

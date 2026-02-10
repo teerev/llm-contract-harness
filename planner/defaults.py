@@ -1,7 +1,7 @@
 """Authoritative defaults for the planner subsystem.
 
 Every tunable parameter and documented constant for the planner lives here.
-Call sites will be updated to import from this module in M-15.
+All planner call sites import from this module (migrated in M-15).
 
 Safety invariants are annotated and must not be exposed via CLI.
 Determinism-sensitive values are annotated and must not be changed without
@@ -10,8 +10,6 @@ understanding the impact on artifact reproducibility.
 See ROADMAP.md Part 4 §4 (inventory table rows 1–20, 42 dup, 45–46, 48, 50)
 and CONTROL_SURFACE.md §3.1–§3.4, §3.10 for provenance.
 """
-
-# TODO(M-15): update call sites to import from here
 
 from __future__ import annotations
 

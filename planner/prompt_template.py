@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 
-
-REQUIRED_PLACEHOLDER = "{{PRODUCT_SPEC}}"
-OPTIONAL_PLACEHOLDERS = ("{{DOCTRINE}}", "{{REPO_HINTS}}")
+from planner.defaults import (  # noqa: F401 — re-exported for backward compat
+    OPTIONAL_PLACEHOLDERS,
+    PLANNER_PROMPT_FILENAME,
+    REQUIRED_PLACEHOLDER,
+)
 
 
 def load_template(path: str) -> str:
@@ -39,7 +41,7 @@ def resolve_template_path(explicit: str | None) -> str:
         return explicit
     # Default: planner/PLANNER_PROMPT.md (relative to the planner package)
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
-    default = os.path.join(pkg_dir, "PLANNER_PROMPT.md")
+    default = os.path.join(pkg_dir, PLANNER_PROMPT_FILENAME)
     if os.path.isfile(default):
         return default
     raise FileNotFoundError(
