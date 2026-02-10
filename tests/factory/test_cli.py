@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from tests.conftest import init_git_repo, write_work_order
+from tests.factory.conftest import init_git_repo, write_work_order
 
 
 def _run_factory(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:

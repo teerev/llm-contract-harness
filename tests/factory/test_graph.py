@@ -32,7 +32,7 @@ from factory.util import (
 )
 from factory.workspace import get_baseline_commit, is_clean
 
-from tests.conftest import (
+from tests.factory.conftest import (
     file_sha256,
     init_git_repo,
     make_valid_proposal_json,
@@ -427,7 +427,7 @@ class TestArtifactForensics:
 
         # Trigger a scope violation
         from factory.nodes_tr import tr_node
-        from tests.conftest import EMPTY_SHA256
+        from tests.factory.conftest import EMPTY_SHA256
 
         baseline = get_baseline_commit(repo)
         wo = minimal_work_order()

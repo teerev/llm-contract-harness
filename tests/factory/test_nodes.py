@@ -24,7 +24,7 @@ from factory.util import (
 )
 from factory.workspace import get_baseline_commit
 
-from tests.conftest import (
+from tests.factory.conftest import (
     EMPTY_SHA256,
     file_sha256,
     init_git_repo,

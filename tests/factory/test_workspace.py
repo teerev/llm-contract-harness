@@ -15,7 +15,7 @@ from factory.workspace import (
     is_git_repo,
     rollback,
 )
-from tests.conftest import init_git_repo
+from tests.factory.conftest import init_git_repo
 
 
 # ---------------------------------------------------------------------------

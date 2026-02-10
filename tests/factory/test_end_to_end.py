@@ -27,7 +27,7 @@ from factory.util import (
 )
 from factory.workspace import is_clean
 
-from tests.conftest import (
+from tests.factory.conftest import (
     add_verify_script,
     file_sha256,
     init_git_repo,
