@@ -1040,3 +1040,211 @@ the largest source of unstructured, unenforced semantics in the system.
   requiring notes to be structured.
 - Prompt testability guidance (M-11) reduces the impact of notes errors by
   steering acceptance commands away from oracle-dependent assertions.
+
+---
+---
+
+# Part 3: Artifact Audit & Light Tidy (Preparation for CLI / Cloud)
+
+**Date:** 2026-02-10
+
+This section documents the current artifact layout, evaluates naming and
+format consistency, and proposes minimal tidy actions to prepare the system
+for a future CLI and cloud/DB-backed logging — without redesigning anything.
+
+---
+
+## A) Current Artifact Inventory
+
+### Planner artifacts
+
+Directory: `{artifacts_dir}/{compile_hash}/compile/`
+
+Per-run (written once per compile invocation):
+- `prompt_rendered.txt` — the fully-rendered prompt sent to the LLM on the first attempt. Text. Produced by `compiler.py::compile_plan`.
+- `compile_summary.json` — top-level compile outcome: hash, model config, attempt count, errors, warnings, timing. JSON. Produced by `compiler.py::_write_summary`.
+- `manifest_normalized.json` — the final validated manifest (system_overview + verify_contract + work_orders with verify_exempt injected). JSON. Written only on success. Produced by `compiler.py::compile_plan`.
+- `validation_errors.json` — final hard errors + warnings, written only on failure. JSON. Written to both `compile_artifacts/` and `outdir/`. Produced by `compiler.py::compile_plan`.
+
+Per-attempt (one set per compile attempt, up to `MAX_COMPILE_ATTEMPTS=3`):
+- `llm_raw_response_attempt_{N}.txt` — the raw LLM output text for attempt N. Text. Produced by `compiler.py::compile_plan`.
+- `manifest_raw_attempt_{N}.json` — the parsed (but not validated) JSON from attempt N. JSON. Only written if JSON parsing succeeds. Produced by `compiler.py::compile_plan`.
+- `validation_errors_attempt_{N}.json` — errors from attempt N (structural + chain). JSON. Produced by `compiler.py::compile_plan`.
+
+Conditional (only on API-level failures):
+- `raw_response_{label}.json` — full API response dump on error/incomplete/timeout. JSON. Written by `openai_client.py::_dump_response`. Labels include `no_text_attempt_{i}`, `incomplete_attempt_{i}`, `unexpected_status_{i}`, `poll_timeout`.
+
+Output directory: `{outdir}/`
+
+Written only on successful compile:
+- `WO-{NN}.json` — one file per work order (e.g. `WO-01.json`). JSON. Written atomically by `io.py::write_work_orders`.
+- `WORK_ORDERS_MANIFEST.json` — the full manifest (written last). JSON. Written atomically by `io.py::write_work_orders`.
+
+
+### Factory artifacts
+
+Run directory: `{out_dir}/{run_id}/`
+
+Per-run:
+- `work_order.json` — copy of the input work order for reproducibility. JSON. Written by `run.py::run_cli`.
+- `run_summary.json` — final outcome: verdict, attempts, config, tree hash, rollback status. JSON. Written by `run.py::run_cli` (normal path) or the emergency handler (error path).
+
+Attempt directory: `{out_dir}/{run_id}/attempt_{M}/`
+
+Per-attempt (one set per factory attempt, up to `max_attempts`):
+- `se_prompt.txt` — the fully-rendered SE prompt sent to the factory LLM. Text. Written by `nodes_se.py::se_node` (direct `open`).
+- `proposed_writes.json` — the parsed WriteProposal from the SE LLM. JSON. Written by `nodes_se.py::se_node`. Only present if parsing succeeded.
+- `raw_llm_response.json` — the raw SE LLM output, written only on parse failure. JSON. Written by `nodes_se.py::se_node`.
+- `failure_brief.json` — structured failure info (stage, command, exit code, error excerpt). JSON. Written by SE (on precondition/LLM failure), TR (via `_tr_fail`), and finalize (authoritative overwrite).
+- `write_result.json` — TR outcome: write_ok, touched_files, errors. JSON. Written by `nodes_tr.py::tr_node`.
+- `verify_result.json` — list of CmdResult dicts for verify commands. JSON. Written by `nodes_po.py::po_node`.
+- `acceptance_result.json` — list of CmdResult dicts for acceptance commands. JSON. Written by `nodes_po.py::po_node`.
+- `verify_{K}_stdout.txt` / `verify_{K}_stderr.txt` — raw stdout/stderr for verify command K. Binary (written as bytes). Written by `util.py::run_command`.
+- `acceptance_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` — raw stdout/stderr for acceptance command K. Binary (written as bytes). Written by `util.py::run_command`.
+
+---
+
+## B) Naming and Clarity Review
+
+### Planner
+
+- `prompt_rendered.txt` — good as-is. Clearly the rendered prompt.
+- `compile_summary.json` — good as-is. Unambiguous summary file.
+- `manifest_normalized.json` — good as-is. Clearly the post-validation normalized manifest.
+- `manifest_raw_attempt_{N}.json` — good as-is. "raw" clearly means pre-validation.
+- `llm_raw_response_attempt_{N}.txt` — good as-is. Clearly the raw LLM text per attempt.
+- `validation_errors_attempt_{N}.json` — good as-is. Per-attempt errors.
+- `validation_errors.json` — **minor issue**: this name is identical to the per-attempt files but without the `_attempt_{N}` suffix, and it's written to *two* locations (compile artifacts dir AND outdir). The dual-write is intentional (outdir copy is for quick access), but a reader encountering both might be confused about which is authoritative. **Verdict:** acceptable — the outdir copy is a convenience duplicate and `compile_summary.json` links to the artifacts dir. Leave as-is.
+- `raw_response_{label}.json` — **minor issue**: this is the only planner artifact not written via `_atomic_write` (uses bare `open`). The naming is fine; the non-atomic write is consistent with its best-effort diagnostic purpose. Leave as-is.
+- `WO-{NN}.json` / `WORK_ORDERS_MANIFEST.json` — good as-is. Clear, conventional.
+
+### Factory
+
+- `work_order.json` — good as-is.
+- `run_summary.json` — good as-is.
+- `se_prompt.txt` — good as-is. "se" is the established node name.
+- `proposed_writes.json` — good as-is.
+- `raw_llm_response.json` — **note**: only written on parse failure. Name doesn't indicate conditionality, but this is standard practice (absence = success). Good as-is.
+- `failure_brief.json` — good as-is. Name matches the `FailureBrief` schema.
+- `write_result.json` — good as-is.
+- `verify_result.json` / `acceptance_result.json` — good as-is. Consistent `{stage}_result.json` pattern.
+- `verify_{K}_stdout.txt` / `verify_{K}_stderr.txt` — good as-is. Index K distinguishes multiple verify commands.
+- `acceptance_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` — good as-is.
+
+### Cross-system consistency
+
+- The planner uses `compile_summary.json`; the factory uses `run_summary.json`. The names differ because the operations differ (compile vs run). This is correct and should stay.
+- The planner uses `_attempt_{N}` suffixes on filenames; the factory uses `attempt_{M}/` subdirectories. Both approaches are clean and appropriate for their cardinality (planner has 3 attempts in one dir; factory has 2+ attempts each with many files). Good as-is.
+- The planner's rendered prompt is `prompt_rendered.txt`; the factory's is `se_prompt.txt`. Different names for the same concept, but justified by context (planner has one prompt; factory has stage-specific prompts). Good as-is.
+
+**Overall naming verdict:** The naming is clear, consistent, and immediately understandable. No renames needed.
+
+---
+
+## C) Format Review
+
+- All structured data is JSON. All human-readable output capture is TXT. This is correct.
+- `se_prompt.txt` is written via bare `open(..., "w")` (not `save_json` or `_atomic_write`). This is the only factory artifact not written atomically. **Verdict:** low risk — the prompt is a diagnostic artifact, not a verdict. If it's truncated on crash, the run summary still captures the outcome. Leave as-is, but note for M-05 follow-up if consistency is desired later.
+- `verify_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` are written as binary (`"wb"`). This is correct — subprocess output is bytes. The files are plain text in practice but preserving raw bytes avoids encoding issues.
+- `run_summary.json` contains embedded absolute paths (`stdout_path`, `stderr_path`, `proposal_path`, `repo_root`, `out_dir`). These are useful for local debugging but would be awkward for cloud ingestion or cross-machine comparison. **Verdict:** not a problem now. When cloud ingestion is added, a post-processor can strip or relativize paths. No format change needed today.
+- `compile_summary.json` also contains absolute paths (`spec_path`, `template_path`, `artifacts_dir`, `outdir`). Same verdict.
+
+**Overall format verdict:** Formats are appropriate. No changes needed.
+
+---
+
+## D) Iteration and Lifecycle Check
+
+### Planner iteration
+
+- Each compile attempt writes `llm_raw_response_attempt_{N}.txt`, `manifest_raw_attempt_{N}.json`, and `validation_errors_attempt_{N}.json`. The `{N}` suffix prevents overwriting.
+- `compile_summary.json` contains the full `attempt_records` array with per-attempt error lists.
+- A reader can reconstruct the full compile history from filenames alone: attempt 1 had errors (see `validation_errors_attempt_1.json`), attempt 2 was clean (see `validation_errors_attempt_2.json` with `[]`), compile succeeded.
+- **Verdict:** clean. No issues.
+
+### Factory iteration
+
+- Each factory attempt writes all per-attempt artifacts into `attempt_{M}/`. The subdirectory prevents overwriting.
+- `run_summary.json` contains the full `attempts` array with per-attempt records (proposal path, touched files, verify/acceptance results, failure brief).
+- A reader can identify which attempt succeeded (the last one with `failure_brief: null` and `write_ok: true`), which failed (non-null `failure_brief`), and where iteration stopped (the total count vs max_attempts).
+- **Verdict:** clean. No issues.
+
+### Interrupt / crash lifecycle
+
+- M-02 ensures `KeyboardInterrupt` still writes an emergency `run_summary.json` with `verdict: "ERROR"`. The run is never invisible.
+- M-05 ensures `save_json` is atomic, so interrupted writes don't leave truncated JSON.
+- M-09 adds `rollback_failed` to the summary, so post-mortem tooling can distinguish clean vs dirty repos.
+- The planner writes `compile_summary.json` on every exit path (success, validation failure, parse failure).
+- **Verdict:** lifecycle coverage is good after the M-01 through M-10 fixes.
+
+---
+
+## E) Missing Artifacts / Observability Gaps
+
+### E.1 — No planner revision prompt artifact [OPTIONAL]
+
+When the compile loop retries, `_build_revision_prompt` constructs a new prompt containing the errors and the previous response. This revised prompt is sent to the LLM but is never persisted. Only the initial `prompt_rendered.txt` is saved.
+
+**Why it matters:** For debugging retry behavior, you currently have the errors (in `validation_errors_attempt_{N}.json`) and the LLM response (in `llm_raw_response_attempt_{N}.txt`), but not the actual prompt the LLM saw on attempts 2+. This makes it hard to audit whether the revision prompt was well-formed.
+
+**Proposed fix:** In `compiler.py::compile_plan`, write `revision_prompt_attempt_{N}.txt` when `attempt > 1`, immediately after `_build_revision_prompt` returns. One line of code.
+
+**Classification:** OPTIONAL — the error list + previous response are usually sufficient for debugging. The revision prompt can be mentally reconstructed.
+
+### E.2 — No `verify_exempt` decision artifact [OPTIONAL]
+
+`compute_verify_exempt` determines which work orders skip global verification. The computed flags end up in the emitted `WO-{NN}.json` files, but the decision rationale (which verify_contract requirements were satisfied by each WO's cumulative postconditions) is not persisted separately.
+
+**Why it matters:** If a WO unexpectedly gets `verify_exempt: true` or `false`, there's no artifact showing the cumulative state at each step.
+
+**Proposed fix:** None needed now. The M-01 fix ensures `verify_exempt` is always overwritten by the compiler, and the decision is deterministic from `verify_contract` + postconditions (both in the manifest). A future CLI could compute and display this on demand rather than persisting it.
+
+**Classification:** OPTIONAL — deterministically reproducible from existing artifacts.
+
+### E.3 — No factory attempt-level timing [OPTIONAL]
+
+`run_summary.json` has total timing via individual command `duration_seconds`, but no per-attempt wall-clock start/end timestamps. If an attempt takes 5 minutes and you want to know where the time went (LLM call? verify? acceptance?), you can sum command durations but can't see LLM call latency (not captured).
+
+**Why it matters:** Performance debugging. The SE LLM call is often the slowest step and its duration is invisible.
+
+**Proposed fix:** In `_finalize_node` (graph.py), add `attempt_start_timestamp` and `attempt_end_timestamp` to the attempt record. Requires threading a start time through the state or recording it in `se_node`. Low complexity but touches state plumbing.
+
+**Classification:** OPTIONAL — not needed for correctness or auditing, useful for performance work.
+
+### E.4 — No environment snapshot [OPTIONAL]
+
+Neither `compile_summary.json` nor `run_summary.json` captures Python version, platform, or key dependency versions. This makes cross-machine reproducibility harder.
+
+**Why it matters:** A factory run that passes on macOS Python 3.12 might fail on Linux Python 3.11 due to stdlib differences. Without an environment snapshot, this is invisible.
+
+**Proposed fix:** Add a small `environment` dict to both summaries: `python_version`, `platform`, `pydantic_version`. ~5 lines in `compiler.py` and `run.py`.
+
+**Classification:** OPTIONAL — useful for cloud/multi-machine use, not needed for single-machine debugging.
+
+### E.5 — `se_prompt.txt` not written atomically [COSMETIC]
+
+This is the only factory artifact written via bare `open(..., "w")` instead of `save_json` or `_atomic_write`. In practice this doesn't matter (it's a diagnostic artifact, not a verdict), but it's an inconsistency.
+
+**Classification:** COSMETIC — not worth fixing unless you're already touching `nodes_se.py`.
+
+---
+
+## F) Recommended Minimal Tidy Actions
+
+1. **[OPTIONAL] Persist revision prompts on retry** — write `revision_prompt_attempt_{N}.txt` in `compiler.py` when `attempt > 1`. One `write_text_artifact` call. Improves retry debugging. (Ref: E.1)
+
+2. **[OPTIONAL] Add environment snapshot to summaries** — add `python_version`, `platform` to `compile_summary.json` and `run_summary.json`. ~5 lines per file. Prepares for cross-machine and cloud use. (Ref: E.4)
+
+3. **[COSMETIC] Make `se_prompt.txt` write atomic** — replace bare `open` in `nodes_se.py:226` with a call through `save_json`'s sibling or a text-atomic-write helper. Consistency only. (Ref: E.5)
+
+4. **[NO ACTION] Naming** — all artifact names are clear and consistent. No renames needed. (Ref: Section B)
+
+5. **[NO ACTION] Formats** — JSON for structured data, TXT for human-readable. Correct throughout. (Ref: Section C)
+
+6. **[NO ACTION] Iteration lifecycle** — planner uses `_attempt_{N}` suffixes, factory uses `attempt_{M}/` subdirectories. Both are clean and non-overwriting. (Ref: Section D)
+
+7. **[NO ACTION] Absolute paths in summaries** — they're useful for local debugging. Relativize later when cloud ingestion is built, not now. (Ref: Section C)
+
+8. **[DEFERRED] Per-attempt timing** — useful for performance work but requires state plumbing. Not worth doing as a tidy action. (Ref: E.3)
+
+9. **[DEFERRED] verify_exempt decision trace** — deterministically reproducible from existing artifacts. Not worth a new artifact. (Ref: E.2)
