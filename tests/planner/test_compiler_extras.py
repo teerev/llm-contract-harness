@@ -75,6 +75,20 @@ class TestParseJson:
         with pytest.raises((json.JSONDecodeError, ValueError)):
             _parse_json("```\nnot json\n```")
 
+    # --- M-10: payload size guard ---
+
+    def test_oversized_payload_rejected(self):
+        """Payloads over 10 MB must be rejected before json.loads."""
+        huge = '{"x": "' + "A" * (11 * 1024 * 1024) + '"}'
+        with pytest.raises(ValueError, match="too large"):
+            _parse_json(huge)
+
+    def test_large_but_under_limit_accepted(self):
+        """Payloads under 10 MB must still parse normally."""
+        data = '{"x": "' + "A" * (1024 * 1024) + '"}'  # ~1 MB
+        result = _parse_json(data)
+        assert "x" in result
+
 
 # ---------------------------------------------------------------------------
 # _compute_compile_hash

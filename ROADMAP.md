@@ -365,9 +365,14 @@ Assert `run_summary.json` contains `"rollback_failed": true`.
 
 ---
 
-## M-10  Add JSON payload size guard [LOW]
+## M-10  Add JSON payload size guard [LOW] ✅ DONE
 
 **Fixes:** AUD-08 (size component only)
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/compiler.py::_parse_json` and `factory/llm.py::parse_proposal_json`
+— reject payloads > 10 MB before `json.loads`.
+Tests: 2 tests each in `tests/planner/test_compiler_extras.py` and
+`tests/factory/test_llm.py`. Full suite: 432 passed.
 
 **Why:** Neither `_parse_json` (planner) nor `parse_proposal_json` (factory)
 enforces a maximum payload size before calling `json.loads`. In practice the

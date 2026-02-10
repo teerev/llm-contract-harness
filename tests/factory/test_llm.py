@@ -48,6 +48,20 @@ class TestParseProposalJson:
         result = parse_proposal_json(raw)
         assert result["summary"] == "has ``` in it"
 
+    # --- M-10: payload size guard ---
+
+    def test_oversized_payload_rejected(self):
+        """Payloads over 10 MB must be rejected before json.loads."""
+        huge = '{"summary": "' + "A" * (11 * 1024 * 1024) + '", "writes": []}'
+        with pytest.raises(ValueError, match="too large"):
+            parse_proposal_json(huge)
+
+    def test_large_but_under_limit_accepted(self):
+        """Payloads under 10 MB must still parse normally."""
+        data = '{"summary": "' + "A" * (1024 * 1024) + '", "writes": []}'
+        result = parse_proposal_json(data)
+        assert "summary" in result
+
 
 # ---------------------------------------------------------------------------
 # _get_client / complete — key handling
