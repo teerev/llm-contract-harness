@@ -108,17 +108,22 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
 
     try:
         final_state = graph.invoke(initial_state)
-    except Exception as exc:
+    except BaseException as exc:
         # ------------------------------------------------------------------
         # Emergency handling: best-effort rollback + write summary
+        # M-02: Catch BaseException (not just Exception) so that
+        # KeyboardInterrupt during TR writes still triggers rollback
+        # instead of leaving the repo dirty.
         # ------------------------------------------------------------------
         error_detail = traceback.format_exc()
 
         # Best-effort rollback — the repo may have writes applied.
         # Guard against rollback itself failing (e.g. locked index).
+        # Use BaseException so a second Ctrl-C during cleanup doesn't
+        # defeat the rollback.
         try:
             rollback(repo_root, baseline_commit)
-        except Exception as rb_exc:
+        except BaseException as rb_exc:
             print(
                 f"WARNING: Best-effort rollback failed: {rb_exc}. "
                 "The repo may be in a dirty state. "
@@ -143,7 +148,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
         try:
             save_json(summary_dict, summary_path)
-        except Exception:
+        except BaseException:
             print(
                 f"CRITICAL: Failed to write run summary: {exc}",
                 file=sys.stderr,
@@ -152,7 +157,14 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         print(f"Verdict: ERROR (unhandled exception)", file=sys.stderr)
         print(f"Exception: {exc}", file=sys.stderr)
         print(f"Run summary: {summary_path}", file=sys.stderr)
-        sys.exit(2)
+
+        # Type-specific exit codes (M-02):
+        if isinstance(exc, KeyboardInterrupt):
+            sys.exit(130)  # Standard SIGINT exit code (128 + 2)
+        elif isinstance(exc, SystemExit):
+            raise  # Preserve the original exit code
+        else:
+            sys.exit(2)
 
     # ------------------------------------------------------------------
     # Write run_summary.json

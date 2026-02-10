@@ -184,6 +184,106 @@ class TestEmergencyHandler:
 
 
 # ---------------------------------------------------------------------------
+# Action 3: M-02 — BaseException (KeyboardInterrupt) triggers rollback
+# ---------------------------------------------------------------------------
+
+
+class TestBaseExceptionRollback:
+    """M-02: KeyboardInterrupt during graph execution must trigger rollback,
+    write an emergency summary, and exit with code 130 (standard SIGINT)."""
+
+    def test_keyboard_interrupt_triggers_rollback(self, tmp_path, capsys):
+        """Ctrl-C during graph.invoke → rollback + ERROR summary + exit 130."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        args = _make_args(repo, wo_path, out, max_attempts=1)
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.side_effect = KeyboardInterrupt()
+
+        with patch("factory.run.build_graph", return_value=mock_graph):
+            with pytest.raises(SystemExit) as exc_info:
+                run_cli(args)
+
+        # Exit code 130 = 128 + SIGINT(2)
+        assert exc_info.value.code == 130
+
+        # Repo must be clean (rollback was performed)
+        assert is_clean(repo)
+
+        # Emergency summary must be written with ERROR verdict
+        run_dirs = os.listdir(out)
+        assert len(run_dirs) == 1
+        run_dir = os.path.join(out, run_dirs[0])
+
+        summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
+        assert summary["verdict"] == "ERROR"
+
+        # stderr must contain the verdict
+        captured = capsys.readouterr()
+        assert "Verdict: ERROR" in captured.err
+
+    def test_keyboard_interrupt_with_dirty_repo(self, tmp_path, capsys):
+        """If KeyboardInterrupt happens after a file was written, the file
+        must be restored by rollback."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        # Record original content
+        orig = open(os.path.join(repo, "hello.txt")).read()
+
+        args = _make_args(repo, wo_path, out, max_attempts=1)
+
+        def dirty_then_interrupt(state):
+            """Simulate: graph writes a file then KeyboardInterrupt fires."""
+            with open(os.path.join(repo, "hello.txt"), "w") as f:
+                f.write("DIRTY — partial write from TR\n")
+            raise KeyboardInterrupt()
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.side_effect = dirty_then_interrupt
+
+        with patch("factory.run.build_graph", return_value=mock_graph):
+            with pytest.raises(SystemExit) as exc_info:
+                run_cli(args)
+
+        assert exc_info.value.code == 130
+
+        # Rollback must have restored the file
+        assert is_clean(repo)
+        with open(os.path.join(repo, "hello.txt")) as f:
+            assert f.read() == orig
+
+    def test_system_exit_preserved(self, tmp_path, capsys):
+        """SystemExit from graph.invoke must re-raise with original code,
+        not be swallowed or remapped to 2."""
+        repo = init_git_repo(str(tmp_path / "repo"))
+        out = str(tmp_path / "out")
+        wo_path = str(tmp_path / "wo.json")
+        write_work_order(wo_path)
+
+        args = _make_args(repo, wo_path, out, max_attempts=1)
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.side_effect = SystemExit(42)
+
+        with patch("factory.run.build_graph", return_value=mock_graph):
+            with pytest.raises(SystemExit) as exc_info:
+                run_cli(args)
+
+        # Original exit code must be preserved
+        assert exc_info.value.code == 42
+
+        # Repo must still be clean (rollback was performed before re-raise)
+        assert is_clean(repo)
+
+
+# ---------------------------------------------------------------------------
 # Action 4: Multi-write failure rollback — atomicity guarantee
 # ---------------------------------------------------------------------------
 

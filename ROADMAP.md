@@ -76,9 +76,15 @@ LLM-provided value is gone.
 
 ---
 
-## M-02  Catch `BaseException` in the emergency handler [CRITICAL]
+## M-02  Catch `BaseException` in the emergency handler [CRITICAL] ✅ DONE
 
 **Fixes:** AUD-05
+**Status:** Implemented and tested (2026-02-10).
+Code: `factory/run.py` — `except BaseException`, type-specific exit codes
+(130 for KeyboardInterrupt, re-raise for SystemExit).
+Tests: `TestBaseExceptionRollback` in `tests/factory/test_end_to_end.py`
+(3 tests: rollback on Ctrl-C, dirty-repo restoration, SystemExit preserved).
+Full suite: 389 passed.
 
 **Why this matters:** Users routinely press Ctrl-C during long factory runs
 (LLM calls take minutes). `KeyboardInterrupt` inherits from `BaseException`,
