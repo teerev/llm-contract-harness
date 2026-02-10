@@ -1,13 +1,13 @@
 # llm-compiler
 
-A **deterministic contract layer** between LLM planning and LLM code execution.
+A **structurally enforced** contract layer between LLM planning and LLM code execution.
 
 This repository splits autonomous software engineering into two isolated stages connected by a validated, machine-readable contract:
 
 1. **Planner** -- an LLM decomposes a product spec into a sequence of work orders with preconditions, postconditions, file scopes, and acceptance tests.
-2. **Factory** -- a separate LLM executes each work order inside a deterministic harness (SE → TR → PO) that enforces scope, validates hashes, runs acceptance, and rolls back on failure.
+2. **Factory** -- a separate LLM executes each work order inside a structural enforcement harness (SE → TR → PO) that validates scope, checks content hashes, runs acceptance commands, and rolls back on failure.
 
-The work order JSON is the contract surface. Both sides parse it through the same Pydantic schema (`factory/schemas.py`). The planner validates the chain at compile time; the factory re-checks every constraint at runtime. LLM non-determinism cannot bypass deterministic enforcement.
+The work order JSON is the contract surface. Both sides parse it through the same Pydantic schema (`factory/schemas.py`). The planner validates the chain at compile time; the factory re-checks every constraint at runtime. Deterministic validation of file scope, path safety, and content hashes ensures that LLM non-determinism cannot bypass structural enforcement.
 
 ## Quick start
 
@@ -64,6 +64,62 @@ Exit codes: `0` success, `1` general error, `2` validation error, `3` API/networ
 | `--max-attempts` | no | `2` | Max SE → TR → PO attempts |
 | `--llm-temperature` | no | `0` | LLM sampling temperature |
 | `--timeout-seconds` | no | `600` | Per-command timeout |
+| `--allow-verify-exempt` | no | `false` | Honor `verify_exempt=true` in work orders (M-22) |
+
+## Security notice
+
+**Acceptance commands and LLM-authored code run unsandboxed** with the
+operator's full privileges. The factory uses `subprocess.run(shell=False)`,
+which prevents shell metacharacter injection but does not restrict what
+executables the LLM invokes or what those executables do. An adversarial or
+confused LLM can read arbitrary files, make network requests, or modify the
+host system.
+
+**Run the factory inside a disposable container** (or equivalent sandbox)
+whenever processing untrusted specs, untrusted work orders, or using LLM
+models whose output cannot be fully trusted. Do not run on machines with
+access to production secrets, SSH keys, or cloud credentials without
+network isolation.
+
+## Prerequisites
+
+- **Git** installed and on `PATH`. The target repo must have at least one
+  commit.
+- **Python 3.10+** on `PATH` with `pip` and `pytest` available (used by
+  the default verify fallback).
+- **`OPENAI_API_KEY`** environment variable set.
+- **Unrestricted HTTPS access** to `api.openai.com` (no proxy support).
+- **Sole-writer access** to the target repo. The factory assumes it is the
+  only process modifying the repo during execution. There is no file
+  locking; concurrent modification is undefined behavior.
+- **Disposable target repo.** The factory runs `git reset --hard` +
+  `git clean -fdx` on failure. Do not point `--repo` at a repo with
+  uncommitted work you want to keep.
+
+## Guarantees
+
+The following properties hold under the prerequisites above:
+
+- **Enforcement checks are deterministic.** Given the same LLM output, the
+  same work order, and the same repo state, path validation, scope checks,
+  base-hash checks, and precondition/postcondition gates produce the same
+  verdict every time. No hidden state, no randomness.
+- **LLM non-determinism cannot bypass structural enforcement.** No matter
+  what the LLM outputs, it cannot write to files outside `allowed_files`,
+  write to paths outside the repo root, skip the hash check, or avoid
+  acceptance command execution.
+- **The planner validates work-order chains.** The compile-retry loop with
+  E0xx/E1xx error codes, cross-work-order precondition/postcondition
+  tracking, and `verify_exempt` computation is a genuine validation
+  pipeline.
+- **The factory rolls back on failure** (under normal process lifecycle).
+  `BaseException` handler and finalize-node rollback restore the repo to
+  baseline. Tested and verified.
+- **Comprehensive artifact trail.** Every attempt writes prompts, proposals,
+  write results, verify/acceptance output, and failure briefs. The run
+  summary aggregates per-attempt records.
+- **487 tests** cover enforcement invariants, including adversarial-audit
+  hardening (M-01–M-10) and credibility fixes (M-20–M-23).
 
 ## How it works
 
@@ -71,11 +127,11 @@ Exit codes: `0` success, `1` general error, `2` validation error, `3` API/networ
   Product Spec                    Work Orders (JSON)                Product Repo
        │                                │                                │
        ▼                                ▼                                ▼
-  ┌─────────┐   validate + emit    ┌─────────┐   execute + verify   ┌─────────┐
-  │ Planner │ ──────────────────►  │ WO-*.json│ ──────────────────► │  Repo   │
-  │  (LLM)  │   E0xx, E1xx chain  │ contract │   SE → TR → PO      │ (git)   │
-  └─────────┘   checks            └─────────┘   deterministic       └─────────┘
-       │                                │           harness              │
+  ┌─────────┐   validate + emit   ┌───────-──┐   execute + verify     ┌─────────┐
+  │ Planner │ ──────────────────► │ WO-*.json│ ─────────────────---─► │  Repo   │
+  │  (LLM)  │   E0xx, E1xx chain  │ contract │   SE → TR → PO         │ (git)   │
+  └─────────┘   checks            └────────-─┘   structural           └─────────┘
+       │                                │           enforcement          │
        │  retry with                    │                                │
        │  revision prompt               │                                │  rollback
        └────────┘                       │                                │  on failure
@@ -130,7 +186,7 @@ planner/              Factory contract compiler
   io.py               Atomic file writes, overwrite logic
   openai_client.py    OpenAI Responses API (background polling)
 
-factory/              Deterministic execution harness
+factory/              Structural enforcement harness
   graph.py            LangGraph state machine (SE → TR → PO)
   nodes_se.py         SE: prompt + LLM call + parse WriteProposal
   nodes_tr.py         TR: scope/hash checks + atomic writes
@@ -139,5 +195,35 @@ factory/              Deterministic execution harness
   workspace.py        Git helpers (clean check, rollback, tree hash)
   run.py              CLI orchestration, preflight, RunSummary
 ```
+
+## Limitations
+
+The following are known, documented constraints — not bugs:
+
+- **No semantic correctness guarantee.** The enforcement layer validates
+  structural properties (paths, hashes, scope, schema). It cannot verify
+  that LLM-generated code implements the human intent correctly. The LLM
+  can satisfy all checks with stubs or hardcoded outputs.
+- **No host isolation.** Acceptance commands and LLM-authored `verify.sh`
+  content execute with the operator's privileges. See the Security Notice
+  above. A container or sandbox is required for untrusted workloads.
+- **No crash recovery.** If the process is killed (SIGKILL, OOM, power
+  loss) during file writes, the repo may be left in a partially modified
+  state. The preflight `is_clean` check blocks the next run, but manual
+  recovery (`git reset --hard && git clean -fdx`) is required.
+- **No idempotent re-execution.** Re-running a completed work order calls
+  the LLM again and may produce different code. The system does not detect
+  or skip already-completed work.
+- **No byte-reproducible artifacts.** Artifact metadata (timestamps,
+  durations, absolute paths) varies across runs. LLM output is
+  nondeterministic. The `run_id` and `compile_hash` are deterministic, but
+  all other artifact content may differ.
+- **Supervised operation assumed.** The system is designed for operator-
+  supervised execution, not unattended deployment. There is no logging
+  framework, no cost tracking, and no health-check mechanism.
+- **The `forbidden` field is prompt guidance, not enforcement.** The
+  factory does not mechanically block writes that the `forbidden` list
+  describes. If a file is in both `allowed_files` and `forbidden`, the
+  LLM can write to it.
 
 See [INVARIANTS.md](INVARIANTS.md) for the complete list of non-negotiable system constraints and where each is enforced.

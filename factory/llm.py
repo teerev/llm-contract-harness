@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 import os
 
+from factory.defaults import (  # noqa: F401 — re-exported for backward compat
+    DEFAULT_LLM_TIMEOUT,
+    MAX_JSON_PAYLOAD_BYTES,
+)
 
-def _get_client(timeout: int = 120):  # noqa: ANN202 — return type is openai.OpenAI
+
+def _get_client(timeout: int = DEFAULT_LLM_TIMEOUT):  # noqa: ANN202 — return type is openai.OpenAI
     """Return an OpenAI client; fail fast on missing key or package.
 
     *timeout* is the per-request timeout in seconds passed to the underlying
@@ -29,7 +34,7 @@ def _get_client(timeout: int = 120):  # noqa: ANN202 — return type is openai.O
 
 
 def complete(
-    prompt: str, model: str, temperature: float = 0, timeout: int = 120
+    prompt: str, model: str, temperature: float = 0, timeout: int = DEFAULT_LLM_TIMEOUT
 ) -> str:
     """Call the LLM and return ``choices[0].message.content``.
 
@@ -45,9 +50,6 @@ def complete(
     if content is None:
         raise RuntimeError("LLM returned None content in response")
     return content
-
-
-MAX_JSON_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MB — M-10 defense-in-depth
 
 
 def parse_proposal_json(raw: str) -> dict:

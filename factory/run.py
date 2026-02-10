@@ -6,6 +6,7 @@ import os
 import sys
 import traceback
 
+from factory import defaults as _fd
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
@@ -63,6 +64,19 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     # ------------------------------------------------------------------
     run_id = compute_run_id(work_order.model_dump(), baseline_commit)
     run_dir = os.path.join(out_dir, run_id)
+
+    # M-21: refuse to overwrite a prior run's artifacts.
+    prior_summary = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
+    if os.path.isfile(prior_summary):
+        print(
+            f"ERROR: A run summary already exists at {prior_summary}. "
+            "Re-running the same work order on the same baseline would "
+            "overwrite the prior run's artifacts. To re-run, delete or "
+            f"move the directory: {run_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     os.makedirs(run_dir, exist_ok=True)
 
     # Persist the work order and CLI config for post-mortem reproducibility
@@ -75,7 +89,33 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         "timeout_seconds": args.timeout_seconds,
         "repo_root": repo_root,
         "out_dir": out_dir,
+        "defaults": {
+            "default_max_attempts": _fd.DEFAULT_MAX_ATTEMPTS,
+            "default_llm_temperature": _fd.DEFAULT_LLM_TEMPERATURE,
+            "default_timeout_seconds": _fd.DEFAULT_TIMEOUT_SECONDS,
+            "default_llm_timeout": _fd.DEFAULT_LLM_TIMEOUT,
+            "run_id_hex_length": _fd.RUN_ID_HEX_LENGTH,
+            "max_file_write_bytes": _fd.MAX_FILE_WRITE_BYTES,
+            "max_total_write_bytes": _fd.MAX_TOTAL_WRITE_BYTES,
+            "max_json_payload_bytes": _fd.MAX_JSON_PAYLOAD_BYTES,
+            "max_context_bytes": _fd.MAX_CONTEXT_BYTES,
+            "max_context_files": _fd.MAX_CONTEXT_FILES,
+            "max_excerpt_chars": _fd.MAX_EXCERPT_CHARS,
+            "git_timeout_seconds": _fd.GIT_TIMEOUT_SECONDS,
+        },
     }
+
+    # ------------------------------------------------------------------
+    # M-22: Override verify_exempt unless explicitly allowed by operator
+    # ------------------------------------------------------------------
+    wo_dict = work_order.model_dump()
+    if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
+        print(
+            "WARNING: work order has verify_exempt=true but --allow-verify-exempt "
+            "was not passed. Overriding to false — full verification will run.",
+            file=sys.stderr,
+        )
+        wo_dict["verify_exempt"] = False
 
     # ------------------------------------------------------------------
     # Build & invoke graph
@@ -83,7 +123,7 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     graph = build_graph()
 
     initial_state: dict = {
-        "work_order": work_order.model_dump(),
+        "work_order": wo_dict,
         "repo_root": repo_root,
         "baseline_commit": baseline_commit,
         "max_attempts": args.max_attempts,

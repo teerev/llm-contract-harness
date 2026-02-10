@@ -13,6 +13,19 @@ import tempfile
 import time
 from typing import Any
 
+from factory.defaults import (  # noqa: F401 — re-exported for backward compat
+    ARTIFACT_ACCEPTANCE_RESULT,
+    ARTIFACT_FAILURE_BRIEF,
+    ARTIFACT_PROPOSED_WRITES,
+    ARTIFACT_RAW_LLM_RESPONSE,
+    ARTIFACT_RUN_SUMMARY,
+    ARTIFACT_SE_PROMPT,
+    ARTIFACT_VERIFY_RESULT,
+    ARTIFACT_WORK_ORDER,
+    ARTIFACT_WRITE_RESULT,
+    MAX_EXCERPT_CHARS,
+    RUN_ID_HEX_LENGTH,
+)
 from factory.schemas import CmdResult
 
 # ---------------------------------------------------------------------------
@@ -45,14 +58,12 @@ def compute_run_id(work_order_dict: dict, baseline_commit: str) -> str:
     h.update(canonical_json_bytes(work_order_dict))
     h.update(b"\n")
     h.update(baseline_commit.encode("utf-8"))
-    return h.hexdigest()[:16]
+    return h.hexdigest()[:RUN_ID_HEX_LENGTH]
 
 
 # ---------------------------------------------------------------------------
 # Truncation
 # ---------------------------------------------------------------------------
-
-MAX_EXCERPT_CHARS = 2000
 
 
 def truncate(text: str, max_chars: int = MAX_EXCERPT_CHARS) -> str:
@@ -210,21 +221,8 @@ def is_path_inside_repo(rel_path: str, repo_root: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Artifact path helpers  (Phase 2 — single source of truth for artifact names)
+# Artifact path helpers
 # ---------------------------------------------------------------------------
-
-# Per-attempt artifact filenames
-ARTIFACT_SE_PROMPT = "se_prompt.txt"
-ARTIFACT_PROPOSED_WRITES = "proposed_writes.json"
-ARTIFACT_RAW_LLM_RESPONSE = "raw_llm_response.json"
-ARTIFACT_WRITE_RESULT = "write_result.json"
-ARTIFACT_VERIFY_RESULT = "verify_result.json"
-ARTIFACT_ACCEPTANCE_RESULT = "acceptance_result.json"
-ARTIFACT_FAILURE_BRIEF = "failure_brief.json"
-
-# Per-run artifact filenames
-ARTIFACT_WORK_ORDER = "work_order.json"
-ARTIFACT_RUN_SUMMARY = "run_summary.json"
 
 
 def make_attempt_dir(out_dir: str, run_id: str, attempt_index: int) -> str:

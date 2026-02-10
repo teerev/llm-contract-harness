@@ -10,6 +10,13 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from factory.defaults import (  # noqa: F401 — re-exported for backward compat
+    ALLOWED_STAGES,
+    MAX_CONTEXT_FILES,
+    MAX_FILE_WRITE_BYTES,
+    MAX_TOTAL_WRITE_BYTES,
+)
+
 
 # ---------------------------------------------------------------------------
 # Path validation
@@ -103,8 +110,8 @@ class WorkOrder(BaseModel):
 
     @model_validator(mode="after")
     def _check_context_constraints(self) -> "WorkOrder":
-        if len(self.context_files) > 10:
-            raise ValueError("context_files must have at most 10 entries")
+        if len(self.context_files) > MAX_CONTEXT_FILES:
+            raise ValueError(f"context_files must have at most {MAX_CONTEXT_FILES} entries")
         return self
 
     @model_validator(mode="after")
@@ -126,9 +133,6 @@ class WorkOrder(BaseModel):
 # ---------------------------------------------------------------------------
 # FileWrite / WriteProposal
 # ---------------------------------------------------------------------------
-
-MAX_FILE_WRITE_BYTES = 200 * 1024   # 200 KB per file
-MAX_TOTAL_WRITE_BYTES = 500 * 1024  # 500 KB total
 
 
 class FileWrite(BaseModel):
@@ -173,17 +177,6 @@ class WriteProposal(BaseModel):
 # ---------------------------------------------------------------------------
 # FailureBrief
 # ---------------------------------------------------------------------------
-
-ALLOWED_STAGES = frozenset({
-    "preflight",
-    "llm_output_invalid",
-    "write_scope_violation",
-    "stale_context",
-    "write_failed",
-    "verify_failed",
-    "acceptance_failed",
-    "exception",
-})
 
 
 class FailureBrief(BaseModel):

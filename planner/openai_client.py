@@ -16,31 +16,23 @@ from typing import Any, Optional
 
 import httpx
 
-OPENAI_API_BASE = "https://api.openai.com/v1"
-RESPONSES_ENDPOINT = f"{OPENAI_API_BASE}/responses"
-
-# ---------------------------------------------------------------------------
-# Defaults (tune these first)
-# ---------------------------------------------------------------------------
-DEFAULT_MODEL = "gpt-5.2-codex"
-DEFAULT_REASONING_EFFORT = "medium"      # about right for a small seed paragraph
-DEFAULT_MAX_OUTPUT_TOKENS = 64000        # about right for a small seed paragraph
-
-# ---------------------------------------------------------------------------
-# Transport / retry / polling
-# ---------------------------------------------------------------------------
-CONNECT_TIMEOUT = 30.0
-READ_TIMEOUT = 60.0       # short — we only need quick POST + GET responses
-WRITE_TIMEOUT = 30.0
-POOL_TIMEOUT = 30.0
-
-MAX_TRANSPORT_RETRIES = 3
-TRANSPORT_RETRY_BASE_S = 3.0
-
-POLL_INTERVAL_S = 5.0     # seconds between status polls
-POLL_DEADLINE_S = 2400.0  # 40 minutes — high reasoning effort can take 15-30 min
-
-MAX_INCOMPLETE_RETRIES = 1  # retry once with higher budget if incomplete
+from planner.defaults import (  # noqa: F401 — re-exported for backward compat
+    CONNECT_TIMEOUT,
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    DEFAULT_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    MAX_INCOMPLETE_RETRIES,
+    MAX_INCOMPLETE_TOKEN_CAP,
+    MAX_TRANSPORT_RETRIES,
+    OPENAI_API_BASE,
+    POLL_DEADLINE_S,
+    POLL_INTERVAL_S,
+    POOL_TIMEOUT,
+    READ_TIMEOUT,
+    RESPONSES_ENDPOINT,
+    TRANSPORT_RETRY_BASE_S,
+    WRITE_TIMEOUT,
+)
 
 # ---------------------------------------------------------------------------
 # Artifacts directory for dumping raw responses on failure
@@ -97,7 +89,7 @@ class OpenAIResponsesClient:
         """
         budgets = [
             self.cfg.max_output_tokens,
-            min(self.cfg.max_output_tokens * 2, 65000),
+            min(self.cfg.max_output_tokens * 2, MAX_INCOMPLETE_TOKEN_CAP),
         ]
 
         for i, budget in enumerate(budgets):

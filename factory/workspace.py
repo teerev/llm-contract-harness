@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import subprocess
 
-
-GIT_TIMEOUT_SECONDS: int = 30
+from factory.defaults import GIT_TIMEOUT_SECONDS  # noqa: F401 — re-exported for backward compat
 
 
 def _git(args: list[str], cwd: str, timeout: int = GIT_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:

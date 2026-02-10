@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+from factory.defaults import (
+    DEFAULT_LLM_TEMPERATURE,
+    DEFAULT_MAX_ATTEMPTS,
+    DEFAULT_TIMEOUT_SECONDS,
+)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -27,8 +33,8 @@ def main() -> None:
     run_parser.add_argument(
         "--max-attempts",
         type=int,
-        default=2,
-        help="Maximum number of attempts (default: 2)",
+        default=DEFAULT_MAX_ATTEMPTS,
+        help=f"Maximum number of attempts (default: {DEFAULT_MAX_ATTEMPTS})",
     )
     run_parser.add_argument(
         "--llm-model", required=True, help="LLM model name (e.g. gpt-4o)"
@@ -36,14 +42,23 @@ def main() -> None:
     run_parser.add_argument(
         "--llm-temperature",
         type=float,
-        default=0,
-        help="LLM temperature (default: 0)",
+        default=DEFAULT_LLM_TEMPERATURE,
+        help=f"LLM temperature (default: {DEFAULT_LLM_TEMPERATURE})",
     )
     run_parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=600,
-        help="Per-command timeout in seconds (default: 600)",
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"Per-command timeout in seconds (default: {DEFAULT_TIMEOUT_SECONDS})",
+    )
+    run_parser.add_argument(
+        "--allow-verify-exempt",
+        action="store_true",
+        default=False,
+        help=(
+            "Honor verify_exempt=true in work orders (skip global verification). "
+            "Without this flag, verify_exempt is overridden to false with a warning."
+        ),
     )
 
     args = parser.parse_args()

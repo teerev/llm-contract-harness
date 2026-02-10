@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import os
 
+from factory.defaults import (
+    VERIFY_EXEMPT_COMMAND,
+    VERIFY_FALLBACK_COMMANDS,
+    VERIFY_SCRIPT_PATH,
+)
 from factory.schemas import CmdResult, FailureBrief, WorkOrder
 from factory.util import (
     ARTIFACT_ACCEPTANCE_RESULT,
@@ -27,14 +32,10 @@ def _get_verify_commands(repo_root: str) -> list[list[str]]:
     If ``scripts/verify.sh`` exists → ``bash scripts/verify.sh``.
     Otherwise, run the three fallback commands in order.
     """
-    verify_script = os.path.join(repo_root, "scripts", "verify.sh")
+    verify_script = os.path.join(repo_root, VERIFY_SCRIPT_PATH)
     if os.path.isfile(verify_script):
-        return [["bash", "scripts/verify.sh"]]
-    return [
-        ["python", "-m", "compileall", "-q", "."],
-        ["python", "-m", "pip", "--version"],
-        ["python", "-m", "pytest", "-q"],
-    ]
+        return [["bash", VERIFY_SCRIPT_PATH]]
+    return [list(cmd) for cmd in VERIFY_FALLBACK_COMMANDS]
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ def po_node(state: dict) -> dict:
     # When verify_exempt is True (e.g. WO-01 bootstrap), skip the full
     # verify script and run only a lightweight syntax check.
     if work_order.verify_exempt:
-        verify_cmds = [["python", "-m", "compileall", "-q", "."]]
+        verify_cmds = [list(cmd) for cmd in VERIFY_EXEMPT_COMMAND]
     else:
         verify_cmds = _get_verify_commands(repo_root)
 

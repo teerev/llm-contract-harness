@@ -2,1249 +2,217 @@
 
 **Last updated:** 2026-02-10
 
-**Completed prerequisite:** M1–M6 structural contract (E001–E006, E101–E106,
-verify_contract, verify_exempt) — all implemented in `planner/validation.py`
-and `planner/compiler.py`.
+**Completed work:**
 
-Two tracks of work remain, in priority order:
+- **Structural contract (M1–M6):** E001–E006, E101–E106, verify_contract,
+  verify_exempt — all implemented in `planner/validation.py` and
+  `planner/compiler.py`.
+- **Deterministic contract fixes (M-01–M-10):** All ten milestones from the
+  adversarial audit (`FINDINGS_LEDGER.md`). Includes: verify_exempt
+  sanitization, BaseException rollback, type guards, shlex error codes,
+  atomic save_json, path normalization, NUL/control-char rejection, E105
+  normalization, rollback_failed status, JSON size guards.
+- **Configuration extraction (M-14–M-19):** 50 constants centralized into
+  `planner/defaults.py` and `factory/defaults.py`. Generated
+  `docs/CONFIG_DEFAULTS.md`. Config snapshots in run/compile summaries.
+  Hardening tests guard against value drift, shadowing, and doc staleness.
+- **Credibility blockers (M-20–M-23):** Non-retryable failure stages abort
+  immediately (M-20). Duplicate `run_id` refuses instead of overwriting
+  prior artifacts (M-21). `verify_exempt=true` requires explicit
+  `--allow-verify-exempt` CLI flag (M-22). README.md and INVARIANTS.md
+  rewritten with precise determinism language, Limitations section, and
+  Security Notice (M-23).
 
-1. **Deterministic contract fixes** (Part 1) — surgical code changes to close
-   gaps found by the adversarial audit (see `FINDINGS_LEDGER.md`). These fix
-   real contract violations in the deterministic wrapper.
-2. **Prompt semantic hardening** (Part 2) — prompt template changes to reduce
-   LLM-generated acceptance command failures. These improve LLM output quality
-   but do not affect deterministic guarantees.
+Test suite: 487 passed.
 
----
+Two tracks of work remain:
 
-# Part 1: Deterministic Contract Layer Fixes
-
-Provenance: Two independent adversarial audits of the planner and factory code
-were compiled into `FINDINGS_LEDGER.md` (AUD-01 through AUD-16). The
-milestones below are the actionable subset, scoped to wrapper-only code
-changes, ordered by importance.
-
-Each milestone is a single, self-contained code change. Every milestone maps
-to one or more findings in `FINDINGS_LEDGER.md`.
-
-**Excluded by owner decision (accepted runtime assumptions):**
-- AUD-01, AUD-02, AUD-15 — TOCTOU / concurrent FS mutation (sole-writer assumption)
-- AUD-09 — outdir race + case sensitivity (same assumption, plus low practical risk)
-- AUD-14 — unsandboxed acceptance commands (in-situ modification is by design)
-- AUD-16 — `run_work_orders.sh` (to be deleted)
-
----
-
-## M-01  Never trust LLM-provided `verify_exempt` [CRITICAL] ✅ DONE
-
-**Fixes:** AUD-03
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/compiler.py` — unconditional `verify_exempt` sanitization.
-Tests: `TestVerifyExemptSanitisation` in `tests/planner/test_compile_loop.py`
-(5 passing + 1 xfail pending M-03). Full suite: 386 passed.
-
-**Why this is #1:** This is the single most important finding in the entire
-audit. The planner only overwrites `verify_exempt` when `verify_contract` is
-truthy. If the LLM omits `verify_contract` but sets `verify_exempt: true` on
-every work order, those values flow through to the emitted WO JSON untouched.
-The factory trusts the flag and skips global verification. Acceptance commands
-then execute against unverified code. This is a clean bypass of the verify
-gate triggered by nothing more than adversarial LLM output — the exact threat
-the deterministic wrapper exists to prevent.
-
-**File:** `planner/compiler.py`
-
-**Change:** After the validation-success block (around line 328–333), replace
-the conditional `if verify_contract and final_work_orders` with unconditional
-`verify_exempt` sanitization:
-
-- If `verify_contract` is a valid dict with `requires`, call
-  `compute_verify_exempt` as today.
-- Otherwise (absent, `None`, falsy, wrong type), force
-  `verify_exempt = False` on every WO dict.
-- In both branches, the LLM-provided value is overwritten — never preserved.
-
-**Size:** ~10 lines changed in one function.
-
-**Regression test:**
-`test_verify_exempt_forced_false_when_no_contract` — supply WO dicts with
-`verify_exempt: true` and no `verify_contract`. Assert every emitted WO has
-`verify_exempt: false`.
-`test_verify_exempt_computed_when_contract_present` — supply valid
-`verify_contract`. Assert `compute_verify_exempt` result is used and the
-LLM-provided value is gone.
+1. **Prompt semantic hardening** (Part 2) — prompt template changes to reduce
+   LLM-generated acceptance command failures.
+2. **Artifact audit & light tidy** (Part 3) — naming/format review and
+   optional observability improvements.
 
 ---
-
-## M-02  Catch `BaseException` in the emergency handler [CRITICAL] ✅ DONE
-
-**Fixes:** AUD-05
-**Status:** Implemented and tested (2026-02-10).
-Code: `factory/run.py` — `except BaseException`, type-specific exit codes
-(130 for KeyboardInterrupt, re-raise for SystemExit).
-Tests: `TestBaseExceptionRollback` in `tests/factory/test_end_to_end.py`
-(3 tests: rollback on Ctrl-C, dirty-repo restoration, SystemExit preserved).
-Full suite: 389 passed.
-
-**Why this matters:** Users routinely press Ctrl-C during long factory runs
-(LLM calls take minutes). `KeyboardInterrupt` inherits from `BaseException`,
-not `Exception`. The current `except Exception` on run.py line 111 lets it
-sail through — no rollback, no summary, repo left dirty with partial writes.
-This directly violates the "repo never left in indeterminate state" guarantee
-under completely normal user behaviour.
-
-**File:** `factory/run.py`
-
-**Change:**
-1. Replace `except Exception as exc:` with `except BaseException as exc:`.
-2. Inside the handler, after best-effort rollback + summary write:
-   - If `isinstance(exc, KeyboardInterrupt)`: `sys.exit(130)` (standard
-     SIGINT exit code).
-   - If `isinstance(exc, SystemExit)`: re-raise to preserve the original
-     exit code.
-   - Otherwise: `sys.exit(2)` as today.
-3. Also widen the inner rollback guard from `except Exception` to
-   `except BaseException` (rollback itself should not be defeated by a
-   second KeyboardInterrupt during cleanup).
-
-**Size:** ~8 lines changed in one function.
-
-**Regression test:**
-`test_keyboard_interrupt_triggers_rollback` — monkeypatch `graph.invoke` to
-raise `KeyboardInterrupt`. Assert `rollback` was called and repo is clean.
-Assert process exit code is 130.
-
 ---
 
-## M-03  Type-guard planner validation against non-dict inputs [HIGH] ✅ DONE
-
-**Fixes:** AUD-12
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/validation.py` — isinstance guards in `parse_and_validate`,
-`validate_plan`, `validate_plan_v2`, and `compute_verify_exempt`.
-Tests: 5 tests in `TestE000Structural` (`test_structural_validation.py`),
-5 tests in `TestVerifyContractTypeGuard` (`test_chain_validation.py`),
-plus M-01 xfail resolved to passing `test_wrong_type_contract_rejected_not_crash`.
-Full suite: 400 passed.
-
-**Why:** If the LLM emits `"work_orders": [42, "hello"]`, the planner calls
-`42.get("id")` and crashes with `AttributeError`. The CLI's broad
-`except Exception` catches it but misclassifies it (exit code 3 = API error
-instead of 2 = validation error). The retry loop may not engage. The core
-requirement — "never silently accept invalid planner output" — is not met
-because the system crashes instead of producing a structured rejection.
-
-**Files:** `planner/validation.py`
-
-**Changes:**
-1. In `validate_plan`, before the normalization loop, check each element:
-   if not `isinstance(wo, dict)`, append a `ValidationError(code=E000, ...)`
-   and skip that element. Do not call `normalize_work_order` on non-dicts.
-2. In `validate_plan_v2`, guard the `verify_contract.get(...)` call: if
-   `verify_contract is not None and not isinstance(verify_contract, dict)`,
-   return a single `ValidationError(code=E000, ...)` immediately.
-3. In `compute_verify_exempt`, add the same `isinstance` guard at entry — if
-   `verify_contract` is not a dict, force `verify_exempt = False` for all WOs
-   (consistent with M-01).
-
-**Size:** ~15 lines of guard clauses across 3 functions.
-
-**Regression test:**
-`test_non_dict_work_order_elements` — pass `[42, "x", []]` as work_orders.
-Assert structured errors returned (not `AttributeError`).
-`test_non_dict_verify_contract` — pass `verify_contract=[]`. Assert
-structured error, not crash.
-
----
-
-## M-04  Emit error code on `shlex.split` failure instead of silent skip [HIGH] ✅ DONE
-
-**Fixes:** AUD-11
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/validation.py` — new `E007_SHLEX` constant; E007 emitted in
-the E003 shell-operator loop and in `_check_python_c_syntax` on `ValueError`.
-Tests: `TestE007Shlex` (6 tests) + 2 updated existing tests in
-`test_structural_validation.py`. Full suite: 406 passed.
-
-**Why:** A command with unmatched quotes (`python -c 'print(1`) silently
-passes E003 and E006 because `shlex.split` raises `ValueError` and the
-handler does `continue` / `return None`. This means the planner's compile
-gate is incomplete — it emits a WO with a structurally unparseable command.
-The factory catches it at runtime, so no safety gate is ultimately bypassed
-end-to-end, but the planner contract promises structured validation and this
-is a hole.
-
-**File:** `planner/validation.py`
-
-**Changes:**
-1. Add new error code constant: `E007_SHLEX = "E007"`.
-2. In `validate_plan`, in the E003 shell-operator loop: replace the bare
-   `continue` on `ValueError` with an `errors.append(ValidationError(
-   code=E007_SHLEX, ...))` + `continue`.
-3. In `_check_python_c_syntax`: replace `return None` on `ValueError` with
-   returning a `ValidationError(code=E007_SHLEX, ...)`.
-
-**Size:** ~10 lines changed across 2 locations + 1 constant.
-
-**Regression test:**
-`test_unparseable_command_emits_e007` — submit `["echo 'unterminated"]` as
-acceptance commands. Assert `E007` in returned errors.
-
----
-
-## M-05  Make `save_json` atomic [HIGH] ✅ DONE
-
-**Fixes:** AUD-04
-**Status:** Implemented and tested (2026-02-10).
-Code: `factory/util.py` — `save_json` now uses `tempfile.mkstemp` + `fsync`
-+ `os.replace`, with `BaseException` cleanup. Matches `planner/io.py::_atomic_write`
-and `factory/nodes_tr.py::_atomic_write`.
-Tests: `TestSaveJsonAtomic` (6 tests) in `tests/factory/test_util.py`.
-Full suite: 412 passed.
-
-**Why:** `factory/util.py::save_json` uses bare `open()` + `json.dump()`.
-A kill -9, OOM-killer, or power loss mid-write corrupts the artifact — most
-critically `run_summary.json`, which is the final verdict. The exact
-`tempfile + fsync + os.replace` pattern already exists in two places in this
-codebase (`planner/io.py::_atomic_write`, `factory/nodes_tr.py::_atomic_write`).
-This is a copy-paste fix. Under normal user behaviour (Ctrl-C, covered by
-M-02), the non-atomic write is also a risk if the `save_json` for the
-emergency summary is itself interrupted.
-
-**File:** `factory/util.py`
-
-**Change:** Replace the `save_json` body with the atomic pattern:
-`tempfile.mkstemp` in parent dir → write + `flush` + `fsync` → `os.replace`.
-On `BaseException`, `unlink` the temp file and re-raise. Identical to the
-existing `_atomic_write` functions.
-
-**Size:** ~12 lines replacing 4.
-
-**Regression test:**
-`test_save_json_atomic_on_crash` — write a file, then monkeypatch
-`os.replace` to raise `OSError`. Assert original file is unchanged and no
-temp files remain.
-
----
-
-## M-06  Apply `posixpath.normpath` in `normalize_work_order` [MEDIUM] ✅ DONE
-
-**Fixes:** AUD-10
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/validation.py::normalize_work_order` — applies `posixpath.normpath`
-to `allowed_files`, `context_files`, and precondition/postcondition `path` values
-(with empty-string guard). Runs before deduplication so `./src/a.py` and `src/a.py`
-collapse to a single entry.
-Tests: 7 new tests in `TestNormalize` (`test_structural_validation.py`).
-Full suite: 419 passed.
-
-**Why:** The planner's chain validator tracks cumulative file state using
-raw (non-normpath'd) strings. `"./src/a.py"` and `"src/a.py"` are treated
-as distinct by the planner but collapse to the same path in the factory's
-Pydantic validator. This means the chain validator's dependency tracking
-(P6–P10) can produce false rejections or — worse — miss genuine cross-WO
-conflicts where two WOs both declare the same physical file under different
-string representations. The factory schema already applies `normpath`; the
-planner should too, so the two sides agree.
-
-**File:** `planner/validation.py`
-
-**Change:** In `normalize_work_order`, after `_strip_strings`, apply
-`posixpath.normpath` to every string in `allowed_files`, `context_files`,
-and every `path` value inside `preconditions` / `postconditions` dicts.
-Then deduplicate as today.
-
-**Size:** ~12 lines added to one function.
-
-**Regression test:**
-`test_normalize_collapses_dotslash_paths` — submit `["./src/a.py",
-"src/a.py"]` in `allowed_files`. Assert result is `["src/a.py"]` (single
-element after normpath + dedup).
-
----
-
-## M-07  Reject `"."`, NUL, and control chars in path validator [MEDIUM] ✅ DONE
-
-**Fixes:** AUD-13
-**Status:** Implemented and tested (2026-02-10).
-Code: `factory/schemas.py::_validate_relative_path` — rejects NUL bytes and
-control chars (ord < 0x20) before normalization, rejects `"."` after normpath.
-Tests: 6 new tests in `TestWorkOrder` (`tests/factory/test_schemas.py`).
-Full suite: 425 passed.
-
-**Why:** `_validate_relative_path` in `factory/schemas.py` rejects `..`,
-absolute paths, and glob chars, but accepts `"."` (which `normpath` keeps
-as-is), NUL bytes, and control characters. These cause `IsADirectoryError`,
-`ValueError`, or other unhandled exceptions downstream instead of structured
-Pydantic validation errors. No out-of-scope write can occur, but the error
-path escapes deterministic classification.
-
-**File:** `factory/schemas.py`
-
-**Change:** After the existing `normpath` + `startswith("..")` check, add:
-1. `if normalized == ".": raise ValueError("path must not be '.'")`.
-2. `if "\x00" in p: raise ValueError("path must not contain NUL")`.
-3. `if any(ord(c) < 0x20 for c in p): raise ValueError("path contains
-   control characters")`.
-
-**Size:** ~6 lines added to one function.
-
-**Regression test:**
-`test_dot_path_rejected`, `test_nul_path_rejected`,
-`test_control_char_path_rejected` in `tests/factory/test_schemas.py`.
-
----
-
-## M-08  Normalize E105 verify-command match via `shlex.split` [LOW] ✅ DONE
-
-**Fixes:** AUD-07
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/validation.py::validate_plan_v2` — R7 check now uses
-`shlex.split` + `posixpath.normpath` instead of exact string equality.
-Tests: 2 existing bypass tests updated to assert E105 is now caught
-(`test_verify_with_extra_internal_whitespace_caught`,
-`test_verify_with_dot_slash_prefix_caught`). Full suite: 425 passed.
-
-**Why:** The E105 check uses `cmd_str.strip() == "bash scripts/verify.sh"`.
-Double spaces, `./` prefixes, and absolute paths bypass it. Both audits flag
-this; both note that existing tests document it as accepted. The factory's
-own sequencing (verify runs before acceptance regardless) is the primary
-control. Still, tightening the match makes the planner contract honest
-rather than leaky-by-documented-design.
-
-**File:** `planner/validation.py`
-
-**Change:** Replace the exact string comparison with a normalized one:
-```
-try:
-    tokens = shlex.split(cmd_str)
-except ValueError:
-    continue  # shlex errors handled by E007 (M-04)
-normalized = tokens[:1] + [posixpath.normpath(t) for t in tokens[1:]]
-if normalized == ["bash", "scripts/verify.sh"]:
-    errors.append(...)
-```
-
-**Size:** ~6 lines replacing 2.
-
-**Regression test:**
-`test_e105_catches_double_space`, `test_e105_catches_dotslash` — submit
-`"bash  scripts/verify.sh"` and `"bash ./scripts/verify.sh"`. Assert E105
-for both.
-
----
-
-## M-09  Add explicit `rollback_failed` status to run summary [LOW] ✅ DONE
-
-**Fixes:** AUD-06
-**Status:** Implemented and tested (2026-02-10).
-Code: `factory/run.py` — emergency handler checks `is_clean` after rollback
-and sets `rollback_failed` + `remediation` in summary. Normal-path summary
-sets `rollback_failed: false` explicitly.
-Tests: `TestRollbackFailedField` (3 tests) in `tests/factory/test_end_to_end.py`.
-Full suite: 428 passed.
-
-**Why:** If `git reset --hard` or `git clean -fdx` fails, the current code
-warns on stderr but still writes the emergency summary with `verdict: ERROR`
-and no machine-readable indicator that rollback failed. Downstream tooling
-(scoring scripts, CI) cannot distinguish "error with clean repo" from "error
-with dirty repo". The fix is small and purely additive.
-
-**Files:** `factory/run.py`
-
-**Change:** In the emergency handler, after the rollback try/except block,
-call `is_clean(repo_root)`. If `False`, set `summary_dict["rollback_failed"]
-= True` and include the remediation command string. The normal-path summary
-(line 163+) should set `rollback_failed = False` explicitly.
-
-**Size:** ~8 lines added.
-
-**Regression test:**
-`test_rollback_failure_marked_in_summary` — monkeypatch `rollback` to raise.
-Assert `run_summary.json` contains `"rollback_failed": true`.
-
----
-
-## M-10  Add JSON payload size guard [LOW] ✅ DONE
-
-**Fixes:** AUD-08 (size component only)
-**Status:** Implemented and tested (2026-02-10).
-Code: `planner/compiler.py::_parse_json` and `factory/llm.py::parse_proposal_json`
-— reject payloads > 10 MB before `json.loads`.
-Tests: 2 tests each in `tests/planner/test_compiler_extras.py` and
-`tests/factory/test_llm.py`. Full suite: 432 passed.
-
-**Why:** Neither `_parse_json` (planner) nor `parse_proposal_json` (factory)
-enforces a maximum payload size before calling `json.loads`. In practice the
-LLM API's `max_output_tokens` caps the response at ~256 KB, so this is pure
-defense-in-depth. However, if the API limit is ever raised or the system is
-used with a local model, an adversarial multi-GB response would OOM the
-process. The fix is a one-line guard.
-
-Duplicate-key rejection (`object_pairs_hook`) from AUD-08 is NOT recommended
-at this time. Audit B demonstrated that duplicate keys are not exploitable
-(they produce `E000` validation failures), and adding a custom JSON parser
-introduces more surface area than it removes. The size guard alone is
-sufficient.
-
-**Files:** `planner/compiler.py`, `factory/llm.py`
-
-**Change:** Before the `json.loads` call in both `_parse_json` and
-`parse_proposal_json`, add:
-```
-if len(text) > 10 * 1024 * 1024:
-    raise ValueError(f"JSON payload too large: {len(text)} bytes (max 10 MB)")
-```
-
-**Size:** 2 lines added per file (4 total).
-
-**Regression test:**
-`test_parse_json_rejects_oversized` — pass 11 MB string. Assert `ValueError`.
-
----
-
-## Part 1 priority assessment
-
-Based on the requirement that the deterministic wrapper must not silently
-accept invalid planner output, must not bypass verification, and must not
-leave the repo dirty under normal user behaviour:
-
-**Non-negotiable (do these or the wrapper contract is provably broken):**
-
-- **M-01** — verify_exempt bypass. This is an actual, exploitable hole in
-  the core verification gate. An adversarial (or merely confused) LLM can
-  disable verification for every work order. The fix is 10 lines.
-- **M-02** — BaseException rollback escape. Every user who has ever pressed
-  Ctrl-C during a factory run has hit this. The repo is left dirty with no
-  rollback and no summary. The fix is 8 lines.
-
-**Strongly recommended (the planner contract has real gaps without these):**
-
-- **M-03** — Type guards. The planner crashes on non-dict WO elements instead
-  of producing structured errors. The CLI misclassifies the failure. The
-  retry loop does not engage. This is a gap in "never silently accept invalid
-  planner output" because the crash IS a silent acceptance — the error is
-  unstructured and the exit code is wrong.
-- **M-04** — shlex error code. The compile gate silently passes commands it
-  cannot parse. The factory catches them at runtime, but the planner's
-  contract claims exhaustive structural validation and this is a documented
-  hole.
-- **M-05** — Atomic save_json. The pattern exists in two other places in the
-  same codebase. Leaving factory artifacts non-atomic is inconsistent and
-  fragile, especially for `run_summary.json` which is the final verdict.
-
-**Good hygiene (worth doing, not urgent):**
-
-- **M-06** — Path normpath. Fixes a real planner/factory inconsistency that
-  can cause false rejections. No safety impact.
-- **M-07** — Special path rejection. Turns unstructured exceptions into
-  structured validation errors. No safety impact.
-- **M-08** — E105 normalization. Tightens a policy check. The factory's own
-  sequencing is the real gate.
-- **M-09** — Rollback status. Purely additive observability. Helpful for CI.
-- **M-10** — JSON size guard. Pure defense-in-depth against a theoretical
-  threat that is currently blocked by API limits.
+# Known Limitations and Accepted Tradeoffs
+
+Distilled from eight adversarial audits (`1.md`–`8.md`). Each item is
+classified as a *fundamental limitation*, *deliberate tradeoff*, or
+*missing hardening*. None of these are planned for near-term fixes
+unless noted otherwise.
+
+| # | Limitation | Classification | Status |
+|---|-----------|----------------|--------|
+| C1 | **Unsandboxed execution.** Acceptance commands and LLM-authored `verify.sh` run with the operator's full privileges. No container, no network isolation, no filesystem sandbox. | Deliberate tradeoff | Documented in README Security Notice. Mitigation: run in disposable container. |
+| C2 | **Semantic verification weakness.** The enforcement layer validates structure (paths, hashes, scope) but cannot verify that LLM-generated code implements the human intent. The LLM can satisfy all checks with stubs. | Fundamental | Part 2 (M-11) addresses prompt-level mitigation. No mechanical fix exists. |
+| C4 | **No crash recovery.** Multi-file TR writes are per-file atomic but not batch-atomic. SIGKILL during writes leaves the repo partially modified. No write-ahead log or automatic rollback on restart. | Missing hardening | Preflight `is_clean` check prevents silent corruption on next run. Manual `git reset --hard && git clean -fdx` required. |
+| C5 | **No idempotent re-execution.** Re-running a completed work order calls the LLM again and may produce different code. The schema forbids empty writes, so "nothing to do" cannot be expressed. | Incidental gap | Artifact overwrite is fixed (M-21). Re-execution itself remains unsupported. |
+| C8 | **Environment dependency.** Verify and acceptance results depend on `PATH`, Python version, installed packages, locale, and filesystem case sensitivity. No environment snapshot is recorded beyond config defaults. | Fundamental | Inherent to running unsandboxed commands. Recommend pinning Python version and using virtual environments. |
+| C10 | **No operational packaging.** No `pyproject.toml`, `requirements.txt`, `Dockerfile`, or CI config. Dependencies are not pinned. No health checks or process supervision. | Missing hardening | Acceptable for prototype / research harness positioning. |
+| — | **`forbidden` field is not enforced.** The field name implies a mechanical constraint but it is only natural-language guidance injected into the SE prompt. The LLM can ignore it. | Deliberate (naming misleading) | Documented in README Limitations. |
+| — | **`notes` field is unstructured.** Carries both implementation guidance and executable invariants with no separation or validation. | Incidental gap | M-13 (LLM reviewer) can check notes-to-acceptance consistency without requiring structure. |
+| — | **Sole-writer assumption.** The factory assumes exclusive access to the target repo. No file locking, no advisory lock on the git index. Concurrent modification is undefined behavior. | Missing documentation | Should be listed as a prerequisite. |
 
 ---
 ---
 
 # Part 2: Planner Prompt Hardening — Semantic Reliability
 
-The deterministic contract (Part 1) ensures the wrapper never accepts
-structurally invalid output. This part addresses a class of **semantic
-failures** that no deterministic validator can catch: the planner writes
-acceptance commands that are structurally valid but factually wrong.
+The structural enforcement layer ensures the wrapper never accepts
+structurally invalid output. This part addresses **semantic failures** that
+no deterministic validator can catch: the planner writes acceptance commands
+that are structurally valid but factually wrong.
 
-## 1. Problem
+## The Problem
 
-M1-M6 solved the structural contract: if the planner emits a work order with
-unsatisfied preconditions, missing postconditions, or shell-incompatible
-commands, the validator catches it deterministically.  That machinery is
-working.
+The planner generates all work orders in a single LLM pass. It cannot
+execute code. Any acceptance command that requires the planner to predict
+the runtime output of a function is unreliable. Observed failures:
 
-What remains is a class of **semantic failures in acceptance commands** that
-no deterministic validator can catch.  Two observed instances:
+- **Sudoku WO-05:** Planner hardcoded the expected solution string.
+  Executor wrote a solver that produced a different output. 5/5 attempts
+  failed identically.
+- **Word game WO-04:** Planner asserted `select_word(Random(0)) == 'pear'`.
+  Actual output is `'orange'`. 5/5 attempts failed.
 
-- **Sudoku (WO-05):** The planner hardcoded the expected solution string for
-  a specific puzzle.  The executor wrote a solver that ran without errors but
-  produced a different (possibly correct, possibly incorrect) output.  The
-  acceptance command asserted exact equality against a string the planner
-  fabricated without running the code.  Unfixable by the executor across 5
-  attempts.
+Root cause: the planner was asked to produce a test oracle for a
+computation it cannot execute (the **oracle problem**).
 
-- **Word game (WO-04):** The planner asserted
-  `select_word(random.Random(0)) == 'pear'`.  The actual output of
-  `random.Random(0).choice(WORDS)` is `'orange'`.  The planner guessed the
-  output of a nondeterministic function.  Identical failure across 5 attempts.
+## Testability Hierarchy
 
-Both failures share the same root cause: **the planner was asked to produce a
-test oracle (an expected output value) for a computation it cannot execute.**
-The planner is not an interpreter.  It generates code structure in a single
-forward pass.  Any acceptance command that requires the planner to mentally
-simulate code execution is unreliable.
+**Tier 1 — Structure (always reliable):** Test that modules, classes, and
+functions exist with the right shape. These never require execution.
 
-## 2. Diagnosis: Why the Current Prompt Allows This
-
-The ACCEPTANCE COMMAND DESIGN PRINCIPLE section (lines 173-192) says:
-
-> Every work order MUST include at least one acceptance command that
-> independently verifies the work order's specific intent.
-
-It then lists "good patterns" — all of which are tier-1 existence checks
-(`import X`, `hasattr`, `os.path.isfile`).  It lists "bad patterns" — both
-of which are about the verify command, not about assertion quality.
-
-The prompt gives **no guidance whatsoever** about what kinds of assertions the
-planner can reliably produce.  It says "verify intent" but doesn't say "here's
-what you can and can't verify without running code."  The planner fills this
-gap by writing the most specific assertion it can think of — which often means
-hardcoding exact outputs of functions it defined but cannot execute.
-
-## 3. Principle: The Oracle Problem
-
-A traditional compiler can type-check a program without running it, but it
-cannot determine the program's output for a given input — that requires
-execution.  The planner is in the same position: it can reason about the
-*structure* of code (what modules exist, what functions are defined, what
-types they accept) but it cannot reliably predict *runtime values*.
-
-This is the **oracle problem**: the planner is being asked to produce a test
-oracle (an expected output value) for a computation it has no ability to
-evaluate.  The failure is not stochastic noise — it's a systematic
-consequence of asking a non-executing system to assert execution results.
-
-The fix is not "don't hardcode *this particular* value."  The fix is to give
-the planner a **testability discipline** — a clear statement of which
-assertions it can reliably produce, derived from what information it has
-access to.
-
-## 4. Testability Hierarchy
-
-The planner has access to the following information at generation time:
-
-- The module structure it designed (file paths, package layout)
-- The API signatures it specified (function names, parameter names, return types)
-- The data contracts it defined (field names, type constraints, invariants)
-
-It does **not** have access to:
-
-- Runtime return values of any function
-- The behavior of standard library functions on specific inputs
-- Floating-point precision or platform-dependent behavior
-
-From this, two tiers of reliable acceptance assertions follow:
-
-### Tier 1: Existence and Structure (always reliable)
-
-The planner designed the module layout and API surface.  It knows with
-certainty what files, modules, classes, and functions will exist.
-
-**Reliable assertions:**
-- `from package.module import ClassName`
-- `assert hasattr(ClassName, 'method_name')`
-- `assert callable(ClassName.method_name)`
-- `import os; assert os.path.isfile('path/to/file.py')`
-
-**Why reliable:** These test the structure the planner itself defined.  No
-execution is needed.  If the executor follows the notes, these assertions
-pass.  If the executor deviates, these catch it.
-
-### Tier 2: Contract Properties (reliable)
-
-The planner defined the API contracts: what types functions return, what
-invariants hold, what constraints the data satisfies.  These can be tested
-with **property assertions** that don't require knowing specific output
+**Tier 2 — Contract properties (reliable):** Test types, membership,
+determinism, structural constraints — WITHOUT asserting specific computed
 values.
 
-**Reliable assertions:**
-- `assert isinstance(f(trivial_input), expected_type)` — return type
-- `assert result in known_collection` — membership in planner-defined set
-- `assert f(x) == f(x)` — determinism / idempotence
-- `assert len(result) == expected_length` — structural constraint
-- `assert all(k in result for k in required_keys)` — dict shape
-- `assert 0 <= value <= 1` — range constraint
+**Oracle trap (unreliable):** Any assertion that requires predicting the
+output of a non-trivial computation.
 
-**Why reliable:** These test *properties of the contract*, not specific
-computed values.  The planner knows the type contract because it wrote it.
-The planner knows the membership set because it defined it.  No mental
-simulation of execution is required.
-
-### What to avoid (the oracle trap)
-
-Any assertion that requires the planner to predict the output of a
-non-trivial computation:
-- `assert solve(puzzle) == 'specific_solution_string'`
-- `assert select_word(Random(0)) == 'pear'`
-- `assert compute_score(data) == 42.7`
-- `assert hash(result) == 'abc123...'`
-
-These fail whenever the planner's mental simulation diverges from the actual
-execution — which is frequent, because the planner is not an interpreter.
-
-## 5. What to Remove (scar tissue)
-
-The following prompt content is incident-specific and now redundant with the
-M1-M6 machinery:
-
-### 5a. Lines 170-171: Ban on `unittest discover`
-
-```
-Do NOT use `python -m unittest discover` (it requires explicit `-s <dir>` flags that
-vary by project layout and is a known source of silent failures).
-```
-
-**Why remove:** This was a patch for a specific WO-01 failure where the
-planner wrote a verify.sh containing `unittest discover` that couldn't find
-tests in a `tests/` subdirectory.  The verify_contract + verify_exempt
-machinery now handles this structurally: if verify.sh can't run because its
-preconditions aren't met, the WO is flagged.  Banning one specific test
-runner is overfitting — a different runner could have the same misconfiguration
-problem, and the ban doesn't prevent it.
-
-**Action:** Remove lines 170-171.  The structural machinery (verify_contract,
-verify_exempt, R6) handles the general case.
-
-### 5b. Lines 44-46: Overly specific `./scripts/verify.sh` example
-
-```
-Writes files as **plain text only** — no file-permission bits (e.g. chmod +x) are set.
-  Therefore, acceptance commands must NEVER invoke scripts directly (e.g. `./scripts/verify.sh`).
-  Always use an explicit interpreter: `bash scripts/verify.sh`, `python script.py`, etc.
-```
-
-**Why trim:** The constraint is correct — the factory writes plain text with no
-permission bits.  But the three-line explanation with the specific
-`./scripts/verify.sh` example is incident-driven padding.  This can be stated
-in one line.
-
-**Action:** Condense to:
-`- Writes files as **plain text only** (no permission bits). Always invoke
-scripts via an explicit interpreter (e.g. \`bash script.sh\`, \`python script.py\`),
-never directly (\`./script.sh\`).`
-
-### 5c. Lines 163-167: Redundant "WO-01 MUST NOT" bullets
-
-Three of four bullets are now enforced by the validator:
-- "Include `bash scripts/verify.sh` in acceptance" → enforced by R7/E105
-- "Bundle project skeleton" → already in CORE OPTIMIZATION GOAL (minimal scope)
-
-**Action:** Keep only the one bullet the validator cannot enforce: "Leave
-verify.sh content up to interpretation via loose notes."  Remove the rest.
-
-## 6. What to Add
-
-### 6a. New section: ACCEPTANCE COMMAND TESTABILITY (replace current section)
-
-Replace lines 173-192 (the current ACCEPTANCE COMMAND DESIGN PRINCIPLE) with
-a new section that incorporates the testability hierarchy.  This is the core
-change.
-
-**Proposed content:**
-
-```
-────────────────────────────────
-ACCEPTANCE COMMAND TESTABILITY (MANDATORY)
-────────────────────────────────
-
-Every work order MUST include at least one acceptance command that independently
-verifies the work order's specific intent.
-
-The factory runs `bash scripts/verify.sh` automatically as a global regression
-gate.  Do NOT include it in `acceptance_commands`.
-
-YOU DO NOT EXECUTE CODE.  You generate work orders in a single pass without
-running any function you define.  Therefore, you cannot know the runtime output
-of any non-trivial computation.  This constrains what you can reliably assert.
-
-TIER 1 — Structure (always use):
-  Test that modules, classes, and functions exist with the right shape.
-  These assertions verify the contract you designed; they never require
-  simulating execution.
-
-    python -c "from mypackage.module import MyClass"
-    python -c "from mypackage.module import MyClass; assert hasattr(MyClass, 'solve')"
-    python -c "from mypackage.module import MyClass; assert callable(MyClass.solve)"
-    python -c "import os; assert os.path.isfile('path/to/expected_file.py')"
-
-TIER 2 — Contract properties (use when testing behavior):
-  Test properties of the API contract — types, membership, determinism,
-  structural constraints — WITHOUT asserting specific computed values.
-
-    # Return type:
-    python -c "from mod import f; assert isinstance(f(simple_input), expected_type)"
-
-    # Membership (value is in a set you defined):
-    python -c "from mod import WORDS, pick; assert pick() in WORDS"
-
-    # Determinism (same input → same output):
-    python -c "import random; from mod import f; assert f(random.Random(0)) == f(random.Random(0))"
-
-    # Length / shape:
-    python -c "from mod import parse; r = parse('input'); assert len(r) == 9"
-
-    # Key presence:
-    python -c "from mod import load; d = load(); assert 'name' in d and 'score' in d"
-
-NEVER hardcode specific return values of non-trivial computations:
-
-    # BAD — you cannot know the output of solve() without running it:
-    python -c "from mod import solve; assert solve(puzzle) == 'specific_string'"
-
-    # BAD — you cannot predict random.choice() without executing it:
-    python -c "from mod import pick; assert pick(random.Random(0)) == 'pear'"
-
-    # GOOD — same intent, testable without knowing the value:
-    python -c "from mod import solve, is_valid; assert is_valid(solve(puzzle))"
-    python -c "from mod import WORDS, pick; assert pick(random.Random(0)) in WORDS"
-
-If you cannot express acceptance for a feature using tier 1-2 assertions,
-the feature's acceptance criteria are not yet rigorous.  Split it into
-smaller work orders or defer it.
-```
-
-### 6b. The oracle-problem statement in the preamble
-
-Add a single sentence to the CORE OPTIMIZATION GOAL section, after line 32:
-
-```
-- **Testable without execution**
-  - You do not run code.  Acceptance commands must test API contracts and
-    structural properties, never specific computed values.
-```
-
-This plants the principle early, before the detailed rules.
-
-## 7. Motivation: Why This Is General, Not Overfitting
-
-Each proposed change is derived from a **structural fact about the planner's
-execution model**, not from a specific failure:
-
-| Change | Derived from | Specific failure it would have prevented |
-|--------|-------------|------------------------------------------|
-| Testability hierarchy | The planner does not execute code → it cannot produce reliable test oracles for runtime values | Word-game `'pear'`, sudoku solution string, any future hardcoded-output assertion |
-| Oracle-problem statement | Same structural fact, stated as a design principle | Same class |
-| Remove `unittest discover` ban | verify_contract + verify_exempt now handle the general case structurally | (Cleanup; the machinery already prevents the failure) |
-| Condense `./scripts` example | The rule is correct; the verbosity was incident-driven | (Cleanup; no behavioral change) |
-| Remove redundant WO-01 MUST NOT bullets | R7/E105 validator enforces these mechanically | (Cleanup; no behavioral change) |
-
-The testability hierarchy generalizes because it's the planner equivalent of
-a type system: it defines a space of assertions the planner can reliably
-produce (those that don't require execution) and marks everything else as
-unsafe.  This holds regardless of the spec domain — a sudoku solver, a word
-game, a web app, or a compiler all have the same structure/execution
-boundary.
-
-## 8. Prompt Milestones
+## Milestones
 
 ### M-11: Prompt Testability Hardening
 
-**Goal:** Replace the current ACCEPTANCE COMMAND DESIGN PRINCIPLE section with
-the testability hierarchy. Remove identified scar tissue. Add the oracle-
-problem statement to the preamble.
+Replace the ACCEPTANCE COMMAND DESIGN PRINCIPLE section in
+`planner/PLANNER_PROMPT.md` with a testability hierarchy. Remove scar
+tissue (unittest-discover ban, redundant WO-01 MUST NOT bullets). Add
+oracle-problem statement to the preamble.
 
-**Files changed:**
-- `planner/PLANNER_PROMPT.md`
-
-**Changes:**
-
-1. In CORE OPTIMIZATION GOAL (after line 32): add the "Testable without
-   execution" bullet.
-
-2. In EXECUTION CONSTRAINT (lines 44-46): condense the plain-text/permission
-   explanation to one line.
-
-3. In WO-01 BOOTSTRAPPING CONTRACT: remove the three redundant "MUST NOT"
-   bullets (lines 164-166), keep "Leave verify.sh content up to
-   interpretation via loose notes."  Remove the `unittest discover` ban
-   (lines 170-171).
-
-4. Replace ACCEPTANCE COMMAND DESIGN PRINCIPLE section (lines 173-192)
-   entirely with the new ACCEPTANCE COMMAND TESTABILITY section from 6a above.
+**Files:** `planner/PLANNER_PROMPT.md`
 
 **Acceptance criteria:**
-- `python -m pytest tests/ -q` passes (no code changes, only prompt).
-- Prompt contains "YOU DO NOT EXECUTE CODE" and the tier 1/tier 2 examples.
-- Prompt does NOT contain "unittest discover" or the redundant MUST NOT
-  bullets.
-- The example JSON in OUTPUT FORMAT is unchanged (it already uses tier-1
-  assertions).
-
-**Risk:** Low for the cleanup (removing scar tissue that the validator now
-handles). Medium for the testability section (LLM behavior is stochastic).
-Mitigation: the compile retry loop catches structural errors in the output;
-the testability guidance reduces the surface area for semantic errors but
-cannot eliminate them.
+- Prompt contains "YOU DO NOT EXECUTE CODE" and tier 1/tier 2 examples.
+- Prompt does NOT contain "unittest discover" or redundant MUST NOT bullets.
+- `python -m pytest tests/ -q` passes (no code changes).
 
 ### M-12 (future): Acceptance Command Linting
 
-A deterministic check in `validate_plan_v2` that **warns** when an acceptance
-command contains a hardcoded string literal that looks like a computed value
-(long hex strings, solution grids, multi-word strings not in the notes).
-This is a heuristic, not a type check, so it should be a warning (W-code)
-rather than a hard error.  Staged for later because it requires tuning the
-heuristic against real planner output to avoid false positives.
+A deterministic W-code warning in `validate_plan_v2` when an acceptance
+command contains a hardcoded string literal that looks like a computed
+value. Heuristic — requires tuning against real planner output.
 
-### M-13 (future): W2 LLM Reviewer Pass
+### M-13 (future): LLM Reviewer Pass
 
-The second LLM pass that reviews acceptance commands against the notes and
-flags semantic inconsistencies.  This is the non-deterministic complement to
-the deterministic validator.  Staged for later because M-11 (prompt hardening)
-should be tried first — it's cheaper and may be sufficient.  See Appendix B
-below for the full design.
+A second LLM pass reviews acceptance commands against the notes for
+semantic consistency. Non-deterministic complement to the deterministic
+validator. Staged after M-11.
 
 ---
 
-## Appendix A: Open Issue — Planner Writes Semantically Wrong Acceptance Commands
-
-All prior structural contract issues (I1–I8) are resolved and verified in
-the codebase: E003 shell-operator ban, E105 verify-in-acceptance ban,
-verify_contract/verify_exempt machinery, except-OSError handler in
-`factory/util.py`, context_files subset constraint removal, etc.
-
-The remaining open class is I9:
-
-### I9
-
-**The problem:** The planner generates all work orders in a single LLM pass.
-It defines APIs in early WOs (via `notes` fields) and writes acceptance
-commands in later WOs that exercise those APIs.  The planner has no mechanism
-to verify its acceptance commands are correct against the APIs it defined.
-
-**Observed failures (historical, from maze_rl spec):**
-
-- WO-04 acceptance calls `load_maze_text(BUILTIN_MAZES['SIMPLE'])` where
-  `BUILTIN_MAZES['SIMPLE']` is a dict, but `load_maze_text` expects a string.
-  The planner confused two different data representations it had itself
-  defined.
-
-- WO-05 acceptance uses `train_q_learning(m, episodes=5, seed=0)` with
-  default keyword args, but the notes specify many more required parameters.
-  The acceptance command doesn't match the function signature the planner
-  itself prescribed.
-
-**Observed failures (recent, from sudoku + word_game specs):**
-
-- Sudoku WO-05: planner hardcoded the expected solution string for a puzzle.
-  The executor wrote a solver that ran without errors but the output didn't
-  match the fabricated string.  5/5 attempts failed identically.
-
-- Word game WO-04: planner asserted `select_word(Random(0)) == 'pear'`.
-  Actual output of `Random(0).choice(WORDS)` is `'orange'`.  The planner
-  guessed the output of a nondeterministic function.  5/5 attempts failed.
-
-**Why the executor cannot fix these:** The executor LLM can only change the
-code it writes — it cannot change the acceptance command.  If the acceptance
-command asserts a wrong value, the executor will produce correct code that
-fails the wrong test.  Retrying is pointless because the bug is in the test,
-not the code.
-
-**Mitigation layers (in priority order):**
-
-1. **M-11 (prompt testability hardening):** Tells the planner to avoid exact
-   output assertions.  Reduces the surface area for oracle errors.  Cheap,
-   deterministic.
-
-2. **M-12 (acceptance command linting):** Deterministic heuristic that warns on
-   hardcoded string literals in acceptance commands.  Catches obvious cases.
-
-3. **M-13 (LLM reviewer pass):** A second LLM reviews acceptance commands
-   against the notes for semantic consistency.  Catches subtle cases (wrong
-   types, wrong signatures) that no deterministic check can find.
-
----
-
-## Appendix B: W2 LLM Reviewer Pass — Full Design
-
-This is the detailed design for M-13, preserved here for when implementation
-begins.
-
-### What the Reviewer Would Check
-
-A second LLM pass reads ALL work orders as a batch and answers:
-
-1. **Acceptance command / notes consistency:** For each work order, does the
-   acceptance command use the APIs as described in the notes?  Do function
-   signatures match?  Do argument types align with what earlier work orders
-   produce?
-
-2. **Cross-work-order API coherence:** If WO-03 defines `BUILTIN_MAZES` as
-   a dict mapping names to text strings, and WO-04's acceptance command
-   treats `BUILTIN_MAZES['SIMPLE']` as a parsed maze dict, flag the
-   contradiction.
-
-3. **Context_files completeness:** If a work order's notes say "use
-   GridworldEnv from env.py" but `maze_rl/env.py` is not in `context_files`,
-   flag it.  (Overlaps with R5/W101 deterministic checks but the LLM can
-   catch subtler cases.)
-
-### Where the Reviewer Fits in the Codebase
-
-The reviewer runs AFTER the deterministic compile loop converges, but
-BEFORE writing the final work orders to disk.
-
-```
-# In compile_plan(), after the retry loop produces validated work_orders:
-
-if ENABLE_REVIEWER:
-    review_errors = _run_reviewer(client, work_orders)
-    if review_errors:
-        # Feed review errors back to the planner for one final revision
-        prompt = _build_review_revision_prompt(spec_text, work_orders, review_errors)
-        raw_response = client.generate_text(prompt)
-        parsed = _parse_json(raw_response)
-        work_orders, errors = parse_and_validate(parsed)
-        # ... (may need another deterministic loop here)
-```
-
-### Implementation Steps
-
-1. **Create reviewer prompt template:**
-   - New file: `planner/REVIEWER_PROMPT.md`.
-   - The prompt takes the full list of work orders as JSON and asks the LLM to:
-     - For each acceptance command, verify argument types and counts match the
-       function signatures described in `notes` (both the current WO and
-       earlier WOs).
-     - Report each inconsistency as a structured error:
-       `{"work_order_id": "WO-04", "error": "load_maze_text expects str, got dict"}`
-   - Output format: JSON array of error objects, or empty array if no issues.
-
-2. **Add `_run_reviewer()` to `planner/compiler.py`:**
-   - Takes `client` and `work_orders` list.
-   - Builds the reviewer prompt with all work orders serialized as JSON.
-   - Calls `client.generate_text()`.
-   - Parses the response as a JSON array of errors.
-   - Returns the error list.
-
-3. **Add review-revision loop to `compile_plan()`:**
-   - After the compile loop converges, call `_run_reviewer()`.
-   - If errors found, build a revision prompt that includes the original spec,
-     the current work orders, and the reviewer's findings.
-   - Send back to the planner LLM for one final revision attempt.
-   - Re-run deterministic validation on the revised output.
-   - Maximum 1-2 review cycles.
-
-4. **Artifact persistence:**
-   - Save `reviewer_prompt.txt`, `reviewer_response.json`,
-     `reviewer_errors.json` in the compile artifacts directory.
-
-5. **Make it optional:**
-   - Add `--review / --no-review` CLI flag to `planner/cli.py`.
-   - Default to enabled.  Users can skip it for speed during iteration.
-
-### Cost / Risk Assessment
-
-- **LLM cost:** One additional LLM call for the review, plus potentially one
-  more for revision.  Total planner cost roughly doubles.
-- **Latency:** 10-30 minutes for the reviewer call, plus 10-30 for revision
-  if needed.  Total compile time could be 30-90 minutes worst case.
-- **Risk:** Moderate.  The reviewer LLM may hallucinate errors (false
-  positives) or miss real ones (false negatives).  Mitigation: the reviewer
-  should output specific, verifiable claims ("WO-04 acceptance calls
-  load_maze_text with a dict; WO-03 notes say it returns a string").  The
-  planner can then decide whether to act on each claim.
-- **Complexity:** Moderate.  Adds a new prompt template, a new LLM call, and
-  a review loop to the compiler.  The reviewer is a separate concern — it
-  doesn't generate work orders, it only critiques them.
-
-### Open Questions
-
-- **Should the reviewer use the same model as the planner, or a different
-  one?** Using the same model risks the same blind spots.  A different model
-  (e.g., a non-reasoning model for the review, since it's a checking task
-  not a generation task) could provide genuine diversity but adds
-  configuration complexity.
-
-- **Can the reviewer be run in parallel with deterministic validation?**
-  Yes — the reviewer doesn't depend on the deterministic loop.  But running
-  them sequentially lets you skip the reviewer entirely when the deterministic
-  loop catches errors (cheaper).
-
-- **Should the reviewer check notes for internal consistency too?** E.g.,
-  WO-05's notes say "use GridworldEnv" but allowed_files doesn't include the
-  file where GridworldEnv lives.  This overlaps with R5/W101 but the LLM can
-  catch subtler cases.
-
----
-
-## Appendix C: Deferred Architectural Options
-
-These options were identified during the original contract analysis.  They are
-NOT urgent and may never be needed, but are preserved here for reference.
+## Appendix: Deferred Architectural Options
 
 ### Option C: Factory Owns verify.sh Content
 
-**Idea:** Remove verify.sh from the planner's responsibility.  The factory
-either injects a default verify.sh before the first run, or removes the
-verify.sh convention entirely and uses the `_get_verify_commands` fallback
-(already exists in `factory/nodes_po.py`: `compileall + pip + pytest`).
-
-**Pros:** Eliminates the entire bootstrapping problem structurally.
-Simplifies WO-01.  No risk of planner producing broken verify.sh content.
-
-**Cons:** Removes flexibility for specs that need custom verification (type
-checking, linting, etc.).  Changes the fundamental assumption that verify.sh
-is part of the product under construction.
-
-**When to consider:** If prompt hardening for WO-01 proves insufficient
-across many different specs, despite the verify_contract/verify_exempt
-machinery.
+Remove verify.sh from the planner's responsibility. The factory injects a
+default or uses the `_get_verify_commands` fallback. Eliminates the WO-01
+bootstrapping problem but removes flexibility for custom verification.
 
 ### Option D: Schema `kind` Field for Work Order Types
 
-**Idea:** Add optional `kind: "scaffold" | "feature"` to the WorkOrder
-schema.  Scaffold WOs get different validation rules and the PO node uses
-fallback verification.
+Add optional `kind: "scaffold" | "feature"` to WorkOrder. Scaffold WOs get
+different validation rules. Currently premature — only WO-01 is special.
 
-**Pros:** Makes WO-01's structural specialness explicit.  Validation rules
-can be type-specific.  Extensible.
+### The `notes` Field Problem
 
-**Cons:** Introduces a type system that both planner and factory must
-understand.  Only one known case of structural specialness (WO-01) — may be
-premature.
-
-**When to consider:** If more cases of structurally-special work orders emerge
-beyond WO-01.  The precondition/postcondition + verify_exempt system has so
-far handled WO-01's specialness without needing a `kind` field.
+The `notes` field carries both implementation guidance and executable
+invariants with no separation. The M1-M6 machinery moved some invariants
+into structured fields, but notes still carry most of the implementation
+contract. M-13 (LLM reviewer) can check notes-to-acceptance consistency
+without requiring notes to be structured.
 
 ---
 
-## Appendix D: The `notes` Field Problem
+## Appendix: W2 LLM Reviewer Pass — Full Design
 
-The `notes` field carries **two different kinds of information** with no
-separation:
+Preserved for when M-13 implementation begins.
 
-1. **Implementation guidance** — how to structure code, what function
-   signatures to use, what data formats to expect.  This is appropriate for
-   `notes`.
+The reviewer runs AFTER the deterministic compile loop converges, BEFORE
+writing final work orders. It reads all work orders as a batch and checks:
 
-2. **Executable invariants** — things that *must be true* for the work order
-   to succeed, but which are not enforced by any acceptance command or
-   validator.  Example: "verify.sh must run `python -m unittest discover -v`"
-   — operationally critical but invisible to the validation layer.
+1. Acceptance command / notes consistency (function signatures, types).
+2. Cross-work-order API coherence.
+3. Context_files completeness.
 
-The factory's SE node injects notes directly into the executor LLM prompt
-as free text with no structure, no validation, and no separation of concerns.
-Notes pass through two LLM boundaries (planner → JSON → executor → code)
-with no mechanical check on coherence.
+Implementation: new `planner/REVIEWER_PROMPT.md`, `_run_reviewer()` in
+`compiler.py`, 1-2 review cycles, optional via `--review / --no-review`.
 
-**Current status:** The M1-M6 machinery moved some invariants OUT of notes
-and INTO structured fields (preconditions, postconditions, verify_contract).
-But notes still carry most of the implementation contract (function
-signatures, data formats, behavioral requirements).  The notes field remains
-the largest source of unstructured, unenforced semantics in the system.
-
-**Future options:**
-- Structured notes subsections (e.g., `api_contracts` as a separate field
-  with typed entries for function signatures) — high complexity, unclear ROI.
-- M-13 LLM reviewer pass can check notes-to-acceptance consistency without
-  requiring notes to be structured.
-- Prompt testability guidance (M-11) reduces the impact of notes errors by
-  steering acceptance commands away from oracle-dependent assertions.
+Cost: ~doubles planner LLM calls. Latency: 30-90 min worst case.
+Risk: moderate (hallucinated errors possible).
 
 ---
 ---
 
-# Part 3: Artifact Audit & Light Tidy (Preparation for CLI / Cloud)
+# Part 3: Artifact Audit & Light Tidy
 
 **Date:** 2026-02-10
 
-This section documents the current artifact layout, evaluates naming and
-format consistency, and proposes minimal tidy actions to prepare the system
-for a future CLI and cloud/DB-backed logging — without redesigning anything.
+Current artifact naming and format is clean — no renames or format changes
+needed (reviewed in detail; all verdicts were "good as-is").
+
+## Recommended Actions
+
+1. **[OPTIONAL] Persist revision prompts on retry** — write
+   `revision_prompt_attempt_{N}.txt` in `compiler.py` when `attempt > 1`.
+2. **[OPTIONAL] Add environment snapshot to summaries** — add
+   `python_version`, `platform` to `compile_summary.json` and
+   `run_summary.json`.
+3. **[COSMETIC] Make `se_prompt.txt` write atomic** — replace bare `open`
+   with atomic write helper.
+4. **[DEFERRED] Per-attempt timing** — useful for performance work but
+   requires state plumbing.
 
 ---
-
-## A) Current Artifact Inventory
-
-### Planner artifacts
-
-Directory: `{artifacts_dir}/{compile_hash}/compile/`
-
-Per-run (written once per compile invocation):
-- `prompt_rendered.txt` — the fully-rendered prompt sent to the LLM on the first attempt. Text. Produced by `compiler.py::compile_plan`.
-- `compile_summary.json` — top-level compile outcome: hash, model config, attempt count, errors, warnings, timing. JSON. Produced by `compiler.py::_write_summary`.
-- `manifest_normalized.json` — the final validated manifest (system_overview + verify_contract + work_orders with verify_exempt injected). JSON. Written only on success. Produced by `compiler.py::compile_plan`.
-- `validation_errors.json` — final hard errors + warnings, written only on failure. JSON. Written to both `compile_artifacts/` and `outdir/`. Produced by `compiler.py::compile_plan`.
-
-Per-attempt (one set per compile attempt, up to `MAX_COMPILE_ATTEMPTS=3`):
-- `llm_raw_response_attempt_{N}.txt` — the raw LLM output text for attempt N. Text. Produced by `compiler.py::compile_plan`.
-- `manifest_raw_attempt_{N}.json` — the parsed (but not validated) JSON from attempt N. JSON. Only written if JSON parsing succeeds. Produced by `compiler.py::compile_plan`.
-- `validation_errors_attempt_{N}.json` — errors from attempt N (structural + chain). JSON. Produced by `compiler.py::compile_plan`.
-
-Conditional (only on API-level failures):
-- `raw_response_{label}.json` — full API response dump on error/incomplete/timeout. JSON. Written by `openai_client.py::_dump_response`. Labels include `no_text_attempt_{i}`, `incomplete_attempt_{i}`, `unexpected_status_{i}`, `poll_timeout`.
-
-Output directory: `{outdir}/`
-
-Written only on successful compile:
-- `WO-{NN}.json` — one file per work order (e.g. `WO-01.json`). JSON. Written atomically by `io.py::write_work_orders`.
-- `WORK_ORDERS_MANIFEST.json` — the full manifest (written last). JSON. Written atomically by `io.py::write_work_orders`.
-
-
-### Factory artifacts
-
-Run directory: `{out_dir}/{run_id}/`
-
-Per-run:
-- `work_order.json` — copy of the input work order for reproducibility. JSON. Written by `run.py::run_cli`.
-- `run_summary.json` — final outcome: verdict, attempts, config, tree hash, rollback status. JSON. Written by `run.py::run_cli` (normal path) or the emergency handler (error path).
-
-Attempt directory: `{out_dir}/{run_id}/attempt_{M}/`
-
-Per-attempt (one set per factory attempt, up to `max_attempts`):
-- `se_prompt.txt` — the fully-rendered SE prompt sent to the factory LLM. Text. Written by `nodes_se.py::se_node` (direct `open`).
-- `proposed_writes.json` — the parsed WriteProposal from the SE LLM. JSON. Written by `nodes_se.py::se_node`. Only present if parsing succeeded.
-- `raw_llm_response.json` — the raw SE LLM output, written only on parse failure. JSON. Written by `nodes_se.py::se_node`.
-- `failure_brief.json` — structured failure info (stage, command, exit code, error excerpt). JSON. Written by SE (on precondition/LLM failure), TR (via `_tr_fail`), and finalize (authoritative overwrite).
-- `write_result.json` — TR outcome: write_ok, touched_files, errors. JSON. Written by `nodes_tr.py::tr_node`.
-- `verify_result.json` — list of CmdResult dicts for verify commands. JSON. Written by `nodes_po.py::po_node`.
-- `acceptance_result.json` — list of CmdResult dicts for acceptance commands. JSON. Written by `nodes_po.py::po_node`.
-- `verify_{K}_stdout.txt` / `verify_{K}_stderr.txt` — raw stdout/stderr for verify command K. Binary (written as bytes). Written by `util.py::run_command`.
-- `acceptance_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` — raw stdout/stderr for acceptance command K. Binary (written as bytes). Written by `util.py::run_command`.
-
 ---
 
-## B) Naming and Clarity Review
+# Deferred Work
 
-### Planner
+These items are not planned for near-term implementation but are recorded
+for future reference.
 
-- `prompt_rendered.txt` — good as-is. Clearly the rendered prompt.
-- `compile_summary.json` — good as-is. Unambiguous summary file.
-- `manifest_normalized.json` — good as-is. Clearly the post-validation normalized manifest.
-- `manifest_raw_attempt_{N}.json` — good as-is. "raw" clearly means pre-validation.
-- `llm_raw_response_attempt_{N}.txt` — good as-is. Clearly the raw LLM text per attempt.
-- `validation_errors_attempt_{N}.json` — good as-is. Per-attempt errors.
-- `validation_errors.json` — **minor issue**: this name is identical to the per-attempt files but without the `_attempt_{N}` suffix, and it's written to *two* locations (compile artifacts dir AND outdir). The dual-write is intentional (outdir copy is for quick access), but a reader encountering both might be confused about which is authoritative. **Verdict:** acceptable — the outdir copy is a convenience duplicate and `compile_summary.json` links to the artifacts dir. Leave as-is.
-- `raw_response_{label}.json` — **minor issue**: this is the only planner artifact not written via `_atomic_write` (uses bare `open`). The naming is fine; the non-atomic write is consistent with its best-effort diagnostic purpose. Leave as-is.
-- `WO-{NN}.json` / `WORK_ORDERS_MANIFEST.json` — good as-is. Clear, conventional.
+### `llmc` unified CLI wrapper
 
-### Factory
+A single `llmc plan`, `llmc run`, `llmc batch` entry point. After the
+required-vs-default boundary is decided for each config constant, this
+becomes a straightforward wiring exercise: import from `defaults.py`,
+add argparse flags, pass to existing entry points.
 
-- `work_order.json` — good as-is.
-- `run_summary.json` — good as-is.
-- `se_prompt.txt` — good as-is. "se" is the established node name.
-- `proposed_writes.json` — good as-is.
-- `raw_llm_response.json` — **note**: only written on parse failure. Name doesn't indicate conditionality, but this is standard practice (absence = success). Good as-is.
-- `failure_brief.json` — good as-is. Name matches the `FailureBrief` schema.
-- `write_result.json` — good as-is.
-- `verify_result.json` / `acceptance_result.json` — good as-is. Consistent `{stage}_result.json` pattern.
-- `verify_{K}_stdout.txt` / `verify_{K}_stderr.txt` — good as-is. Index K distinguishes multiple verify commands.
-- `acceptance_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` — good as-is.
+### Required-vs-default boundary
 
-### Cross-system consistency
+For each of the 50 config constants in `planner/defaults.py` and
+`factory/defaults.py`, decide: stays internal, becomes a CLI default
+(overridable), or stays hardcoded but documented. Also decide whether
+`--timeout-seconds` should be split into `--llm-timeout` and
+`--cmd-timeout`.
 
-- The planner uses `compile_summary.json`; the factory uses `run_summary.json`. The names differ because the operations differ (compile vs run). This is correct and should stay.
-- The planner uses `_attempt_{N}` suffixes on filenames; the factory uses `attempt_{M}/` subdirectories. Both approaches are clean and appropriate for their cardinality (planner has 3 attempts in one dir; factory has 2+ attempts each with many files). Good as-is.
-- The planner's rendered prompt is `prompt_rendered.txt`; the factory's is `se_prompt.txt`. Different names for the same concept, but justified by context (planner has one prompt; factory has stage-specific prompts). Good as-is.
+### Pattern C runtime config file
 
-**Overall naming verdict:** The naming is clear, consistent, and immediately understandable. No renames needed.
+A TOML/YAML config file (`llmc.toml`) that overrides `defaults.py`
+values. Loaded at startup before CLI parsing. CLI flags override config
+values (CLI > config > defaults).
 
----
+### `OPENAI_API_BASE` / `OPENAI_ORG_ID` environment variable support
 
-## C) Format Review
-
-- All structured data is JSON. All human-readable output capture is TXT. This is correct.
-- `se_prompt.txt` is written via bare `open(..., "w")` (not `save_json` or `_atomic_write`). This is the only factory artifact not written atomically. **Verdict:** low risk — the prompt is a diagnostic artifact, not a verdict. If it's truncated on crash, the run summary still captures the outcome. Leave as-is, but note for M-05 follow-up if consistency is desired later.
-- `verify_{K}_stdout.txt` / `acceptance_{K}_stderr.txt` are written as binary (`"wb"`). This is correct — subprocess output is bytes. The files are plain text in practice but preserving raw bytes avoids encoding issues.
-- `run_summary.json` contains embedded absolute paths (`stdout_path`, `stderr_path`, `proposal_path`, `repo_root`, `out_dir`). These are useful for local debugging but would be awkward for cloud ingestion or cross-machine comparison. **Verdict:** not a problem now. When cloud ingestion is added, a post-processor can strip or relativize paths. No format change needed today.
-- `compile_summary.json` also contains absolute paths (`spec_path`, `template_path`, `artifacts_dir`, `outdir`). Same verdict.
-
-**Overall format verdict:** Formats are appropriate. No changes needed.
-
----
-
-## D) Iteration and Lifecycle Check
-
-### Planner iteration
-
-- Each compile attempt writes `llm_raw_response_attempt_{N}.txt`, `manifest_raw_attempt_{N}.json`, and `validation_errors_attempt_{N}.json`. The `{N}` suffix prevents overwriting.
-- `compile_summary.json` contains the full `attempt_records` array with per-attempt error lists.
-- A reader can reconstruct the full compile history from filenames alone: attempt 1 had errors (see `validation_errors_attempt_1.json`), attempt 2 was clean (see `validation_errors_attempt_2.json` with `[]`), compile succeeded.
-- **Verdict:** clean. No issues.
-
-### Factory iteration
-
-- Each factory attempt writes all per-attempt artifacts into `attempt_{M}/`. The subdirectory prevents overwriting.
-- `run_summary.json` contains the full `attempts` array with per-attempt records (proposal path, touched files, verify/acceptance results, failure brief).
-- A reader can identify which attempt succeeded (the last one with `failure_brief: null` and `write_ok: true`), which failed (non-null `failure_brief`), and where iteration stopped (the total count vs max_attempts).
-- **Verdict:** clean. No issues.
-
-### Interrupt / crash lifecycle
-
-- M-02 ensures `KeyboardInterrupt` still writes an emergency `run_summary.json` with `verdict: "ERROR"`. The run is never invisible.
-- M-05 ensures `save_json` is atomic, so interrupted writes don't leave truncated JSON.
-- M-09 adds `rollback_failed` to the summary, so post-mortem tooling can distinguish clean vs dirty repos.
-- The planner writes `compile_summary.json` on every exit path (success, validation failure, parse failure).
-- **Verdict:** lifecycle coverage is good after the M-01 through M-10 fixes.
-
----
-
-## E) Missing Artifacts / Observability Gaps
-
-### E.1 — No planner revision prompt artifact [OPTIONAL]
-
-When the compile loop retries, `_build_revision_prompt` constructs a new prompt containing the errors and the previous response. This revised prompt is sent to the LLM but is never persisted. Only the initial `prompt_rendered.txt` is saved.
-
-**Why it matters:** For debugging retry behavior, you currently have the errors (in `validation_errors_attempt_{N}.json`) and the LLM response (in `llm_raw_response_attempt_{N}.txt`), but not the actual prompt the LLM saw on attempts 2+. This makes it hard to audit whether the revision prompt was well-formed.
-
-**Proposed fix:** In `compiler.py::compile_plan`, write `revision_prompt_attempt_{N}.txt` when `attempt > 1`, immediately after `_build_revision_prompt` returns. One line of code.
-
-**Classification:** OPTIONAL — the error list + previous response are usually sufficient for debugging. The revision prompt can be mentally reconstructed.
-
-### E.2 — No `verify_exempt` decision artifact [OPTIONAL]
-
-`compute_verify_exempt` determines which work orders skip global verification. The computed flags end up in the emitted `WO-{NN}.json` files, but the decision rationale (which verify_contract requirements were satisfied by each WO's cumulative postconditions) is not persisted separately.
-
-**Why it matters:** If a WO unexpectedly gets `verify_exempt: true` or `false`, there's no artifact showing the cumulative state at each step.
-
-**Proposed fix:** None needed now. The M-01 fix ensures `verify_exempt` is always overwritten by the compiler, and the decision is deterministic from `verify_contract` + postconditions (both in the manifest). A future CLI could compute and display this on demand rather than persisting it.
-
-**Classification:** OPTIONAL — deterministically reproducible from existing artifacts.
-
-### E.3 — No factory attempt-level timing [OPTIONAL]
-
-`run_summary.json` has total timing via individual command `duration_seconds`, but no per-attempt wall-clock start/end timestamps. If an attempt takes 5 minutes and you want to know where the time went (LLM call? verify? acceptance?), you can sum command durations but can't see LLM call latency (not captured).
-
-**Why it matters:** Performance debugging. The SE LLM call is often the slowest step and its duration is invisible.
-
-**Proposed fix:** In `_finalize_node` (graph.py), add `attempt_start_timestamp` and `attempt_end_timestamp` to the attempt record. Requires threading a start time through the state or recording it in `se_node`. Low complexity but touches state plumbing.
-
-**Classification:** OPTIONAL — not needed for correctness or auditing, useful for performance work.
-
-### E.4 — No environment snapshot [OPTIONAL]
-
-Neither `compile_summary.json` nor `run_summary.json` captures Python version, platform, or key dependency versions. This makes cross-machine reproducibility harder.
-
-**Why it matters:** A factory run that passes on macOS Python 3.12 might fail on Linux Python 3.11 due to stdlib differences. Without an environment snapshot, this is invisible.
-
-**Proposed fix:** Add a small `environment` dict to both summaries: `python_version`, `platform`, `pydantic_version`. ~5 lines in `compiler.py` and `run.py`.
-
-**Classification:** OPTIONAL — useful for cloud/multi-machine use, not needed for single-machine debugging.
-
-### E.5 — `se_prompt.txt` not written atomically [COSMETIC]
-
-This is the only factory artifact written via bare `open(..., "w")` instead of `save_json` or `_atomic_write`. In practice this doesn't matter (it's a diagnostic artifact, not a verdict), but it's an inconsistency.
-
-**Classification:** COSMETIC — not worth fixing unless you're already touching `nodes_se.py`.
-
----
-
-## F) Recommended Minimal Tidy Actions
-
-1. **[OPTIONAL] Persist revision prompts on retry** — write `revision_prompt_attempt_{N}.txt` in `compiler.py` when `attempt > 1`. One `write_text_artifact` call. Improves retry debugging. (Ref: E.1)
-
-2. **[OPTIONAL] Add environment snapshot to summaries** — add `python_version`, `platform` to `compile_summary.json` and `run_summary.json`. ~5 lines per file. Prepares for cross-machine and cloud use. (Ref: E.4)
-
-3. **[COSMETIC] Make `se_prompt.txt` write atomic** — replace bare `open` in `nodes_se.py:226` with a call through `save_json`'s sibling or a text-atomic-write helper. Consistency only. (Ref: E.5)
-
-4. **[NO ACTION] Naming** — all artifact names are clear and consistent. No renames needed. (Ref: Section B)
-
-5. **[NO ACTION] Formats** — JSON for structured data, TXT for human-readable. Correct throughout. (Ref: Section C)
-
-6. **[NO ACTION] Iteration lifecycle** — planner uses `_attempt_{N}` suffixes, factory uses `attempt_{M}/` subdirectories. Both are clean and non-overwriting. (Ref: Section D)
-
-7. **[NO ACTION] Absolute paths in summaries** — they're useful for local debugging. Relativize later when cloud ingestion is built, not now. (Ref: Section C)
-
-8. **[DEFERRED] Per-attempt timing** — useful for performance work but requires state plumbing. Not worth doing as a tidy action. (Ref: E.3)
-
-9. **[DEFERRED] verify_exempt decision trace** — deterministically reproducible from existing artifacts. Not worth a new artifact. (Ref: E.2)
+Currently only `OPENAI_API_KEY` is read. Supporting additional env vars
+for API base URL, org ID, and proxy configuration is future work.

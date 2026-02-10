@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 
 from factory import llm
+from factory.defaults import (  # noqa: F401 — re-exported for backward compat
+    FACTORY_PROMPT_FILENAME,
+    MAX_CONTEXT_BYTES,
+)
 from factory.schemas import FailureBrief, WorkOrder, WriteProposal
 from factory.util import (
     ARTIFACT_FAILURE_BRIEF,
@@ -16,8 +20,6 @@ from factory.util import (
     sha256_file,
     truncate,
 )
-
-MAX_CONTEXT_BYTES = 200 * 1024  # 200 KB total for context-file reading
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +65,7 @@ def _read_context_files(work_order: WorkOrder, repo_root: str) -> list[dict]:
 
 
 _TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "FACTORY_PROMPT.md"
+    os.path.dirname(os.path.abspath(__file__)), FACTORY_PROMPT_FILENAME
 )
 
 

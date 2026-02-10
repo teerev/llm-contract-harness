@@ -657,3 +657,12 @@ class TestCompileSummary:
         assert summary["compile_attempts"] == 1
         assert summary["success"] is True
         assert isinstance(summary["attempt_records"], list)
+        # M-18: defaults_snapshot is present with key values
+        ds = summary["defaults_snapshot"]
+        assert isinstance(ds, dict)
+        assert "poll_deadline_s" in ds
+        assert "max_transport_retries" in ds
+        assert "max_compile_attempts" in ds
+        assert ds["poll_deadline_s"] == 2400.0
+        assert ds["max_transport_retries"] == 3
+        assert ds["max_compile_attempts"] == 3
