@@ -1,4 +1,4 @@
-# aos — Autonomous Operating System
+# aos — Agentic Orchestration Service
 
 A **deterministic contract layer** between LLM planning and LLM code execution.
 
