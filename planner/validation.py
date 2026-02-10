@@ -170,6 +170,19 @@ def validate_plan(work_orders_raw: list[dict]) -> list[ValidationError]:
         ))
         return errors
 
+    # --- M-03: Reject non-dict elements before normalization ---
+    for i, wo in enumerate(work_orders_raw):
+        if not isinstance(wo, dict):
+            errors.append(ValidationError(
+                code=E000_STRUCTURAL,
+                wo_id=f"index-{i}",
+                message=(
+                    f"work_orders[{i}] is {type(wo).__name__}, expected dict"
+                ),
+            ))
+    if errors:
+        return errors
+
     # --- Normalize all work orders first ---
     normalized: list[dict] = [normalize_work_order(wo) for wo in work_orders_raw]
 
@@ -281,6 +294,20 @@ def parse_and_validate(
             wo_id=None,
             message="Missing or invalid 'work_orders' key in response",
         )]
+
+    # M-03: Reject non-dict elements before normalization to prevent crashes.
+    non_dict_errors: list[ValidationError] = []
+    for i, wo in enumerate(work_orders_raw):
+        if not isinstance(wo, dict):
+            non_dict_errors.append(ValidationError(
+                code=E000_STRUCTURAL,
+                wo_id=f"index-{i}",
+                message=(
+                    f"work_orders[{i}] is {type(wo).__name__}, expected dict"
+                ),
+            ))
+    if non_dict_errors:
+        return [], non_dict_errors
 
     # Normalize
     normalized = [normalize_work_order(wo) for wo in work_orders_raw]
@@ -562,6 +589,18 @@ def validate_plan_v2(
                 file_state.add(cond["path"])
 
     # ── R6: Verify contract reachability ─────────────────────────────
+    # M-03: Guard against non-dict verify_contract.
+    if verify_contract is not None and not isinstance(verify_contract, dict):
+        errors.append(ValidationError(
+            code=E000_STRUCTURAL,
+            wo_id=None,
+            message=(
+                f"verify_contract is {type(verify_contract).__name__}, "
+                f"expected dict or null"
+            ),
+            field="verify_contract",
+        ))
+        return errors
     if verify_contract is not None:
         vc_requires = verify_contract.get("requires", [])
         for req in vc_requires:
@@ -595,6 +634,10 @@ def compute_verify_exempt(
     Returns a **new** list of dicts (shallow copies with ``verify_exempt``
     injected).  The input list is not mutated.
     """
+    # M-03: Guard against non-dict verify_contract (consistent with M-01).
+    if not isinstance(verify_contract, dict):
+        return [{**wo, "verify_exempt": False} for wo in work_orders]
+
     vc_requires = verify_contract.get("requires", [])
     if not vc_requires:
         # No contract → nothing is exempt; return copies with False.

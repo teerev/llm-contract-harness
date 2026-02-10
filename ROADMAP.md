@@ -116,9 +116,16 @@ Assert process exit code is 130.
 
 ---
 
-## M-03  Type-guard planner validation against non-dict inputs [HIGH]
+## M-03  Type-guard planner validation against non-dict inputs [HIGH] ✅ DONE
 
 **Fixes:** AUD-12
+**Status:** Implemented and tested (2026-02-10).
+Code: `planner/validation.py` — isinstance guards in `parse_and_validate`,
+`validate_plan`, `validate_plan_v2`, and `compute_verify_exempt`.
+Tests: 5 tests in `TestE000Structural` (`test_structural_validation.py`),
+5 tests in `TestVerifyContractTypeGuard` (`test_chain_validation.py`),
+plus M-01 xfail resolved to passing `test_wrong_type_contract_rejected_not_crash`.
+Full suite: 400 passed.
 
 **Why:** If the LLM emits `"work_orders": [42, "hello"]`, the planner calls
 `42.get("id")` and crashes with `AttributeError`. The CLI's broad

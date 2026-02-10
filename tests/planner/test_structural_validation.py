@@ -117,6 +117,44 @@ class TestE000Structural:
         assert errors[0].code == E000_STRUCTURAL
         assert "work_orders" in errors[0].message
 
+    # --- M-03: Non-dict elements in work_orders ---
+
+    def test_non_dict_int_element_via_validate_plan(self):
+        """validate_plan must not crash on non-dict elements — returns E000."""
+        errors = validate_plan([42, _wo("WO-01")])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("int" in e.message for e in errors)
+
+    def test_non_dict_string_element_via_validate_plan(self):
+        errors = validate_plan(["hello"])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("str" in e.message for e in errors)
+
+    def test_non_dict_list_element_via_validate_plan(self):
+        errors = validate_plan([[1, 2, 3]])
+        assert any(e.code == E000_STRUCTURAL for e in errors)
+        assert any("list" in e.message for e in errors)
+
+    def test_non_dict_mixed_via_parse_and_validate(self):
+        """parse_and_validate must not crash on non-dict elements."""
+        wos, errors = parse_and_validate({
+            "work_orders": [42, "x", _wo("WO-01")],
+        })
+        # Should return errors, not raise AttributeError
+        assert len(errors) >= 2  # at least one per non-dict element
+        assert all(e.code == E000_STRUCTURAL for e in errors)
+        # No normalized work orders returned when non-dict elements present
+        assert wos == []
+
+    def test_all_non_dict_elements_via_parse_and_validate(self):
+        """All elements are non-dict — structured errors, no crash."""
+        wos, errors = parse_and_validate({
+            "work_orders": [42, None, True],
+        })
+        assert len(errors) == 3
+        assert all(e.code == E000_STRUCTURAL for e in errors)
+        assert wos == []
+
 
 # ---------------------------------------------------------------------------
 # E001: ID format and contiguity

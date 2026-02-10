@@ -555,22 +555,20 @@ class TestVerifyExemptSanitisation:
         assert result.success is True
         assert result.work_orders[0]["verify_exempt"] is False
 
-    @pytest.mark.xfail(
-        reason="Requires M-03 (type-guard validate_plan_v2 against non-dict "
-               "verify_contract) — currently crashes in validate_plan_v2 "
-               "before M-01's code runs.",
-        raises=AttributeError,
-        strict=True,
-    )
     @patch("planner.compiler.OpenAIResponsesClient")
-    def test_forced_false_when_contract_wrong_type(self, MockClient, spec_file,
-                                                    template_file, outdir,
-                                                    artifacts_dir):
-        """When verify_contract is a non-dict (e.g. a list), verify_exempt
-        must be False — not crash, not trust the LLM value."""
+    def test_wrong_type_contract_rejected_not_crash(self, MockClient, spec_file,
+                                                     template_file, outdir,
+                                                     artifacts_dir):
+        """When verify_contract is a non-dict (e.g. a list), compilation must
+        fail with a structured E000 error — not crash with AttributeError.
+        (M-01 + M-03 combined: M-03 guards validate_plan_v2, M-01 guards
+        the verify_exempt computation.)"""
         manifest = copy.deepcopy(_MANIFEST_NO_CONTRACT_LLM_EXEMPT)
         manifest["verify_contract"] = ["not", "a", "dict"]
-        mock_client = _mock_client_returning(json.dumps(manifest))
+        # Supply enough responses for all retry attempts
+        mock_client = _mock_client_returning(
+            *[json.dumps(manifest)] * MAX_COMPILE_ATTEMPTS
+        )
         MockClient.return_value = mock_client
 
         result = compile_plan(
@@ -580,8 +578,10 @@ class TestVerifyExemptSanitisation:
             artifacts_dir=artifacts_dir,
         )
 
-        assert result.success is True
-        assert result.work_orders[0]["verify_exempt"] is False
+        # Compilation fails (non-dict verify_contract is a validation error)
+        # but does NOT crash — structured errors are returned.
+        assert result.success is False
+        assert any("E000" in e for e in result.errors)
 
     @patch("planner.compiler.OpenAIResponsesClient")
     def test_llm_value_overwritten_when_contract_present(self, MockClient,

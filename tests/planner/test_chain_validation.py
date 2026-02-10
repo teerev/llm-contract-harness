@@ -615,3 +615,59 @@ class TestValidPlanEndToEnd:
         # No chain errors at all (no conditions → R1-R4 trivially pass,
         # no verify_contract → R6 skipped, no verify in acceptance → R7 ok)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# M-03: Non-dict verify_contract type guard
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyContractTypeGuard:
+    """M-03: validate_plan_v2 and compute_verify_exempt must not crash when
+    verify_contract is a non-dict type (list, string, int, etc.)."""
+
+    def test_validate_plan_v2_list_verify_contract(self):
+        """verify_contract is a list → structured E000 error, no crash."""
+        wo = _wo("WO-01",
+                 allowed_files=["src/a.py"],
+                 postconditions=[{"kind": "file_exists", "path": "src/a.py"}])
+        errors = validate_plan_v2([wo], ["not", "a", "dict"], EMPTY_REPO)
+        assert any(e.code == "E000" for e in errors)
+        assert any("list" in e.message for e in errors)
+
+    def test_validate_plan_v2_string_verify_contract(self):
+        """verify_contract is a string → structured E000 error, no crash."""
+        wo = _wo("WO-01",
+                 allowed_files=["src/a.py"],
+                 postconditions=[{"kind": "file_exists", "path": "src/a.py"}])
+        errors = validate_plan_v2([wo], "bad", EMPTY_REPO)
+        assert any(e.code == "E000" for e in errors)
+        assert any("str" in e.message for e in errors)
+
+    def test_validate_plan_v2_int_verify_contract(self):
+        """verify_contract is an int → structured E000 error, no crash."""
+        wo = _wo("WO-01",
+                 allowed_files=["src/a.py"],
+                 postconditions=[{"kind": "file_exists", "path": "src/a.py"}])
+        errors = validate_plan_v2([wo], 42, EMPTY_REPO)
+        assert any(e.code == "E000" for e in errors)
+
+    def test_compute_verify_exempt_non_dict_returns_all_false(self):
+        """compute_verify_exempt with non-dict verify_contract → all False, no crash."""
+        wos = [
+            _wo("WO-01",
+                allowed_files=["src/a.py"],
+                postconditions=[{"kind": "file_exists", "path": "src/a.py"}]),
+        ]
+        result = compute_verify_exempt(wos, ["bad"], EMPTY_REPO)
+        assert len(result) == 1
+        assert result[0]["verify_exempt"] is False
+
+    def test_validate_plan_v2_none_verify_contract_still_works(self):
+        """verify_contract=None (the normal case) must not be broken by the guard."""
+        wo = _wo("WO-01",
+                 allowed_files=["src/a.py"],
+                 postconditions=[{"kind": "file_exists", "path": "src/a.py"}])
+        errors = validate_plan_v2([wo], None, EMPTY_REPO)
+        # No errors — None is the normal "no contract" case
+        assert errors == []
