@@ -23,16 +23,243 @@
   `run_summary.json` and `compile_summary.json`. 40 hardening tests guard
   against value drift, shadowing, and doc staleness. Test suite: 472 passed.
 
-Two tracks of work remain:
+Remaining work tracks, in priority order:
 
-1. **Prompt semantic hardening** (Part 2) — prompt template changes to reduce
+1. **Credibility blockers** (Part 5) — small, focused fixes required
+   to make the repo's claims of contract enforcement and auditability
+   defensible. Derived from adversarial audit synthesis (`SUMMARY.md`).
+2. **Prompt semantic hardening** (Part 2) — prompt template changes to reduce
    LLM-generated acceptance command failures. These improve LLM output quality
    but do not affect deterministic guarantees.
-2. **Artifact audit & light tidy** (Part 3) — naming/format review and
+3. **Artifact audit & light tidy** (Part 3) — naming/format review and
    optional observability improvements for CLI/cloud preparation.
 
 Part 4 (Configuration extraction) is complete. The milestones, inventory
 table, risk register, and open questions are preserved below as reference.
+
+---
+---
+
+# Part 5: Credibility Blockers
+
+Provenance: Eight adversarial audits (`1.md`–`8.md`) were synthesized into
+`SUMMARY.md`. That synthesis identifies four issues that "must fix to be
+credible" or "must fix to preserve auditability." This part plans work
+for exactly those four issues and nothing else.
+
+**What this part is:** Honesty-preserving fixes. Each milestone closes a
+gap between what the repo claims and what the code actually guarantees.
+
+**What this part is NOT:** Feature work, scope expansion, or production
+hardening. The following are explicitly out of scope and must not be
+added to this section:
+
+- Idempotent re-execution or "skip if already done" logic
+- Crash recovery, transactional safety, or write-ahead logging
+- Sandboxing, containerization, or host isolation
+- Environment isolation or reproducibility guarantees
+- Semantic correctness enforcement beyond structural checks
+- Operational packaging (Docker, CI, pyproject.toml, etc.)
+- Logging frameworks, metrics, or real-time observability
+- TOCTOU hardening or filesystem race-condition fixes
+- Planner redesign or hierarchical planning
+
+These are documented as acceptable limitations in `SUMMARY.md` and remain so.
+
+---
+
+### M-20: Failure Classification in Retry Router
+
+**Problem statement:** The factory's retry router
+(`_route_after_finalize`) treats every failure identically: if attempts
+remain, retry from SE. This causes deterministic failures — including
+preflight errors that the code itself labels "PLANNER-CONTRACT BUG: re-run
+the planner" — to be retried `max_attempts` times with identical results.
+Per SUMMARY.md C3: "A system that 'emphasizes safety' should not burn LLM
+calls on its own declared PLANNER-CONTRACT BUG messages. This undermines the
+claim of contract enforcement — the contract detects the bug and then ignores
+its own diagnosis."
+
+**Scope:** Modify `_route_after_finalize` in `factory/graph.py` to inspect
+the `failure_brief.stage` field and abort early (route to END) for failure
+stages that cannot benefit from retry. At minimum, `stage="preflight"` must
+be non-retryable.
+
+**Explicitly out of scope:**
+- Idempotent re-execution or "already done" detection
+- Backoff logic for transient LLM errors (desirable but not a credibility blocker)
+- Crash recovery or transaction markers
+- Changing the `FailureBrief` schema or adding new failure stages
+
+**Implementation notes:** The `failure_brief` dict is already preserved in
+state across the finalize → router boundary. The router currently reads
+`state.get("verdict")` and `state["attempt_index"]`. It must additionally
+read `state.get("failure_brief", {}).get("stage")` and treat `"preflight"`
+(and optionally `"write_failed"` for OS errors) as non-retryable. This is
+a single conditional added to a 7-line function.
+
+**Acceptance criteria:**
+- A preflight failure (e.g., `file_absent` precondition on an existing file)
+  produces exactly 1 attempt record in `run_summary.json`, not `max_attempts`.
+- `run_summary.json` verdict is FAIL with `total_attempts: 1`.
+- Verify/acceptance failures (`stage="verify_failed"`, `stage="acceptance_failed"`)
+  are still retried up to `max_attempts`. Existing retry behavior for
+  LLM-correctable errors is preserved.
+- All existing tests pass.
+
+**Artifacts / Docs affected:**
+- `factory/graph.py` — `_route_after_finalize` function
+- `tests/factory/` — new or updated test asserting single-attempt on preflight failure
+
+---
+
+### M-21: Artifact Overwrite Prevention on Duplicate `run_id`
+
+**Problem statement:** The `run_id` is deterministic:
+`sha256(work_order + baseline_commit)[:16]`. Re-executing the same work
+order on the same baseline produces the same `run_id` and the same artifact
+directory. The second run silently overwrites the first run's
+`run_summary.json` via atomic `os.replace`, destroying the audit trail of
+the prior run — including a prior PASS verdict. Per SUMMARY.md C5/C9: "the
+artifact-overwrite issue **must fix** — it destroys the audit trail, which
+directly contradicts the 'auditability' claim."
+
+**Scope:** Modify `run_cli` in `factory/run.py` to detect when a
+`run_summary.json` already exists in the computed run directory, and refuse
+to proceed (or disambiguate the directory) rather than silently overwriting.
+
+**Explicitly out of scope:**
+- Idempotent re-execution or "skip if already done" logic
+- Changing the `run_id` derivation formula (it remains deterministic)
+- Crash recovery or detecting incomplete prior runs
+- Changing artifact naming conventions across the system
+
+**Implementation notes:** Two defensible approaches:
+1. **Refuse:** If `run_summary.json` exists in `run_dir`, print an error
+   and exit with a distinct exit code. The operator must delete or move the
+   prior artifacts to re-run. Simple, safe, preserves existing data.
+2. **Disambiguate:** Append a monotonic counter or timestamp to the run
+   directory name when a collision is detected
+   (e.g., `{run_id}_2`, `{run_id}_3`). Preserves both runs. More complex.
+
+Approach 1 (refuse) is recommended: it is simpler, preserves the audit
+trail unconditionally, and forces the operator to make an explicit decision.
+
+**Acceptance criteria:**
+- Running the same work order against the same baseline twice: the second
+  run exits with a non-zero exit code and a clear error message, without
+  modifying the first run's artifacts.
+- The first run's `run_summary.json` is intact and unmodified after the
+  second invocation.
+- A fresh run against a new baseline (different `run_id`) proceeds
+  normally.
+- All existing tests pass (tests use `tmp_path` so they never hit
+  collision).
+
+**Artifacts / Docs affected:**
+- `factory/run.py` — `run_cli` function, after `run_dir` computation
+- `tests/factory/` — new test asserting refusal on existing `run_summary.json`
+
+---
+
+### M-22: Stop Trusting `verify_exempt` from Disk
+
+**Problem statement:** The `verify_exempt` field in the work order JSON
+is a boolean that, when `true`, causes the factory to skip the entire
+global verification suite and run only `python -m compileall -q .` (a
+syntax check). The planner's M-01 fix ensures the planner LLM cannot set
+this field adversarially — the planner always recomputes it. But the
+factory reads the value directly from the JSON file on disk. A hand-edited
+or tampered work order with `verify_exempt: true` silently disables all
+tests. Per SUMMARY.md C6: "A single boolean in a JSON file that silently
+disables all tests is incompatible with 'safety' and 'contract-enforced.'"
+
+**Scope:** Modify the factory to treat `verify_exempt: true` as a
+condition requiring explicit acknowledgment, not a silently trusted default.
+
+**Explicitly out of scope:**
+- Recomputing `verify_exempt` from a verify contract (the factory does not
+  have access to the full plan sequence)
+- Changing the planner's `verify_exempt` computation logic
+- Sandboxing or containerization
+- Adding new fields to the WorkOrder schema
+
+**Implementation notes:** The recommended approach is to add a CLI flag
+`--allow-verify-exempt` (default: false) to the factory. When
+`verify_exempt: true` is encountered in the work order and
+`--allow-verify-exempt` is not set, the factory logs a warning and runs
+full verification anyway (treating `verify_exempt` as false). When the flag
+is set, current behavior is preserved. This makes the verify bypass
+opt-in at the operator level, not the JSON-file level. The batch runner
+(or future `llmc` CLI) would pass this flag explicitly.
+
+**Acceptance criteria:**
+- A work order with `verify_exempt: true` run without `--allow-verify-exempt`
+  executes the full verify suite (not just `compileall`).
+- A warning is printed to stderr when `verify_exempt: true` is overridden.
+- A work order with `verify_exempt: true` run with `--allow-verify-exempt`
+  behaves as today (lightweight verify only).
+- A work order with `verify_exempt: false` is unaffected regardless of the flag.
+- All existing tests pass (update tests that rely on `verify_exempt: true`
+  to pass the flag or adjust the test fixture).
+
+**Artifacts / Docs affected:**
+- `factory/__main__.py` — new `--allow-verify-exempt` flag
+- `factory/run.py` — pass flag to state or override `verify_exempt` before graph invocation
+- `factory/nodes_po.py` — no change (reads from work order; the override happens upstream)
+- `tests/factory/` — update affected tests
+- `README.md` — document the new flag in the Factory CLI table
+
+---
+
+### M-23: Tighten Determinism Language in Documentation
+
+**Problem statement:** The README says "deterministic contract layer"
+(ambiguous) and "deterministic harness" (misleading — the harness's
+enforcement is deterministic, but its outcomes are not). INVARIANTS.md L4
+("LLM non-determinism cannot bypass deterministic enforcement") is the one
+precisely correct claim. Per SUMMARY.md C7: "The narrow claim (enforcement
+is deterministic) is true and valuable. The broad claim ('deterministic
+harness') is misleading. The fix is editorial, not code."
+
+**Scope:** Edit README.md and INVARIANTS.md to replace imprecise
+determinism language with precise, bounded claims. Add a security notice
+about unsandboxed command execution. Add an explicit "Limitations" or
+"What This System Does Not Guarantee" section.
+
+**Explicitly out of scope:**
+- Code changes (this is purely editorial)
+- Changing the system's behavior or adding new enforcement
+- Adding environment snapshotting or reproducibility features
+- Rewriting ARCHITECTURE.md (though a cross-reference is appropriate)
+
+**Implementation notes:** Specific edits:
+1. README.md line 3: replace "A **deterministic contract layer**" with
+   "A **structurally enforced** contract layer" or similar. Retain
+   "deterministic" only when qualified (e.g., "deterministic validation
+   of file scope, path safety, and content hashes").
+2. README.md line 8: replace "deterministic harness" with "enforcement
+   harness" or "structural enforcement harness."
+3. Add a "Limitations" section to README.md listing: no semantic
+   correctness guarantee, no host isolation (container required for
+   untrusted LLMs), no crash recovery, no idempotent re-execution, no
+   byte-reproducible artifacts. Cite `SUMMARY.md` as provenance.
+4. Add a "Security Notice" to README.md stating that acceptance commands
+   and LLM-authored verify scripts run with operator privileges.
+5. INVARIANTS.md: add a preamble clarifying that invariants apply to the
+   enforcement layer, not end-to-end outcomes.
+
+**Acceptance criteria:**
+- README.md does not contain the unqualified phrase "deterministic harness."
+- README.md contains a "Limitations" section with at least: no semantic
+  correctness guarantee, no host isolation, no crash recovery.
+- README.md contains a security notice about unsandboxed command execution.
+- INVARIANTS.md L4 is preserved unchanged (it is already precise).
+- No code files are modified.
+
+**Artifacts / Docs affected:**
+- `README.md`
+- `INVARIANTS.md`
 
 ---
 ---
