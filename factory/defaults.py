@@ -1,7 +1,7 @@
 """Authoritative defaults for the factory subsystem.
 
 Every tunable parameter and documented constant for the factory lives here.
-Call sites will be updated to import from this module in M-16.
+All factory call sites import from this module (migrated in M-16).
 
 Safety invariants are annotated and must not be exposed via CLI.
 Determinism-sensitive values are annotated and must not be changed without
@@ -10,8 +10,6 @@ understanding the impact on artifact reproducibility.
 See ROADMAP.md Part 4 §4 (inventory table rows 21–44, 47, 49)
 and CONTROL_SURFACE.md §2.1, §3.3, §3.5–§3.7, §3.10, §5.1 for provenance.
 """
-
-# TODO(M-16): update call sites to import from here
 
 from __future__ import annotations
 
