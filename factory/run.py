@@ -18,12 +18,16 @@ from factory.util import (
     sha256_file,
 )
 from factory.workspace import (
+    current_branch_name,
     ensure_git_identity,
+    ensure_working_branch,
     get_baseline_commit,
     git_commit,
-    git_pull,
+    git_push_branch,
+    has_commits,
     is_clean,
     is_git_repo,
+    resolve_commit,
     rollback,
 )
 from shared.run_context import (
@@ -60,17 +64,25 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         con.error(f"{repo_root} is not a git repository.")
         sys.exit(1)
 
-    # Ensure local git identity (never touches global config)
+    if not has_commits(repo_root):
+        con.error(
+            f"{repo_root} has no commits. The factory requires at least one "
+            "commit to establish a baseline for rollback.\n"
+            f"  Fix: cd {repo_root} && git add -A && git commit -m 'init'"
+        )
+        sys.exit(1)
+
     ensure_git_identity(repo_root)
 
-    # Pull latest if a remote is configured
-    if _fd.GIT_AUTO_PULL:
-        try:
-            pull_output = git_pull(repo_root)
-            if pull_output and "Already up to date" not in pull_output:
-                con.step("git", "pull", pull_output.splitlines()[0])
-        except RuntimeError as exc:
-            con.warning(f"git pull failed: {exc}")
+    # Record starting branch (reject detached HEAD)
+    starting_branch = current_branch_name(repo_root)
+    if starting_branch is None:
+        con.error(
+            f"{repo_root} is in detached HEAD state. "
+            "The factory requires a named branch.\n"
+            f"  Fix: cd {repo_root} && git checkout -b <branch-name>"
+        )
+        sys.exit(1)
 
     if not is_clean(repo_root):
         con.error(
@@ -79,6 +91,94 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         )
         sys.exit(1)
 
+    # ------------------------------------------------------------------
+    # Read provenance from work order (needed before branch naming)
+    # ------------------------------------------------------------------
+    planner_ref = None
+    planner_run_id_for_branch: str | None = None
+    try:
+        with open(work_order_path, "r", encoding="utf-8") as fh:
+            wo_file_data = json.load(fh)
+        prov = wo_file_data.get("provenance")
+        if isinstance(prov, dict) and prov.get("planner_run_id"):
+            planner_ref = {
+                "planner_run_id": prov.get("planner_run_id"),
+                "compile_hash": prov.get("compile_hash"),
+                "manifest_sha256": prov.get("manifest_sha256"),
+            }
+            planner_run_id_for_branch = prov.get("planner_run_id")
+    except Exception:
+        pass  # best-effort provenance extraction
+
+    # ------------------------------------------------------------------
+    # Resolve baseline commit (requested start-point for new branches)
+    # ------------------------------------------------------------------
+    commit_hash_arg = getattr(args, "commit_hash", None)
+    if commit_hash_arg:
+        try:
+            baseline_commit_requested = resolve_commit(repo_root, commit_hash_arg)
+        except ValueError as exc:
+            con.error(str(exc))
+            sys.exit(1)
+        baseline_source = "commit-hash"
+    else:
+        baseline_commit_requested = get_baseline_commit(repo_root)
+        baseline_source = "HEAD"
+
+    # ------------------------------------------------------------------
+    # Determine branch name (single point of branch selection)
+    # ------------------------------------------------------------------
+    run_id = generate_ulid()
+    branch_arg = getattr(args, "branch", None)
+    require_exists = getattr(args, "reuse_branch", False)
+    require_new = getattr(args, "create_branch", False)
+
+    if branch_arg:
+        working_branch_name = branch_arg
+        branch_mode = "explicit"
+    else:
+        # Auto-generate: factory/<planner_run_id>/<session> or factory/adhoc/<session>
+        if planner_run_id_for_branch:
+            working_branch_name = (
+                f"{_fd.GIT_BRANCH_PREFIX}{planner_run_id_for_branch}/{run_id}"
+            )
+        else:
+            working_branch_name = f"{_fd.GIT_BRANCH_PREFIX}adhoc/{run_id}"
+        branch_mode = "auto"
+
+    # Mainline protection
+    if working_branch_name in _fd.GIT_PROTECTED_BRANCHES:
+        con.error(
+            f"Branch '{working_branch_name}' is protected. "
+            "The factory will never commit directly to main/master.\n"
+            f"  Use --branch <name> to specify a working branch."
+        )
+        sys.exit(1)
+
+    try:
+        branch_info = ensure_working_branch(
+            repo_root,
+            working_branch_name,
+            baseline_commit_requested,
+            require_exists=require_exists,
+            require_new=require_new,
+        )
+    except (ValueError, RuntimeError) as exc:
+        con.error(str(exc))
+        sys.exit(1)
+
+    factory_branch = branch_info["working_branch"]
+    baseline_commit = branch_info["effective_baseline"]
+    branch_existed = branch_info["branch_existed_at_start"]
+    branch_created = branch_info["branch_created"]
+
+    verb = "reused" if branch_existed else "created"
+    con.step("git", f"branch {factory_branch} ({verb})",
+             f"at {baseline_commit[:12]}")
+
+    # ------------------------------------------------------------------
+    # Canonical artifact directory
+    # ------------------------------------------------------------------
     artifacts_root = resolve_artifacts_root(
         getattr(args, "artifacts_dir", None)
     )
@@ -91,20 +191,6 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         )
         sys.exit(1)
 
-    try:
-        baseline_commit = get_baseline_commit(repo_root)
-    except RuntimeError:
-        con.error(
-            f"{repo_root} has no commits. The factory requires at least one "
-            "commit to establish a baseline for rollback.\n"
-            "  Fix: cd " + repo_root + " && git add -A && git commit -m 'init'"
-        )
-        sys.exit(1)
-
-    # ------------------------------------------------------------------
-    # ULID-based run_id — immutable per-run directory
-    # ------------------------------------------------------------------
-    run_id = generate_ulid()
     run_dir = os.path.join(artifacts_root, "factory", run_id)
     os.makedirs(run_dir, exist_ok=False)
 
@@ -114,24 +200,6 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     # Persist the work order and CLI config for post-mortem reproducibility
     save_json(work_order.model_dump(), os.path.join(run_dir, ARTIFACT_WORK_ORDER))
-
-    # ------------------------------------------------------------------
-    # Read provenance from work order (if planner injected it)
-    # ------------------------------------------------------------------
-    wo_dict_raw = work_order.model_dump()
-    planner_ref = None
-    try:
-        with open(work_order_path, "r", encoding="utf-8") as fh:
-            wo_file_data = json.load(fh)
-        prov = wo_file_data.get("provenance")
-        if isinstance(prov, dict) and prov.get("planner_run_id"):
-            planner_ref = {
-                "planner_run_id": prov.get("planner_run_id"),
-                "compile_hash": prov.get("compile_hash"),
-                "manifest_sha256": prov.get("manifest_sha256"),
-            }
-    except Exception:
-        pass  # best-effort provenance extraction
 
     # ------------------------------------------------------------------
     # Write run.json early (incomplete — updated on finish)
@@ -155,7 +223,18 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         "inputs": {
             "work_order_path": work_order_path,
             "work_order_sha256": sha256_file(work_order_path),
-            "baseline_commit": baseline_commit,
+            "baseline_commit_requested": baseline_commit_requested,
+            "baseline_source": baseline_source,
+        },
+        "git_workflow": {
+            "starting_branch": starting_branch,
+            "working_branch": factory_branch,
+            "branch_mode": branch_mode,
+            "branch_existed_at_start": branch_existed,
+            "baseline_commit_effective": baseline_commit,
+            "commit_hashes_created": [],
+            "push_attempted": False,
+            "push_result": None,
         },
         "outputs": None,
         "planner_ref": planner_ref,
@@ -338,6 +417,8 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         "verdict": verdict,
         "total_attempts": len(attempts),
         "baseline_commit": baseline_commit,
+        "baseline_source": baseline_source,
+        "working_branch": factory_branch,
         "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
         "rollback_failed": False,  # M-09: explicitly False on normal path
         "config": run_config,
@@ -360,21 +441,51 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     write_run_json(run_dir, run_json)
 
     # ------------------------------------------------------------------
-    # Auto-commit on PASS
+    # Auto-commit on PASS (branch is already checked out — no branch creation here)
     # ------------------------------------------------------------------
-    commit_sha = None
+    commit_hashes: list[str] = []
     if verdict == "PASS" and _fd.GIT_AUTO_COMMIT:
         try:
             commit_msg = f"{work_order.id}: applied by factory (run {run_id})"
             commit_sha = git_commit(repo_root, commit_msg)
+            commit_hashes.append(commit_sha)
             con.step("git", "commit", commit_sha[:12])
         except RuntimeError as exc:
             con.warning(f"Auto-commit failed: {exc}")
 
-        # TODO: git_push(repo_root) when ready
-        # from factory.workspace import git_push
-        # if _fd.GIT_AUTO_PUSH:
-        #     git_push(repo_root)
+    # ------------------------------------------------------------------
+    # Push working branch (if enabled and commit succeeded)
+    # ------------------------------------------------------------------
+    no_push = getattr(args, "no_push", False)
+    push_attempted = False
+    push_result = None
+
+    if commit_hashes and _fd.GIT_AUTO_PUSH and not no_push:
+        push_attempted = True
+        push_result = git_push_branch(repo_root, factory_branch)
+        if push_result["ok"]:
+            remote = push_result.get("remote", "?")
+            con.step("git", f"push → {remote}/{factory_branch}")
+        else:
+            stderr_excerpt = (push_result.get("stderr") or "")[:300]
+            con.warning(
+                f"Push failed: {stderr_excerpt}\n"
+                f"  Your changes are committed locally on branch '{factory_branch}'.\n"
+                f"  Push manually: cd {repo_root} && git push -u origin {factory_branch}"
+            )
+
+    # Record final git workflow in run.json
+    run_json["git_workflow"] = {
+        "starting_branch": starting_branch,
+        "working_branch": factory_branch,
+        "branch_mode": branch_mode,
+        "branch_existed_at_start": branch_existed,
+        "baseline_commit_effective": baseline_commit,
+        "commit_hashes_created": commit_hashes,
+        "push_attempted": push_attempted,
+        "push_result": push_result,
+    }
+    write_run_json(run_dir, run_json)
 
     # ------------------------------------------------------------------
     # Optional export to user-specified out dir

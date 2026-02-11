@@ -21,6 +21,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 DEFAULT_MAX_ATTEMPTS: int = 2  # cat:retries — max SE→TR→PO cycle attempts
+DEFAULT_LLM_MODEL: str = "gpt-5.2"  # cat:model — default LLM model for factory SE calls
 DEFAULT_LLM_TEMPERATURE: float = 0  # cat:model — LLM temperature for factory SE calls
 DEFAULT_TIMEOUT_SECONDS: int = 600  # cat:timeout — per-command timeout (LLM + subprocess)
 
@@ -55,7 +56,9 @@ GIT_TIMEOUT_SECONDS: int = 30  # cat:timeout safety — timeout for git subproce
 GIT_USER_NAME: str = "llm-compiler"  # cat:git — local git identity for auto-commits
 GIT_USER_EMAIL: str = "llm-compiler@noreply.local"  # cat:git — local git identity for auto-commits
 GIT_AUTO_COMMIT: bool = True  # cat:git — commit changes on PASS
-GIT_AUTO_PULL: bool = True  # cat:git — pull before preflight
+GIT_AUTO_PUSH: bool = True  # cat:git — push factory branch after successful commit
+GIT_BRANCH_PREFIX: str = "factory/"  # cat:git — prefix for factory-created branches
+GIT_PROTECTED_BRANCHES: frozenset = frozenset({"main", "master"})  # cat:git safety — branches the factory will never commit to directly
 
 # ---------------------------------------------------------------------------
 # Artifact filenames

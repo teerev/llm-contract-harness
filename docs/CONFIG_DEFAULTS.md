@@ -40,6 +40,7 @@ python tools/dump_defaults.py
 | Name | Value | Type | Category | Det. | Safety | Description |
 |------|-------|------|----------|------|--------|-------------|
 | `DEFAULT_MAX_ATTEMPTS` | `2` | int | retries |  |  | max SE→TR→PO cycle attempts |
+| `DEFAULT_LLM_MODEL` | `'gpt-5.2'` | str | model |  |  | default LLM model for factory SE calls |
 | `DEFAULT_LLM_TEMPERATURE` | `0` | int | model |  |  | LLM temperature for factory SE calls |
 | `DEFAULT_TIMEOUT_SECONDS` | `600` | int | timeout |  |  | per-command timeout (LLM + subprocess) |
 | `DEFAULT_LLM_TIMEOUT` | `120` | int | timeout |  |  | per-request HTTP timeout (seconds) |
@@ -54,7 +55,9 @@ python tools/dump_defaults.py
 | `GIT_USER_NAME` | `'llm-compiler'` | str | git |  |  | local git identity for auto-commits |
 | `GIT_USER_EMAIL` | `'llm-compiler@noreply.local'` | str | git |  |  | local git identity for auto-commits |
 | `GIT_AUTO_COMMIT` | `True` | bool | git |  |  | commit changes on PASS |
-| `GIT_AUTO_PULL` | `True` | bool | git |  |  | pull before preflight |
+| `GIT_AUTO_PUSH` | `True` | bool | git |  |  | push factory branch after successful commit |
+| `GIT_BRANCH_PREFIX` | `'factory/'` | str | git |  |  | prefix for factory-created branches |
+| `GIT_PROTECTED_BRANCHES` | `frozenset(['main', 'master'])` | frozenset | git |  | yes | branches the factory will never commit to directly |
 | `ARTIFACT_SE_PROMPT` | `'se_prompt.txt'` | str | artifacts |  |  | SE prompt artifact filename |
 | `ARTIFACT_PROPOSED_WRITES` | `'proposed_writes.json'` | str | artifacts |  |  | parsed proposal artifact |
 | `ARTIFACT_RAW_LLM_RESPONSE` | `'raw_llm_response.json'` | str | artifacts |  |  | raw LLM output (on parse failure) |

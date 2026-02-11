@@ -62,6 +62,11 @@ def _make_args(repo: str, wo_path: str, out: str, **overrides) -> argparse.Names
         "llm_model": "test-model",
         "llm_temperature": 0,
         "timeout_seconds": 30,
+        "commit_hash": None,
+        "branch": None,
+        "reuse_branch": False,
+        "create_branch": False,
+        "no_push": True,
         "allow_verify_exempt": False,
     }
     defaults.update(overrides)

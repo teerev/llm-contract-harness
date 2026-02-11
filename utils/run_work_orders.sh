@@ -102,6 +102,12 @@ SEED
   echo ""
 fi
 
+# Generate a stable session branch name (one branch for all WOs in this batch)
+SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(head -c4 /dev/urandom | xxd -p)"
+SESSION_BRANCH="factory/batch/${SESSION_ID}"
+echo "Session branch: $SESSION_BRANCH"
+echo ""
+
 PASSED=0
 FAILED=0
 
@@ -119,15 +125,12 @@ for WO in "${WO_FILES[@]}"; do
     --artifacts-dir "$ARTIFACTS_DIR" \
     --llm-model "$MODEL" \
     --max-attempts "$MAX_ATTEMPTS" \
+    --branch "$SESSION_BRANCH" \
+    --no-push \
     --allow-verify-exempt; then
 
     echo ""
-    echo "$WO_NAME PASSED — committing..."
-    cd "$TARGET_REPO"
-    git add -A
-    # --no-verify: skip hooks (e.g. pre-commit) that might fail on generated code
-    git commit --no-verify -m "$WO_NAME: applied by factory" || echo "(nothing to commit)"
-    cd -
+    echo "$WO_NAME PASSED"
     PASSED=$((PASSED + 1))
   else
     echo ""
@@ -140,4 +143,5 @@ done
 echo ""
 echo "========================================"
 echo "  Results: $PASSED passed, $FAILED failed (${#WO_FILES[@]} total)"
+echo "  Branch:  $SESSION_BRANCH"
 echo "========================================"

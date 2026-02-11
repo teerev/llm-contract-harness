@@ -216,8 +216,8 @@ class TestCompleteness:
 
     def test_factory_defaults_count(self):
         names = _get_public_names(fd)
-        assert len(names) == 30, (
-            f"Expected 30 public constants in factory.defaults, got {len(names)}: "
+        assert len(names) == 33, (
+            f"Expected 33 public constants in factory.defaults, got {len(names)}: "
             f"{sorted(names)}"
         )
 

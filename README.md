@@ -36,11 +36,10 @@ If `--outdir` is provided, work order files are also exported there for convenie
 ```bash
 python -m factory run \
   --repo /path/to/product \
-  --work-order wo/WO-01.json \
-  --llm-model gpt-4o
+  --work-order wo/WO-01.json
 ```
 
-The factory preflight-checks the git repo, then runs an attempt loop: the SE LLM proposes file writes as JSON, the TR node validates scope and content hashes then applies atomic writes, and the PO node runs global verification and acceptance commands. On failure, the repo is rolled back and the loop retries.
+The factory preflight-checks the git repo, creates a working branch, then runs an attempt loop: the SE LLM proposes file writes as JSON, the TR node validates scope and content hashes then applies atomic writes, and the PO node runs global verification and acceptance commands. On failure, the repo is rolled back and the loop retries. On pass, changes are committed and pushed.
 
 All run artifacts (work order snapshot, per-attempt SE prompts, write results, verify/acceptance output, failure briefs, and run summary) are written to `./artifacts/factory/{run_id}/`. Each run gets its own immutable directory with a `run.json` manifest.
 
@@ -53,7 +52,7 @@ All run artifacts (work order snapshot, per-attempt SE prompts, write results, v
   --artifacts-dir ./artifacts
 ```
 
-This initializes a clean git repo, then executes each `WO-*.json` in order, committing after each pass. Stops on the first failure.
+This initializes a clean git repo, creates a single session branch, then executes each `WO-*.json` in order on that branch. Each passing WO is committed to the same branch. Stops on the first failure.
 
 ## Artifact layout
 
@@ -110,15 +109,82 @@ Exit codes: `0` success, `1` general error, `2` validation error, `3` API/networ
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--repo` | yes | | Product git repo (must be clean) |
+| `--repo` | yes | | Product git repo (must be clean, at least one commit) |
 | `--work-order` | yes | | Work order JSON file |
-| `--llm-model` | yes | | LLM model name (e.g. `gpt-4o`) |
+| `--llm-model` | no | `gpt-5.2` | LLM model name |
 | `--artifacts-dir` | no | `./artifacts` or `$ARTIFACTS_DIR` | Canonical artifacts root |
 | `--out` | no | *(canonical only)* | Optional export dir for run artifacts |
+| `--branch` | no | *(auto-generated)* | Working branch name (reuse if exists, create if not) |
+| `--reuse-branch` | no | `false` | Require `--branch` to already exist (resume mode) |
+| `--create-branch` | no | `false` | Require `--branch` to NOT exist (new session mode) |
+| `--commit-hash` | no | `HEAD` | Baseline commit (start-point for new branches) |
+| `--no-push` | no | `false` | Disable git push after commit |
 | `--max-attempts` | no | `2` | Max SE → TR → PO attempts |
 | `--llm-temperature` | no | `0` | LLM sampling temperature |
 | `--timeout-seconds` | no | `600` | Per-command timeout |
 | `--allow-verify-exempt` | no | `false` | Honor `verify_exempt=true` in work orders (M-22) |
+
+## Git workflow
+
+The factory manages git branches, commits, and pushes automatically. It never commits directly to `main` or `master`.
+
+### Branch lifecycle
+
+On every invocation the factory checks out a **working branch** before making any changes. Branch selection happens exactly once at the start of the run; commit and push operations never create or switch branches.
+
+**Default behavior (no `--branch`):** The factory auto-generates a collision-safe branch name:
+- With planner provenance: `factory/{planner_run_id}/{session_ulid}`
+- Without: `factory/adhoc/{session_ulid}`
+
+**Explicit branch (`--branch X`):** Use branch `X`. If it exists, resume on it. If it doesn't, create it from the baseline commit. Override this auto-detection with `--reuse-branch` or `--create-branch`.
+
+### Common patterns
+
+```bash
+# New session, auto-named branch (simplest usage)
+python -m factory run --repo ./product --work-order wo/WO-01.json
+
+# Explicit new branch
+python -m factory run --repo ./product --work-order wo/WO-01.json --branch feature/my-session --create-branch
+
+# Resume: run a second work order on the same branch
+python -m factory run --repo ./product --work-order wo/WO-02.json --branch feature/my-session --reuse-branch
+
+# Auto reuse-or-create (default when --branch is given)
+python -m factory run --repo ./product --work-order wo/WO-02.json --branch feature/my-session
+
+# Start from a specific commit instead of HEAD
+python -m factory run --repo ./product --work-order wo/WO-01.json --commit-hash abc123
+
+# Skip pushing (local-only work)
+python -m factory run --repo ./product --work-order wo/WO-01.json --no-push
+```
+
+### Commit and push
+
+On a passing verdict the factory commits all changes to the working branch with the message `{WO-ID}: applied by factory (run {run_id})`. It then pushes the branch to the default remote with `git push -u`. Push failures do not change the verdict -- the run is still PASS, but a warning is printed with a remediation command.
+
+To disable pushing, pass `--no-push`. The batch runner (`run_work_orders.sh`) uses `--no-push` by default so all work orders accumulate on a single branch before any push.
+
+### Fail cases
+
+The factory fails fast with a clear error and suggested fix for these git issues:
+
+| Situation | Error | Fix |
+|-----------|-------|-----|
+| Repo has no commits | *"has no commits ... requires at least one commit"* | `cd repo && git add -A && git commit -m 'init'` |
+| Detached HEAD | *"detached HEAD state ... requires a named branch"* | `cd repo && git checkout -b <branch>` |
+| Uncommitted changes | *"has uncommitted changes ... must be clean"* | `cd repo && git stash` or `git reset --hard` |
+| `--branch main` | *"protected ... never commit directly to main/master"* | Use a different branch name |
+| `--reuse-branch` but branch missing | *"does not exist (--reuse-branch requires ...)"* | Drop `--reuse-branch` or create the branch first |
+| `--create-branch` but branch exists | *"already exists (--create-branch requires ...)"* | Drop `--create-branch` or use a different name |
+| `--reuse-branch` + `--create-branch` | *"mutually exclusive"* | Pick one |
+| `--reuse-branch` without `--branch` | *"requires --branch"* | Add `--branch <name>` |
+| `--commit-hash` doesn't resolve | *"Cannot resolve ... to a commit"* | Check the hash or ref name |
+
+### Git identity
+
+The factory sets `user.name` and `user.email` using `git config --local` so commits work in repos without global git config. This never touches the user's global config. Defaults: `llm-compiler` / `llm-compiler@noreply.local` (configurable in `factory/defaults.py`).
 
 ## Security notice
 
@@ -199,11 +265,11 @@ The following properties hold under the prerequisites above:
 **Planner stage:** Render prompt template with spec, call LLM, parse JSON, normalize, validate (structural + chain), retry with error feedback if invalid, compute `verify_exempt`, write `WO-*.json`.
 
 **Factory stage per work order:**
-1. Preflight: verify clean git tree, check preconditions.
+1. Preflight: verify clean git tree, pull latest, create or reuse working branch.
 2. SE node: render prompt with work order + context files + prior failure brief, call LLM, parse `WriteProposal`.
 3. TR node: validate all write paths against `allowed_files`, batch-check `base_sha256` hashes, apply atomic file writes.
 4. PO node: run global verification (or `compileall` if verify-exempt), check postconditions, run acceptance commands.
-5. On failure: rollback via `git reset --hard`, retry if attempts remain. On pass: leave changes in repo.
+5. On failure: rollback via `git reset --hard`, retry if attempts remain. On pass: commit to working branch, push.
 
 ## Validation error codes
 

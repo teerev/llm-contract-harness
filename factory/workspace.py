@@ -1,4 +1,4 @@
-"""Git helpers (is_git_repo, is_clean, baseline, rollback, tree hash, auto-commit).
+"""Git helpers (is_git_repo, is_clean, baseline, rollback, tree hash, branching, push).
 
 This is NOT a temp-workspace copier — edits happen in-situ.
 """
@@ -172,13 +172,168 @@ def git_commit(repo_root: str, message: str) -> str:
     return get_baseline_commit(repo_root)
 
 
-def git_push(repo_root: str) -> str | None:
-    """Push to the default remote. Stub — not yet enabled.
+# ---------------------------------------------------------------------------
+# Branching
+# ---------------------------------------------------------------------------
 
-    TODO: Enable when ready. Will need:
-    - Check for remote existence
-    - Handle authentication (SSH key, credential helper)
-    - Handle push rejection (force-push policy)
-    - Configurable remote name and branch
+
+def has_commits(repo_root: str) -> bool:
+    """Return True if the repo has at least one commit (HEAD is resolvable)."""
+    result = _git(["rev-parse", "--verify", "HEAD"], cwd=repo_root)
+    return result.returncode == 0
+
+
+def resolve_commit(repo_root: str, commitish: str) -> str:
+    """Resolve a commit-ish to a full 40-char SHA-1 hash.
+
+    Raises ValueError if the commit-ish cannot be resolved.
     """
-    return None  # Not yet implemented
+    result = _git(
+        ["rev-parse", "--verify", commitish + "^{commit}"], cwd=repo_root
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(
+            f"Cannot resolve '{commitish}' to a commit: {stderr}"
+        )
+    return result.stdout.decode("utf-8").strip()
+
+
+def current_branch_name(repo_root: str) -> str | None:
+    """Return the current branch name, or None if HEAD is detached."""
+    result = _git(["symbolic-ref", "--short", "HEAD"], cwd=repo_root)
+    if result.returncode != 0:
+        return None
+    return result.stdout.decode("utf-8").strip()
+
+
+def branch_exists(repo_root: str, name: str) -> bool:
+    """Return True if a local branch *name* exists."""
+    result = _git(
+        ["rev-parse", "--verify", f"refs/heads/{name}"], cwd=repo_root
+    )
+    return result.returncode == 0
+
+
+def checkout_branch(repo_root: str, name: str) -> None:
+    """Switch to an existing branch.
+
+    Raises RuntimeError if the branch does not exist or checkout fails.
+    """
+    result = _git(["checkout", name], cwd=repo_root)
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Failed to checkout branch '{name}': {stderr}")
+
+
+def create_and_checkout_branch(
+    repo_root: str, branch_name: str, start_point: str
+) -> None:
+    """Create and switch to a new branch starting at *start_point*.
+
+    Raises RuntimeError if the branch already exists or checkout fails.
+    """
+    result = _git(
+        ["checkout", "-b", branch_name, start_point], cwd=repo_root
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"Failed to create branch '{branch_name}': {stderr}"
+        )
+
+
+def ensure_working_branch(
+    repo_root: str,
+    branch_name: str,
+    start_point: str,
+    *,
+    require_exists: bool = False,
+    require_new: bool = False,
+) -> dict:
+    """Ensure *branch_name* is checked out. Single entry point for branch setup.
+
+    Modes (controlled by keyword flags):
+    - ``require_exists=True``: branch MUST already exist (resume mode).
+    - ``require_new=True``: branch must NOT exist (explicit create mode).
+    - Both False (default): reuse if exists, create if not (auto mode).
+
+    Returns a dict with audit fields::
+
+        {
+            "working_branch": str,
+            "branch_existed_at_start": bool,
+            "branch_created": bool,
+            "effective_baseline": str,   # HEAD of branch after checkout
+        }
+
+    Raises ValueError on mode violations.
+    """
+    exists = branch_exists(repo_root, branch_name)
+
+    if require_exists and not exists:
+        raise ValueError(
+            f"Branch '{branch_name}' does not exist "
+            "(--reuse-branch requires an existing branch)."
+        )
+
+    if require_new and exists:
+        raise ValueError(
+            f"Branch '{branch_name}' already exists "
+            "(--create-branch requires a new branch name)."
+        )
+
+    if exists:
+        checkout_branch(repo_root, branch_name)
+        effective_baseline = get_baseline_commit(repo_root)
+        return {
+            "working_branch": branch_name,
+            "branch_existed_at_start": True,
+            "branch_created": False,
+            "effective_baseline": effective_baseline,
+        }
+    else:
+        create_and_checkout_branch(repo_root, branch_name, start_point)
+        effective_baseline = get_baseline_commit(repo_root)
+        return {
+            "working_branch": branch_name,
+            "branch_existed_at_start": False,
+            "branch_created": True,
+            "effective_baseline": effective_baseline,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Push
+# ---------------------------------------------------------------------------
+
+
+def git_push_branch(repo_root: str, branch_name: str) -> dict:
+    """Push *branch_name* to the default remote with ``-u`` (set upstream).
+
+    Returns a dict: ``{ok, remote, stdout, stderr}``.
+    If no remote is configured, returns ``ok=False`` with an explanatory message.
+    """
+    # Discover first configured remote
+    remote_result = _git(["remote"], cwd=repo_root)
+    if remote_result.returncode != 0 or not remote_result.stdout.strip():
+        return {
+            "ok": False,
+            "remote": None,
+            "stdout": "",
+            "stderr": "No remote configured. Run: git remote add origin <url>",
+        }
+
+    remote_name = remote_result.stdout.decode("utf-8").strip().splitlines()[0]
+
+    result = _git(
+        ["push", "-u", remote_name, branch_name],
+        cwd=repo_root,
+        timeout=60,
+    )
+    return {
+        "ok": result.returncode == 0,
+        "remote": remote_name,
+        "stdout": result.stdout.decode("utf-8", errors="replace").strip(),
+        "stderr": result.stderr.decode("utf-8", errors="replace").strip(),
+    }

@@ -106,6 +106,20 @@ def _build_repo_file_listing(repo_path: str) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
+# Bootstrap WO filtering
+# ---------------------------------------------------------------------------
+
+
+def _renumber_work_orders(work_orders: list[dict]) -> list[dict]:
+    """Renumber work order IDs to be contiguous from WO-01."""
+    result = []
+    for i, wo in enumerate(work_orders, start=1):
+        new_id = f"WO-{i:02d}"
+        result.append({**wo, "id": new_id})
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Revision prompt for compile retry loop
 # ---------------------------------------------------------------------------
 
@@ -167,6 +181,8 @@ class CompileResult:
         self.outdir: str = ""
         self.success: bool = False
         self.compile_attempts: int = 0
+        self.bootstrap_skipped: bool = False
+        self.bootstrap_reason: str | None = None
 
 
 def compile_plan(
@@ -405,7 +421,38 @@ def compile_plan(
             {**wo, "verify_exempt": False} for wo in final_work_orders
         ]
 
+    # ── Skip bootstrap WO if verify script already exists in repo ──────
+    # Detection: a WO is "bootstrap" if its postconditions create
+    # scripts/verify.sh. If the repo already has it, the bootstrap WO's
+    # precondition (file_absent) would fail at factory runtime. Filtering
+    # it here is a planner-level adaptation, not a weakening of enforcement.
+    VERIFY_SCRIPT = "scripts/verify.sh"
+    bootstrap_skipped = False
+    bootstrap_reason = None
+
+    if repo_file_listing and VERIFY_SCRIPT in repo_file_listing:
+        filtered: list[dict] = []
+        for wo in final_work_orders:
+            postcond_paths = {
+                c.get("path", "") for c in wo.get("postconditions", [])
+                if isinstance(c, dict)
+            }
+            if VERIFY_SCRIPT in postcond_paths:
+                bootstrap_skipped = True
+                bootstrap_reason = (
+                    f"{VERIFY_SCRIPT} already present in repo baseline — "
+                    f"skipped {wo.get('id', '?')} \"{wo.get('title', '')}\""
+                )
+                continue
+            filtered.append(wo)
+
+        if bootstrap_skipped and filtered:
+            # Renumber WO IDs to stay contiguous from WO-01
+            final_work_orders = _renumber_work_orders(filtered)
+
     result.work_orders = final_work_orders
+    result.bootstrap_skipped = bootstrap_skipped
+    result.bootstrap_reason = bootstrap_reason
 
     # ── Build manifest and write outputs ──────────────────────────────
     manifest: dict[str, Any] = {
@@ -461,6 +508,8 @@ def _finalize_run_json(
         "work_order_count": len(result.work_orders),
         "manifest_normalized_sha256": sha256_json(result.manifest) if result.manifest else None,
         "compile_attempts": result.compile_attempts,
+        "bootstrap_skipped": result.bootstrap_skipped,
+        "bootstrap_reason": result.bootstrap_reason,
         "validation_errors": result.errors,
         "validation_warnings": result.warnings,
         "attempt_records": attempt_records,
@@ -485,6 +534,8 @@ def _write_summary(
         "reasoning_effort": DEFAULT_REASONING_EFFORT,
         "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
         "work_order_count": len(result.work_orders),
+        "bootstrap_skipped": result.bootstrap_skipped,
+        "bootstrap_reason": result.bootstrap_reason,
         "validation_errors": result.errors,
         "validation_warnings": result.warnings,
         "compile_attempts": result.compile_attempts,

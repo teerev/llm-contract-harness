@@ -7,6 +7,7 @@ import sys
 
 from factory.console import Console
 from factory.defaults import (
+    DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_TIMEOUT_SECONDS,
@@ -43,7 +44,9 @@ def main() -> None:
         help=f"Maximum number of attempts (default: {DEFAULT_MAX_ATTEMPTS})",
     )
     run_parser.add_argument(
-        "--llm-model", required=True, help="LLM model name (e.g. gpt-4o)"
+        "--llm-model",
+        default=DEFAULT_LLM_MODEL,
+        help=f"LLM model name (default: {DEFAULT_LLM_MODEL})",
     )
     run_parser.add_argument(
         "--llm-temperature",
@@ -56,6 +59,47 @@ def main() -> None:
         type=int,
         default=DEFAULT_TIMEOUT_SECONDS,
         help=f"Per-command timeout in seconds (default: {DEFAULT_TIMEOUT_SECONDS})",
+    )
+    run_parser.add_argument(
+        "--commit-hash",
+        default=None,
+        help=(
+            "Baseline commit to use instead of HEAD. Must resolve to an "
+            "existing commit in the repo. Used as start-point when creating "
+            "a new branch."
+        ),
+    )
+    run_parser.add_argument(
+        "--branch",
+        default=None,
+        help=(
+            "Working branch name. Reused if it exists, created from baseline "
+            "if not (override with --reuse-branch / --create-branch)."
+        ),
+    )
+    run_parser.add_argument(
+        "--reuse-branch",
+        action="store_true",
+        default=False,
+        help=(
+            "Require --branch to already exist (resume mode). "
+            "Fails if the branch is missing."
+        ),
+    )
+    run_parser.add_argument(
+        "--create-branch",
+        action="store_true",
+        default=False,
+        help=(
+            "Require --branch to NOT exist (new session mode). "
+            "Fails if the branch already exists."
+        ),
+    )
+    run_parser.add_argument(
+        "--no-push",
+        action="store_true",
+        default=False,
+        help="Disable git push after successful commit",
     )
     run_parser.add_argument(
         "--allow-verify-exempt",
@@ -94,6 +138,14 @@ def main() -> None:
 
         if args.max_attempts < 1:
             con.error("--max-attempts must be at least 1.")
+            sys.exit(1)
+
+        if args.reuse_branch and args.create_branch:
+            con.error("--reuse-branch and --create-branch are mutually exclusive.")
+            sys.exit(1)
+
+        if (args.reuse_branch or args.create_branch) and not args.branch:
+            con.error("--reuse-branch and --create-branch require --branch.")
             sys.exit(1)
 
         # Defer import so ``--help`` stays fast
