@@ -78,8 +78,9 @@ def po_node(state: dict) -> dict:
     # ------------------------------------------------------------------
     # 1. Global verification
     # ------------------------------------------------------------------
-    # When verify_exempt is True (e.g. WO-01 bootstrap), skip the full
-    # verify script and run only a lightweight syntax check.
+    # When verify_exempt is True, skip full verification and run only a
+    # lightweight syntax check. The planner computes this flag from the
+    # verify_contract; the factory treats it as an opaque IR field.
     if work_order.verify_exempt:
         verify_cmds = [list(cmd) for cmd in VERIFY_EXEMPT_COMMAND]
     else:

@@ -284,31 +284,19 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     con.kv("Artifacts", run_dir)
 
     # ------------------------------------------------------------------
-    # M-22: Override verify_exempt unless explicitly allowed by operator
-    #       OR the work order is a bootstrap WO (creates the verify script)
+    # M-22: Override verify_exempt unless explicitly allowed by operator.
+    # Part 5 TASK 1: removed bootstrap auto-detection — the factory must
+    # not inspect WO content to infer intent. verify_exempt is honored iff
+    # --allow-verify-exempt is passed; overridden to false otherwise.
+    # The planner (M-01) is solely responsible for computing verify_exempt.
     # ------------------------------------------------------------------
     wo_dict = work_order.model_dump()
     if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
-        # Auto-detect bootstrap: if postconditions create the verify script,
-        # this WO is setting up the verification system itself. Forcing full
-        # verification here is a deterministic failure — the thing being
-        # verified doesn't exist until this WO creates it.
-        postcond_paths = {
-            c.get("path", "") for c in wo_dict.get("postconditions", [])
-            if isinstance(c, dict)
-        }
-        is_bootstrap = _fd.VERIFY_SCRIPT_PATH in postcond_paths
-
-        if is_bootstrap:
-            con.step("M-22",
-                "verify_exempt=true auto-honored — this work order creates "
-                f"{_fd.VERIFY_SCRIPT_PATH} (bootstrap)")
-        else:
-            con.warning(
-                "work order has verify_exempt=true but --allow-verify-exempt "
-                "was not passed. Overriding to false — full verification will run."
-            )
-            wo_dict["verify_exempt"] = False
+        con.warning(
+            "work order has verify_exempt=true but --allow-verify-exempt "
+            "was not passed. Overriding to false — full verification will run."
+        )
+        wo_dict["verify_exempt"] = False
 
     # ------------------------------------------------------------------
     # Build & invoke graph
