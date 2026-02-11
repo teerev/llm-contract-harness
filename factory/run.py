@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import traceback
@@ -13,10 +14,18 @@ from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
     ARTIFACT_RUN_SUMMARY,
     ARTIFACT_WORK_ORDER,
-    compute_run_id,
     save_json,
+    sha256_file,
 )
 from factory.workspace import get_baseline_commit, is_clean, is_git_repo, rollback
+from shared.run_context import (
+    generate_ulid,
+    get_tool_version,
+    resolve_artifacts_root,
+    sha256_json,
+    utc_now_iso,
+    write_run_json,
+)
 
 
 def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
@@ -25,7 +34,7 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     repo_root = os.path.realpath(args.repo)
     work_order_path = os.path.realpath(args.work_order)
-    out_dir = os.path.realpath(args.out)
+    export_dir = os.path.realpath(args.out) if args.out else None
 
     # ------------------------------------------------------------------
     # Load work order
@@ -50,9 +59,13 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         )
         sys.exit(1)
 
-    if out_dir == repo_root or out_dir.startswith(repo_root + os.sep):
+    artifacts_root = resolve_artifacts_root(
+        getattr(args, "artifacts_dir", None)
+    )
+
+    if export_dir and (export_dir == repo_root or export_dir.startswith(repo_root + os.sep)):
         con.error(
-            f"Output directory ({out_dir}) must not be inside the product repo "
+            f"Export directory ({export_dir}) must not be inside the product repo "
             f"({repo_root}). Artifacts written there would be affected by git rollback "
             "and could pollute the tree hash on success."
         )
@@ -61,26 +74,72 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     baseline_commit = get_baseline_commit(repo_root)
 
     # ------------------------------------------------------------------
-    # Deterministic run_id
+    # ULID-based run_id — immutable per-run directory
     # ------------------------------------------------------------------
-    run_id = compute_run_id(work_order.model_dump(), baseline_commit)
-    run_dir = os.path.join(out_dir, run_id)
+    run_id = generate_ulid()
+    run_dir = os.path.join(artifacts_root, "factory", run_id)
+    os.makedirs(run_dir, exist_ok=False)
 
-    # M-21: refuse to overwrite a prior run's artifacts.
-    prior_summary = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
-    if os.path.isfile(prior_summary):
-        con.error(
-            f"A run summary already exists at {prior_summary}. "
-            "Re-running the same work order on the same baseline would "
-            "overwrite the prior run's artifacts. To re-run, delete or "
-            f"move the directory: {run_dir}"
-        )
-        sys.exit(1)
-
-    os.makedirs(run_dir, exist_ok=True)
+    # For the graph state, out_dir points to the canonical factory parent
+    # so that make_attempt_dir(out_dir, run_id, idx) produces the right path.
+    out_dir = os.path.join(artifacts_root, "factory")
 
     # Persist the work order and CLI config for post-mortem reproducibility
     save_json(work_order.model_dump(), os.path.join(run_dir, ARTIFACT_WORK_ORDER))
+
+    # ------------------------------------------------------------------
+    # Read provenance from work order (if planner injected it)
+    # ------------------------------------------------------------------
+    wo_dict_raw = work_order.model_dump()
+    planner_ref = None
+    try:
+        with open(work_order_path, "r", encoding="utf-8") as fh:
+            wo_file_data = json.load(fh)
+        prov = wo_file_data.get("provenance")
+        if isinstance(prov, dict) and prov.get("planner_run_id"):
+            planner_ref = {
+                "planner_run_id": prov.get("planner_run_id"),
+                "compile_hash": prov.get("compile_hash"),
+                "manifest_sha256": prov.get("manifest_sha256"),
+            }
+    except Exception:
+        pass  # best-effort provenance extraction
+
+    # ------------------------------------------------------------------
+    # Write run.json early (incomplete — updated on finish)
+    # ------------------------------------------------------------------
+    started_at = utc_now_iso()
+    run_json = {
+        "run_id": run_id,
+        "tool": "factory",
+        "started_at_utc": started_at,
+        "finished_at_utc": None,
+        "verdict": None,
+        "work_order_id": work_order.id,
+        "version": get_tool_version(),
+        "config": {
+            "llm_model": args.llm_model,
+            "llm_temperature": args.llm_temperature,
+            "max_attempts": args.max_attempts,
+            "timeout_seconds": args.timeout_seconds,
+            "repo_root": repo_root,
+        },
+        "inputs": {
+            "work_order_path": work_order_path,
+            "work_order_sha256": sha256_file(work_order_path),
+            "baseline_commit": baseline_commit,
+        },
+        "outputs": None,
+        "planner_ref": planner_ref,
+        "artifacts": {
+            "run_summary": ARTIFACT_RUN_SUMMARY,
+            "work_order_snapshot": ARTIFACT_WORK_ORDER,
+        },
+        "export": {
+            "out_dir": export_dir,
+        },
+    }
+    write_run_json(run_dir, run_json)
 
     run_config = {
         "llm_model": args.llm_model,
@@ -88,7 +147,7 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         "max_attempts": args.max_attempts,
         "timeout_seconds": args.timeout_seconds,
         "repo_root": repo_root,
-        "out_dir": out_dir,
+        "out_dir": run_dir,
         "defaults": {
             "default_max_attempts": _fd.DEFAULT_MAX_ATTEMPTS,
             "default_llm_temperature": _fd.DEFAULT_LLM_TEMPERATURE,
@@ -119,14 +178,30 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     # ------------------------------------------------------------------
     # M-22: Override verify_exempt unless explicitly allowed by operator
+    #       OR the work order is a bootstrap WO (creates the verify script)
     # ------------------------------------------------------------------
     wo_dict = work_order.model_dump()
     if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
-        con.warning(
-            "work order has verify_exempt=true but --allow-verify-exempt "
-            "was not passed. Overriding to false — full verification will run."
-        )
-        wo_dict["verify_exempt"] = False
+        # Auto-detect bootstrap: if postconditions create the verify script,
+        # this WO is setting up the verification system itself. Forcing full
+        # verification here is a deterministic failure — the thing being
+        # verified doesn't exist until this WO creates it.
+        postcond_paths = {
+            c.get("path", "") for c in wo_dict.get("postconditions", [])
+            if isinstance(c, dict)
+        }
+        is_bootstrap = _fd.VERIFY_SCRIPT_PATH in postcond_paths
+
+        if is_bootstrap:
+            con.step("M-22",
+                "verify_exempt=true auto-honored — this work order creates "
+                f"{_fd.VERIFY_SCRIPT_PATH} (bootstrap)")
+        else:
+            con.warning(
+                "work order has verify_exempt=true but --allow-verify-exempt "
+                "was not passed. Overriding to false — full verification will run."
+            )
+            wo_dict["verify_exempt"] = False
 
     # ------------------------------------------------------------------
     # Build & invoke graph
@@ -243,6 +318,27 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
     save_json(summary_dict, summary_path)
+
+    # ------------------------------------------------------------------
+    # Finalize run.json with outputs
+    # ------------------------------------------------------------------
+    run_json["finished_at_utc"] = utc_now_iso()
+    run_json["verdict"] = verdict
+    run_json["outputs"] = {
+        "total_attempts": len(attempts),
+        "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
+        "run_summary_sha256": sha256_json(summary_dict),
+    }
+    write_run_json(run_dir, run_json)
+
+    # ------------------------------------------------------------------
+    # Optional export to user-specified out dir
+    # ------------------------------------------------------------------
+    if export_dir:
+        import shutil
+        export_run_dir = os.path.join(export_dir, run_id)
+        if not os.path.exists(export_run_dir):
+            shutil.copytree(run_dir, export_run_dir)
 
     # ------------------------------------------------------------------
     # Console: show attempt summaries and verdict

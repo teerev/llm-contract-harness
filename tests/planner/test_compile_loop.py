@@ -16,6 +16,7 @@ from planner.compiler import (
     _build_revision_prompt,
     compile_plan,
 )
+from planner.openai_client import LLMResult
 from planner.validation import ValidationError
 
 
@@ -139,7 +140,9 @@ def artifacts_dir(tmp_path):
 def _mock_client_returning(*responses: str):
     """Return a mock OpenAIResponsesClient whose generate_text returns *responses* in order."""
     mock_client = MagicMock()
-    mock_client.generate_text = MagicMock(side_effect=list(responses))
+    mock_client.generate_text = MagicMock(
+        side_effect=[LLMResult(text=r) for r in responses]
+    )
     return mock_client
 
 

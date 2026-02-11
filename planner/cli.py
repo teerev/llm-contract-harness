@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from factory.console import Console
@@ -22,7 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--spec", required=True, help="Path to the product spec text file"
     )
     compile_parser.add_argument(
-        "--outdir", required=True, help="Output directory for WO-*.json files"
+        "--outdir", default=None,
+        help="Optional export directory for WO-*.json files (canonical output is always in artifacts)",
     )
     compile_parser.add_argument(
         "--template",
@@ -133,7 +135,8 @@ def _run_compile(args: argparse.Namespace) -> int:
 
     # --- Structured output ---
     con.kv("Compile hash", result.compile_hash)
-    con.kv("Artifacts", result.artifacts_dir)
+    con.kv("Run ID", result.run_id)
+    con.kv("Artifacts", result.run_dir)
     con.kv("Attempts", str(result.compile_attempts), verbose_only=True)
 
     if result.errors:
@@ -148,7 +151,7 @@ def _run_compile(args: argparse.Namespace) -> int:
         return 4 if is_parse else 2
 
     con.kv("Work orders", str(len(result.work_orders)))
-    con.kv("Output dir", result.outdir)
+    con.kv("Output dir", result.outdir or os.path.join(result.run_dir, "output"))
 
     if args.print_summary or _verbosity(args) == "verbose":
         con.blank()

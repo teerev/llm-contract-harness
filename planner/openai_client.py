@@ -66,6 +66,13 @@ class ModelConfig:
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
 
 
+@dataclass(frozen=True)
+class LLMResult:
+    """Output from a generate_text call: output text + optional reasoning."""
+    text: str
+    reasoning: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
@@ -90,11 +97,11 @@ class OpenAIResponsesClient:
         )
 
     # ------------------------------------------------------------------
-    # Public API — returns extracted text
+    # Public API — returns LLMResult (text + reasoning)
     # ------------------------------------------------------------------
 
-    def generate_text(self, prompt: str) -> str:
-        """Submit prompt, poll until done, return output text.
+    def generate_text(self, prompt: str) -> LLMResult:
+        """Submit prompt, poll until done, return output text and reasoning.
 
         Retries once with a larger token budget on incomplete.
         """
@@ -120,7 +127,8 @@ class OpenAIResponsesClient:
             if status == "completed":
                 text = self._extract_text(data)
                 if text:
-                    return text
+                    reasoning = self._extract_reasoning(data)
+                    return LLMResult(text=text, reasoning=reasoning)
                 self._dump_response(data, f"no_text_attempt_{i}")
                 raise RuntimeError(
                     f"Response completed but no output text found. "
@@ -161,7 +169,10 @@ class OpenAIResponsesClient:
         payload = {
             "model": self.cfg.model,
             "input": prompt,
-            "reasoning": {"effort": self.cfg.reasoning_effort},
+            "reasoning": {
+                "effort": self.cfg.reasoning_effort,
+                "summary": "auto",
+            },
             "max_output_tokens": max_output_tokens,
             "background": True,
         }
@@ -293,6 +304,29 @@ class OpenAIResponsesClient:
                     if isinstance(txt, str) and txt.strip():
                         return txt.strip()
         return ""
+
+    @staticmethod
+    def _extract_reasoning(data: dict) -> str:
+        """Extract reasoning/thinking text from response output array.
+
+        The Responses API returns reasoning as output items with
+        type="reasoning", each containing a "summary" list of
+        {"type": "summary_text", "text": "..."} objects.
+        """
+        parts: list[str] = []
+        for item in data.get("output", []) or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "reasoning":
+                continue
+            for entry in item.get("summary", []) or []:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("type") == "summary_text":
+                    txt = entry.get("text", "")
+                    if isinstance(txt, str) and txt.strip():
+                        parts.append(txt.strip())
+        return "\n\n".join(parts)
 
     # ------------------------------------------------------------------
     # Diagnostics

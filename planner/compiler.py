@@ -25,13 +25,22 @@ from planner.defaults import (  # noqa: F401 — re-exported for backward compat
     MAX_JSON_PAYLOAD_BYTES,
     SKIP_DIRS as _SKIP_DIRS,
 )
-from planner.openai_client import OpenAIResponsesClient
+from planner.openai_client import LLMResult, OpenAIResponsesClient
 from planner.prompt_template import load_template, render_prompt, resolve_template_path
 from planner.validation import (
     ValidationError,
     compute_verify_exempt,
     parse_and_validate,
     validate_plan_v2,
+)
+from shared.run_context import (
+    generate_ulid,
+    get_tool_version,
+    resolve_artifacts_root,
+    sha256_bytes,
+    sha256_json,
+    utc_now_iso,
+    write_run_json,
 )
 
 
@@ -147,6 +156,8 @@ class CompileResult:
     """Result of a compile run."""
 
     def __init__(self) -> None:
+        self.run_id: str = ""
+        self.run_dir: str = ""
         self.compile_hash: str = ""
         self.artifacts_dir: str = ""
         self.work_orders: list[dict] = []
@@ -160,7 +171,7 @@ class CompileResult:
 
 def compile_plan(
     spec_path: str,
-    outdir: str,
+    outdir: str | None = None,
     template_path: str | None = None,
     artifacts_dir: str | None = None,
     overwrite: bool = False,
@@ -168,21 +179,34 @@ def compile_plan(
 ) -> CompileResult:
     """Compile a product spec into validated work orders.
 
+    Canonical artifacts are always written under ``artifacts_dir/planner/{run_id}/``.
+    If *outdir* is provided, work order files are also exported there.
+
     Returns a CompileResult with all details. Raises only on truly
     unrecoverable errors (missing files, bad API key). Validation
     failures are captured in result.errors.
     """
     result = CompileResult()
-    result.outdir = outdir
+    result.outdir = outdir or ""
+    started_at = utc_now_iso()
     ts_start = time.time()
 
     # --- Resolve paths ---
     template_path = resolve_template_path(template_path)
-    if artifacts_dir is None:
-        if os.path.isdir(os.path.join(".", "examples", "artifacts")):
-            artifacts_dir = os.path.join(".", "examples", "artifacts")
-        else:
-            artifacts_dir = os.path.join(".", "artifacts")
+    artifacts_root = resolve_artifacts_root(artifacts_dir)
+
+    # --- Generate unique run_id and create immutable run directory ---
+    run_id = generate_ulid()
+    run_dir = os.path.join(artifacts_root, "planner", run_id)
+    os.makedirs(run_dir, exist_ok=False)
+
+    compile_artifacts = os.path.join(run_dir, "compile")
+    os.makedirs(compile_artifacts)
+    canonical_output = os.path.join(run_dir, "output")
+
+    result.run_id = run_id
+    result.run_dir = run_dir
+    result.artifacts_dir = compile_artifacts
 
     # --- Read inputs ---
     with open(spec_path, "rb") as fh:
@@ -193,16 +217,43 @@ def compile_plan(
         template_bytes = fh.read()
     template_text = template_bytes.decode("utf-8")
 
-    # --- Compile hash ---
+    # --- Compile hash (content-addressable, NOT used as directory name) ---
     compile_hash = _compute_compile_hash(
         spec_bytes, template_bytes, DEFAULT_MODEL, DEFAULT_REASONING_EFFORT
     )
     result.compile_hash = compile_hash
 
-    # --- Artifact directory ---
-    compile_artifacts = os.path.join(artifacts_dir, compile_hash, "compile")
-    os.makedirs(compile_artifacts, exist_ok=True)
-    result.artifacts_dir = compile_artifacts
+    # --- Write run.json early (incomplete — updated on finish) ---
+    run_json: dict[str, Any] = {
+        "run_id": run_id,
+        "tool": "planner",
+        "started_at_utc": started_at,
+        "finished_at_utc": None,
+        "success": None,
+        "compile_hash": compile_hash,
+        "version": get_tool_version(),
+        "config": {
+            "model": DEFAULT_MODEL,
+            "reasoning_effort": DEFAULT_REASONING_EFFORT,
+            "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+            "max_compile_attempts": MAX_COMPILE_ATTEMPTS,
+        },
+        "inputs": {
+            "spec_path": os.path.abspath(spec_path),
+            "spec_sha256": sha256_bytes(spec_bytes),
+            "template_path": os.path.abspath(template_path),
+            "template_sha256": sha256_bytes(template_bytes),
+        },
+        "outputs": None,
+        "artifacts": {
+            "compile_dir": "compile/",
+            "output_dir": "output/",
+        },
+        "export": {
+            "outdir": os.path.abspath(outdir) if outdir else None,
+        },
+    }
+    write_run_json(run_dir, run_json)
 
     # --- Repo file listing (for chain validation) ---
     repo_file_listing: set[str] = set()
@@ -211,9 +262,6 @@ def compile_plan(
 
     # --- Render initial prompt ---
     prompt = render_prompt(template_text, spec_text)
-    write_text_artifact(
-        os.path.join(compile_artifacts, "prompt_rendered.txt"), prompt
-    )
 
     # --- Compile loop: generate → validate → revise ───────────────────
     _oai.DUMP_DIR = compile_artifacts
@@ -227,12 +275,24 @@ def compile_plan(
     final_warnings: list[ValidationError] = []
 
     for attempt in range(1, MAX_COMPILE_ATTEMPTS + 1):
+        # ── Save prompt for this attempt ──────────────────────────────
+        write_text_artifact(
+            os.path.join(compile_artifacts, f"prompt_attempt_{attempt}.txt"),
+            prompt,
+        )
+
         # ── LLM call ─────────────────────────────────────────────────
-        raw_response = client.generate_text(prompt)
+        llm_result: LLMResult = client.generate_text(prompt)
+        raw_response = llm_result.text
         write_text_artifact(
             os.path.join(compile_artifacts, f"llm_raw_response_attempt_{attempt}.txt"),
             raw_response,
         )
+        if llm_result.reasoning:
+            write_text_artifact(
+                os.path.join(compile_artifacts, f"llm_reasoning_attempt_{attempt}.txt"),
+                llm_result.reasoning,
+            )
 
         # ── Parse JSON ───────────────────────────────────────────────
         try:
@@ -259,6 +319,7 @@ def compile_plan(
             result.compile_attempts = attempt
             _write_summary(result, compile_artifacts, ts_start, spec_path,
                            template_path, attempt_records)
+            _finalize_run_json(run_dir, run_json, result, attempt_records)
             return result
 
         write_json_artifact(
@@ -316,12 +377,14 @@ def compile_plan(
         write_json_artifact(
             os.path.join(compile_artifacts, "validation_errors.json"), structured
         )
-        os.makedirs(outdir, exist_ok=True)
-        write_json_artifact(
-            os.path.join(outdir, "validation_errors.json"), structured
-        )
+        if outdir:
+            os.makedirs(outdir, exist_ok=True)
+            write_json_artifact(
+                os.path.join(outdir, "validation_errors.json"), structured
+            )
         _write_summary(result, compile_artifacts, ts_start, spec_path,
                        template_path, attempt_records)
+        _finalize_run_json(run_dir, run_json, result, attempt_records)
         return result
 
     # ── Compute verify_exempt ─────────────────────────────────────────
@@ -356,13 +419,53 @@ def compile_plan(
         os.path.join(compile_artifacts, "manifest_normalized.json"), manifest
     )
 
-    check_overwrite(outdir, overwrite)
-    write_work_orders(outdir, final_work_orders, manifest)
+    # ── Inject provenance into work orders ────────────────────────────
+    manifest_sha256 = sha256_json(manifest)
+    provenance = {
+        "planner_run_id": run_id,
+        "compile_hash": compile_hash,
+        "manifest_sha256": manifest_sha256,
+    }
+    final_work_orders = [{**wo, "provenance": provenance} for wo in final_work_orders]
+    result.work_orders = final_work_orders
+
+    # Update manifest with provenance-bearing WOs
+    manifest["work_orders"] = final_work_orders
+
+    # ── Write canonical output ────────────────────────────────────────
+    write_work_orders(canonical_output, final_work_orders, manifest)
+
+    # ── Optional export to user-specified outdir ──────────────────────
+    if outdir:
+        check_overwrite(outdir, overwrite)
+        write_work_orders(outdir, final_work_orders, manifest)
+
     result.success = True
 
     _write_summary(result, compile_artifacts, ts_start, spec_path,
                    template_path, attempt_records)
+    _finalize_run_json(run_dir, run_json, result, attempt_records)
     return result
+
+
+def _finalize_run_json(
+    run_dir: str,
+    run_json: dict,
+    result: CompileResult,
+    attempt_records: list[dict],
+) -> None:
+    """Update run.json with final outputs and timestamps."""
+    run_json["finished_at_utc"] = utc_now_iso()
+    run_json["success"] = result.success
+    run_json["outputs"] = {
+        "work_order_count": len(result.work_orders),
+        "manifest_normalized_sha256": sha256_json(result.manifest) if result.manifest else None,
+        "compile_attempts": result.compile_attempts,
+        "validation_errors": result.errors,
+        "validation_warnings": result.warnings,
+        "attempt_records": attempt_records,
+    }
+    write_run_json(run_dir, run_json)
 
 
 def _write_summary(

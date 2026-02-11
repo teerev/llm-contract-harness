@@ -116,7 +116,7 @@ for WO in "${WO_FILES[@]}"; do
   if python -m factory run \
     --repo "$TARGET_REPO" \
     --work-order "$WO" \
-    --out "$ARTIFACTS_DIR" \
+    --artifacts-dir "$ARTIFACTS_DIR" \
     --llm-model "$MODEL" \
     --max-attempts "$MAX_ATTEMPTS" \
     --allow-verify-exempt; then

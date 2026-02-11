@@ -43,12 +43,21 @@ from tests.factory.conftest import (
 # ---------------------------------------------------------------------------
 
 
+def _find_run_dir(out: str) -> str:
+    """Locate the single factory run directory under the artifacts root."""
+    factory_dir = os.path.join(out, "factory")
+    run_dirs = os.listdir(factory_dir)
+    assert len(run_dirs) == 1, f"Expected 1 run dir, found {len(run_dirs)}: {run_dirs}"
+    return os.path.join(factory_dir, run_dirs[0])
+
+
 def _make_args(repo: str, wo_path: str, out: str, **overrides) -> argparse.Namespace:
     """Build an argparse.Namespace matching __main__.py's argument structure."""
     defaults = {
         "repo": repo,
         "work_order": wo_path,
         "out": out,
+        "artifacts_dir": out,
         "max_attempts": 2,
         "llm_model": "test-model",
         "llm_temperature": 0,
@@ -93,15 +102,13 @@ class TestEndToEndPassViaCLI:
         assert "Run summary:" in captured.out
 
         # --- Assert run_summary.json ON DISK (not from graph state) ---
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
 
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
 
         # Stable top-level keys and types
         assert isinstance(summary["run_id"], str)
-        assert len(summary["run_id"]) == 16
+        assert len(summary["run_id"]) == 26  # ULID
         assert summary["work_order_id"] == "test-wo-1"
         assert summary["verdict"] == "PASS"
         assert isinstance(summary["total_attempts"], int)
@@ -192,10 +199,9 @@ class TestArtifactOverwritePrevention:
         with patch("factory.llm.complete", return_value=valid_json):
             run_cli(args)  # should PASS without error
 
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
+        run_dir = _find_run_dir(out)
         summary = load_json(
-            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+            os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
         )
         assert summary["verdict"] == "PASS"
 
@@ -266,10 +272,9 @@ class TestVerifyExemptOverride:
         with patch("factory.llm.complete", return_value=valid_json):
             run_cli(args)  # should PASS — verify.sh skipped, only compileall runs
 
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
+        run_dir = _find_run_dir(out)
         summary = load_json(
-            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+            os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
         )
         assert summary["verdict"] == "PASS"
 
@@ -286,10 +291,9 @@ class TestVerifyExemptOverride:
         with patch("factory.llm.complete", return_value=valid_json):
             run_cli(args)
 
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
+        run_dir = _find_run_dir(out)
         summary = load_json(
-            os.path.join(out, run_dirs[0], ARTIFACT_RUN_SUMMARY)
+            os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
         )
         assert summary["verdict"] == "PASS"
 
@@ -334,9 +338,7 @@ class TestEmergencyHandler:
         assert "unexpected crash in graph" in combined
 
         # --- Assert run_summary.json written with ERROR verdict ---
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
 
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
         assert summary["verdict"] == "ERROR"
@@ -383,9 +385,7 @@ class TestBaseExceptionRollback:
         assert is_clean(repo)
 
         # Emergency summary must be written with ERROR verdict
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
 
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
         assert summary["verdict"] == "ERROR"
@@ -477,8 +477,7 @@ class TestRollbackFailedField:
             with pytest.raises(SystemExit):
                 run_cli(args)
 
-        run_dirs = os.listdir(out)
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
 
         assert summary["rollback_failed"] is False
@@ -506,8 +505,7 @@ class TestRollbackFailedField:
             with pytest.raises(SystemExit):
                 run_cli(args)
 
-        run_dirs = os.listdir(out)
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
 
         assert summary["rollback_failed"] is True
@@ -528,8 +526,7 @@ class TestRollbackFailedField:
         with patch("factory.llm.complete", return_value=valid_json):
             run_cli(args)
 
-        run_dirs = os.listdir(out)
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
 
         assert summary["verdict"] == "PASS"
@@ -590,9 +587,7 @@ class TestMultiWriteRollback:
         assert result.stdout.strip() == b"", "git status must be empty after rollback"
 
         # --- Artifacts survive (out_dir is outside repo) ---
-        run_dirs = os.listdir(out)
-        assert len(run_dirs) == 1
-        run_dir = os.path.join(out, run_dirs[0])
+        run_dir = _find_run_dir(out)
 
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
         assert summary["verdict"] == "FAIL"

@@ -27,27 +27,80 @@ python -m planner compile \
 
 This calls the planner LLM (up to 3 attempts with automatic self-correction), validates the output against structural checks (E0xx) and cross-work-order chain checks (E1xx), computes `verify_exempt` flags, and writes individual `WO-*.json` files plus a manifest.
 
+All compile artifacts (prompts, LLM responses, reasoning traces, validation errors, and the normalized manifest) are written to a canonical, immutable run directory under `./artifacts/planner/{run_id}/`. Each run gets a unique ULID-based `run_id` and a `run.json` manifest suitable for DB indexing.
+
+If `--outdir` is provided, work order files are also exported there for convenience. The canonical copy under `./artifacts/` is the authoritative record.
+
 ### Execute a single work order
 
 ```bash
 python -m factory run \
   --repo /path/to/product \
   --work-order wo/WO-01.json \
-  --out artifacts/ \
   --llm-model gpt-4o
 ```
 
 The factory preflight-checks the git repo, then runs an attempt loop: the SE LLM proposes file writes as JSON, the TR node validates scope and content hashes then applies atomic writes, and the PO node runs global verification and acceptance commands. On failure, the repo is rolled back and the loop retries.
+
+All run artifacts (work order snapshot, per-attempt SE prompts, write results, verify/acceptance output, failure briefs, and run summary) are written to `./artifacts/factory/{run_id}/`. Each run gets its own immutable directory with a `run.json` manifest.
+
+### Run all work orders in sequence
+
+```bash
+./utils/run_work_orders.sh \
+  --wo-dir wo/ \
+  --target-repo /path/to/product \
+  --artifacts-dir ./artifacts
+```
+
+This initializes a clean git repo, then executes each `WO-*.json` in order, committing after each pass. Stops on the first failure.
+
+## Artifact layout
+
+Both tools write to a shared canonical artifacts root (default `./artifacts/`, override with `--artifacts-dir` or the `ARTIFACTS_DIR` environment variable):
+
+```
+artifacts/
+├── planner/
+│   └── {run_id}/                    # ULID — unique, sortable by time
+│       ├── run.json                 # DB-indexable run manifest
+│       ├── compile/                 # per-attempt compile artifacts
+│       │   ├── prompt_attempt_1.txt
+│       │   ├── prompt_attempt_2.txt # revision prompt with error feedback
+│       │   ├── llm_raw_response_attempt_1.txt
+│       │   ├── llm_reasoning_attempt_1.txt
+│       │   ├── manifest_raw_attempt_1.json
+│       │   ├── validation_errors_attempt_1.json
+│       │   └── ...
+│       └── output/                  # canonical work order files
+│           ├── WO-01.json
+│           ├── WO-02.json
+│           └── WORK_ORDERS_MANIFEST.json
+└── factory/
+    └── {run_id}/                    # ULID — unique, sortable by time
+        ├── run.json                 # DB-indexable run manifest
+        ├── work_order.json          # input snapshot
+        ├── run_summary.json         # detailed run summary
+        └── attempt_1/
+            ├── se_prompt.txt
+            ├── proposed_writes.json
+            ├── write_result.json
+            └── ...
+```
+
+Each `run.json` contains the run ID, UTC timestamps, config snapshot, SHA-256 hashes of key inputs/outputs, tool version (git commit), and provenance linkage. Factory `run.json` files include a `planner_ref` that traces back to the planner run that produced the work order.
+
+Run directories are immutable -- no run ever overwrites another. The `run_id` is a 26-character ULID (timestamp + random), so runs sort chronologically in directory listings.
 
 ## Planner CLI
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--spec` | yes | | Product spec text file |
-| `--outdir` | yes | | Output dir for `WO-*.json` and manifest |
+| `--outdir` | no | *(canonical only)* | Optional export dir for `WO-*.json` and manifest |
 | `--repo` | no | *(empty repo)* | Target product repo for precondition validation |
 | `--template` | no | `planner/PLANNER_PROMPT.md` | Prompt template path |
-| `--artifacts-dir` | no | `./artifacts` | Compile artifacts (prompts, raw LLM responses, errors) |
+| `--artifacts-dir` | no | `./artifacts` or `$ARTIFACTS_DIR` | Canonical artifacts root |
 | `--overwrite` | no | `false` | Replace existing work orders in outdir |
 | `--print-summary` | no | `false` | Print one-line summary per WO to stdout |
 
@@ -59,8 +112,9 @@ Exit codes: `0` success, `1` general error, `2` validation error, `3` API/networ
 |------|----------|---------|-------------|
 | `--repo` | yes | | Product git repo (must be clean) |
 | `--work-order` | yes | | Work order JSON file |
-| `--out` | yes | | Output dir for run artifacts |
 | `--llm-model` | yes | | LLM model name (e.g. `gpt-4o`) |
+| `--artifacts-dir` | no | `./artifacts` or `$ARTIFACTS_DIR` | Canonical artifacts root |
+| `--out` | no | *(canonical only)* | Optional export dir for run artifacts |
 | `--max-attempts` | no | `2` | Max SE → TR → PO attempts |
 | `--llm-temperature` | no | `0` | LLM sampling temperature |
 | `--timeout-seconds` | no | `600` | Per-command timeout |
@@ -116,9 +170,11 @@ The following properties hold under the prerequisites above:
   `BaseException` handler and finalize-node rollback restore the repo to
   baseline. Tested and verified.
 - **Comprehensive artifact trail.** Every attempt writes prompts, proposals,
-  write results, verify/acceptance output, and failure briefs. The run
-  summary aggregates per-attempt records.
-- **487 tests** cover enforcement invariants, including adversarial-audit
+  write results, verify/acceptance output, and failure briefs. Each run
+  directory is immutable (ULID-based, never overwritten) and includes a
+  `run.json` manifest with SHA-256 hashes, UTC timestamps, config snapshots,
+  and planner-to-factory provenance linkage.
+- **523 tests** cover enforcement invariants, including adversarial-audit
   hardening (M-01–M-10) and credibility fixes (M-20–M-23).
 
 ## How it works
@@ -194,6 +250,10 @@ factory/              Structural enforcement harness
   schemas.py          Shared Pydantic models (WorkOrder, WriteProposal, etc.)
   workspace.py        Git helpers (clean check, rollback, tree hash)
   run.py              CLI orchestration, preflight, RunSummary
+
+shared/               Cross-subsystem infrastructure
+  run_context.py      ULID generation, SHA-256 helpers, run.json management,
+                      artifacts root resolution, tool version detection
 ```
 
 ## Limitations
@@ -215,9 +275,9 @@ The following are known, documented constraints — not bugs:
   the LLM again and may produce different code. The system does not detect
   or skip already-completed work.
 - **No byte-reproducible artifacts.** Artifact metadata (timestamps,
-  durations, absolute paths) varies across runs. LLM output is
-  nondeterministic. The `run_id` and `compile_hash` are deterministic, but
-  all other artifact content may differ.
+  durations, absolute paths, ULID-based run IDs) varies across runs. LLM
+  output is nondeterministic. The `compile_hash` is deterministic (content-
+  addressable), but `run_id` and all other artifact content may differ.
 - **Supervised operation assumed.** The system is designed for operator-
   supervised execution, not unattended deployment. There is no logging
   framework, no cost tracking, and no health-check mechanism.

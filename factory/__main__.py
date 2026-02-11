@@ -29,7 +29,12 @@ def main() -> None:
         "--work-order", required=True, help="Path to the work-order JSON file"
     )
     run_parser.add_argument(
-        "--out", required=True, help="Output directory for artifacts"
+        "--out", default=None,
+        help="Optional export directory for run artifacts (canonical output is always in artifacts)",
+    )
+    run_parser.add_argument(
+        "--artifacts-dir", default=None,
+        help="Canonical artifacts root (default: ./artifacts or $ARTIFACTS_DIR)",
     )
     run_parser.add_argument(
         "--max-attempts",

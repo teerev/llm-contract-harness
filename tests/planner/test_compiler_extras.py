@@ -13,6 +13,7 @@ from planner.compiler import (
     _parse_json,
     compile_plan,
 )
+from planner.openai_client import LLMResult
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +162,7 @@ class TestNoWriteOnFailure:
 
         # All attempts return invalid plan
         mock_client = type(MockClient.return_value)()
-        mock_client.generate_text = lambda _: json.dumps(_INVALID_PLAN)
+        mock_client.generate_text = lambda _: LLMResult(text=json.dumps(_INVALID_PLAN))
         MockClient.return_value = mock_client
 
         result = compile_plan(
@@ -191,7 +192,7 @@ class TestNoWriteOnFailure:
         outdir = str(tmp_path / "out")
 
         mock_client = type(MockClient.return_value)()
-        mock_client.generate_text = lambda _: "NOT JSON"
+        mock_client.generate_text = lambda _: LLMResult(text="NOT JSON")
         MockClient.return_value = mock_client
 
         result = compile_plan(
@@ -208,5 +209,5 @@ class TestNoWriteOnFailure:
         )
         # Prompt rendered should still be written
         assert os.path.isfile(
-            os.path.join(result.artifacts_dir, "prompt_rendered.txt")
+            os.path.join(result.artifacts_dir, "prompt_attempt_1.txt")
         )

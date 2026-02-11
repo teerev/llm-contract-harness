@@ -20,6 +20,7 @@ from planner.openai_client import (
     DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_REASONING_EFFORT,
+    LLMResult,
     MAX_INCOMPLETE_RETRIES,
     MAX_TRANSPORT_RETRIES,
     ModelConfig,
@@ -142,6 +143,98 @@ class TestExtractText:
 
 
 # ---------------------------------------------------------------------------
+# _extract_reasoning
+# ---------------------------------------------------------------------------
+
+
+class TestExtractReasoning:
+    def test_extracts_summary_text(self):
+        data = {
+            "output": [
+                {
+                    "type": "reasoning",
+                    "summary": [
+                        {"type": "summary_text", "text": "Step 1: think hard"},
+                        {"type": "summary_text", "text": "Step 2: conclude"},
+                    ],
+                },
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "answer"}],
+                },
+            ]
+        }
+        result = OpenAIResponsesClient._extract_reasoning(data)
+        assert result == "Step 1: think hard\n\nStep 2: conclude"
+
+    def test_empty_when_no_reasoning(self):
+        data = {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "answer"}],
+                },
+            ]
+        }
+        assert OpenAIResponsesClient._extract_reasoning(data) == ""
+
+    def test_empty_dict(self):
+        assert OpenAIResponsesClient._extract_reasoning({}) == ""
+
+    def test_empty_summary_list(self):
+        data = {"output": [{"type": "reasoning", "summary": []}]}
+        assert OpenAIResponsesClient._extract_reasoning(data) == ""
+
+    def test_skips_non_summary_text_entries(self):
+        data = {
+            "output": [
+                {
+                    "type": "reasoning",
+                    "summary": [
+                        {"type": "other_type", "text": "ignored"},
+                        {"type": "summary_text", "text": "kept"},
+                    ],
+                },
+            ]
+        }
+        assert OpenAIResponsesClient._extract_reasoning(data) == "kept"
+
+    def test_handles_none_output(self):
+        data = {"output": None}
+        assert OpenAIResponsesClient._extract_reasoning(data) == ""
+
+    def test_handles_none_summary(self):
+        data = {"output": [{"type": "reasoning", "summary": None}]}
+        assert OpenAIResponsesClient._extract_reasoning(data) == ""
+
+    def test_strips_whitespace(self):
+        data = {
+            "output": [
+                {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "  padded  "}],
+                },
+            ]
+        }
+        assert OpenAIResponsesClient._extract_reasoning(data) == "padded"
+
+    def test_multiple_reasoning_blocks(self):
+        data = {
+            "output": [
+                {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "block 1"}],
+                },
+                {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "block 2"}],
+                },
+            ]
+        }
+        assert OpenAIResponsesClient._extract_reasoning(data) == "block 1\n\nblock 2"
+
+
+# ---------------------------------------------------------------------------
 # _parse_retry_after
 # ---------------------------------------------------------------------------
 
@@ -187,14 +280,30 @@ def client(monkeypatch):
     return OpenAIResponsesClient()
 
 
-def _completed_response(text: str = "hello world", resp_id: str = "resp_1") -> dict:
+def _completed_response(
+    text: str = "hello world",
+    resp_id: str = "resp_1",
+    reasoning_summary: str | None = None,
+) -> dict:
     """Build a minimal 'completed' API response."""
-    return {
+    resp: dict = {
         "id": resp_id,
         "status": "completed",
         "output_text": text,
         "usage": {"output_tokens": 100, "output_tokens_details": {"reasoning_tokens": 50}},
     }
+    if reasoning_summary is not None:
+        resp["output"] = [
+            {
+                "type": "reasoning",
+                "summary": [{"type": "summary_text", "text": reasoning_summary}],
+            },
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": text}],
+            },
+        ]
+    return resp
 
 
 def _incomplete_response(reason: str = "max_output_tokens", resp_id: str = "resp_1") -> dict:
@@ -226,10 +335,20 @@ def _failed_response(resp_id: str = "resp_1") -> dict:
 class TestGenerateText:
     """Test the high-level generate_text method by mocking _submit_and_poll."""
 
-    def test_completed_returns_text(self, client):
+    def test_completed_returns_llm_result(self, client):
         with patch.object(client, "_submit_and_poll", return_value=_completed_response("the text")):
             result = client.generate_text("prompt")
-        assert result == "the text"
+        assert isinstance(result, LLMResult)
+        assert result.text == "the text"
+        assert result.reasoning == ""
+
+    def test_completed_with_reasoning(self, client):
+        resp = _completed_response("the text", reasoning_summary="I thought about it")
+        with patch.object(client, "_submit_and_poll", return_value=resp):
+            result = client.generate_text("prompt")
+        assert isinstance(result, LLMResult)
+        assert result.text == "the text"
+        assert result.reasoning == "I thought about it"
 
     def test_completed_but_no_text_raises(self, client):
         """Status=completed but _extract_text returns '' → RuntimeError."""
@@ -249,7 +368,7 @@ class TestGenerateText:
         with patch.object(client, "_submit_and_poll", side_effect=responses) as mock_poll:
             result = client.generate_text("prompt")
 
-        assert result == "fixed output"
+        assert result.text == "fixed output"
         assert mock_poll.call_count == 2
         # Second call should have a larger budget
         first_budget = mock_poll.call_args_list[0][0][1]
