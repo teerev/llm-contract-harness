@@ -17,7 +17,15 @@ from factory.util import (
     save_json,
     sha256_file,
 )
-from factory.workspace import get_baseline_commit, is_clean, is_git_repo, rollback
+from factory.workspace import (
+    ensure_git_identity,
+    get_baseline_commit,
+    git_commit,
+    git_pull,
+    is_clean,
+    is_git_repo,
+    rollback,
+)
 from shared.run_context import (
     generate_ulid,
     get_tool_version,
@@ -52,6 +60,18 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         con.error(f"{repo_root} is not a git repository.")
         sys.exit(1)
 
+    # Ensure local git identity (never touches global config)
+    ensure_git_identity(repo_root)
+
+    # Pull latest if a remote is configured
+    if _fd.GIT_AUTO_PULL:
+        try:
+            pull_output = git_pull(repo_root)
+            if pull_output and "Already up to date" not in pull_output:
+                con.step("git", "pull", pull_output.splitlines()[0])
+        except RuntimeError as exc:
+            con.warning(f"git pull failed: {exc}")
+
     if not is_clean(repo_root):
         con.error(
             f"{repo_root} has uncommitted changes. "
@@ -71,7 +91,15 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         )
         sys.exit(1)
 
-    baseline_commit = get_baseline_commit(repo_root)
+    try:
+        baseline_commit = get_baseline_commit(repo_root)
+    except RuntimeError:
+        con.error(
+            f"{repo_root} has no commits. The factory requires at least one "
+            "commit to establish a baseline for rollback.\n"
+            "  Fix: cd " + repo_root + " && git add -A && git commit -m 'init'"
+        )
+        sys.exit(1)
 
     # ------------------------------------------------------------------
     # ULID-based run_id — immutable per-run directory
@@ -330,6 +358,23 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         "run_summary_sha256": sha256_json(summary_dict),
     }
     write_run_json(run_dir, run_json)
+
+    # ------------------------------------------------------------------
+    # Auto-commit on PASS
+    # ------------------------------------------------------------------
+    commit_sha = None
+    if verdict == "PASS" and _fd.GIT_AUTO_COMMIT:
+        try:
+            commit_msg = f"{work_order.id}: applied by factory (run {run_id})"
+            commit_sha = git_commit(repo_root, commit_msg)
+            con.step("git", "commit", commit_sha[:12])
+        except RuntimeError as exc:
+            con.warning(f"Auto-commit failed: {exc}")
+
+        # TODO: git_push(repo_root) when ready
+        # from factory.workspace import git_push
+        # if _fd.GIT_AUTO_PUSH:
+        #     git_push(repo_root)
 
     # ------------------------------------------------------------------
     # Optional export to user-specified out dir

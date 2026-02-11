@@ -51,6 +51,10 @@ python tools/dump_defaults.py
 | `MAX_CONTEXT_FILES` | `10` | int | limits |  | yes | max entries in context_files per WO |
 | `MAX_EXCERPT_CHARS` | `2000` | int | limits |  |  | error excerpt truncation limit |
 | `GIT_TIMEOUT_SECONDS` | `30` | int | timeout |  | yes | timeout for git subprocess calls |
+| `GIT_USER_NAME` | `'llm-compiler'` | str | git |  |  | local git identity for auto-commits |
+| `GIT_USER_EMAIL` | `'llm-compiler@noreply.local'` | str | git |  |  | local git identity for auto-commits |
+| `GIT_AUTO_COMMIT` | `True` | bool | git |  |  | commit changes on PASS |
+| `GIT_AUTO_PULL` | `True` | bool | git |  |  | pull before preflight |
 | `ARTIFACT_SE_PROMPT` | `'se_prompt.txt'` | str | artifacts |  |  | SE prompt artifact filename |
 | `ARTIFACT_PROPOSED_WRITES` | `'proposed_writes.json'` | str | artifacts |  |  | parsed proposal artifact |
 | `ARTIFACT_RAW_LLM_RESPONSE` | `'raw_llm_response.json'` | str | artifacts |  |  | raw LLM output (on parse failure) |

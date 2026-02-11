@@ -52,6 +52,10 @@ MAX_EXCERPT_CHARS: int = 2000  # cat:limits — error excerpt truncation limit
 # ---------------------------------------------------------------------------
 
 GIT_TIMEOUT_SECONDS: int = 30  # cat:timeout safety — timeout for git subprocess calls
+GIT_USER_NAME: str = "llm-compiler"  # cat:git — local git identity for auto-commits
+GIT_USER_EMAIL: str = "llm-compiler@noreply.local"  # cat:git — local git identity for auto-commits
+GIT_AUTO_COMMIT: bool = True  # cat:git — commit changes on PASS
+GIT_AUTO_PULL: bool = True  # cat:git — pull before preflight
 
 # ---------------------------------------------------------------------------
 # Artifact filenames
