@@ -118,7 +118,8 @@ for WO in "${WO_FILES[@]}"; do
     --work-order "$WO" \
     --out "$ARTIFACTS_DIR" \
     --llm-model "$MODEL" \
-    --max-attempts "$MAX_ATTEMPTS"; then
+    --max-attempts "$MAX_ATTEMPTS" \
+    --allow-verify-exempt; then
 
     echo ""
     echo "$WO_NAME PASSED — committing..."

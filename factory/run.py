@@ -7,6 +7,7 @@ import sys
 import traceback
 
 from factory import defaults as _fd
+from factory.console import Console
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
@@ -18,8 +19,10 @@ from factory.util import (
 from factory.workspace import get_baseline_commit, is_clean, is_git_repo, rollback
 
 
-def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
+def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     """Main entry point called by ``__main__``."""
+    con = console or Console()
+
     repo_root = os.path.realpath(args.repo)
     work_order_path = os.path.realpath(args.work_order)
     out_dir = os.path.realpath(args.out)
@@ -30,30 +33,28 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     try:
         work_order: WorkOrder = load_work_order(work_order_path)
     except Exception as exc:
-        print(f"ERROR: Failed to load work order: {exc}", file=sys.stderr)
+        con.error(f"Failed to load work order: {exc}")
         sys.exit(1)
 
     # ------------------------------------------------------------------
     # Preflight checks
     # ------------------------------------------------------------------
     if not is_git_repo(repo_root):
-        print(f"ERROR: {repo_root} is not a git repository.", file=sys.stderr)
+        con.error(f"{repo_root} is not a git repository.")
         sys.exit(1)
 
     if not is_clean(repo_root):
-        print(
-            f"ERROR: {repo_root} has uncommitted changes. "
-            "The working tree must be clean (no staged, unstaged, or untracked changes).",
-            file=sys.stderr,
+        con.error(
+            f"{repo_root} has uncommitted changes. "
+            "The working tree must be clean (no staged, unstaged, or untracked changes)."
         )
         sys.exit(1)
 
     if out_dir == repo_root or out_dir.startswith(repo_root + os.sep):
-        print(
-            f"ERROR: Output directory ({out_dir}) must not be inside the product repo "
+        con.error(
+            f"Output directory ({out_dir}) must not be inside the product repo "
             f"({repo_root}). Artifacts written there would be affected by git rollback "
-            "and could pollute the tree hash on success.",
-            file=sys.stderr,
+            "and could pollute the tree hash on success."
         )
         sys.exit(1)
 
@@ -68,12 +69,11 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     # M-21: refuse to overwrite a prior run's artifacts.
     prior_summary = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
     if os.path.isfile(prior_summary):
-        print(
-            f"ERROR: A run summary already exists at {prior_summary}. "
+        con.error(
+            f"A run summary already exists at {prior_summary}. "
             "Re-running the same work order on the same baseline would "
             "overwrite the prior run's artifacts. To re-run, delete or "
-            f"move the directory: {run_dir}",
-            file=sys.stderr,
+            f"move the directory: {run_dir}"
         )
         sys.exit(1)
 
@@ -106,14 +106,25 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     }
 
     # ------------------------------------------------------------------
+    # Console: show run header
+    # ------------------------------------------------------------------
+    con.header("factory run")
+    con.kv("Work order", f"{work_order.id}  \"{work_order.title}\"")
+    con.kv("Run ID", run_id)
+    con.kv("Model", f"{args.llm_model} (temp={args.llm_temperature})")
+    con.kv("Max attempts", str(args.max_attempts))
+    con.kv("Baseline", baseline_commit[:12], verbose_only=True)
+    con.kv("Repo", repo_root, verbose_only=True)
+    con.kv("Artifacts", run_dir)
+
+    # ------------------------------------------------------------------
     # M-22: Override verify_exempt unless explicitly allowed by operator
     # ------------------------------------------------------------------
     wo_dict = work_order.model_dump()
     if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
-        print(
-            "WARNING: work order has verify_exempt=true but --allow-verify-exempt "
-            "was not passed. Overriding to false — full verification will run.",
-            file=sys.stderr,
+        con.warning(
+            "work order has verify_exempt=true but --allow-verify-exempt "
+            "was not passed. Overriding to false — full verification will run."
         )
         wo_dict["verify_exempt"] = False
 
@@ -157,23 +168,17 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         # ------------------------------------------------------------------
         error_detail = traceback.format_exc()
 
-        # Best-effort rollback — the repo may have writes applied.
-        # Guard against rollback itself failing (e.g. locked index).
-        # Use BaseException so a second Ctrl-C during cleanup doesn't
-        # defeat the rollback.
         try:
             rollback(repo_root, baseline_commit)
         except BaseException as rb_exc:
-            print(
-                f"WARNING: Best-effort rollback failed: {rb_exc}. "
+            con.warning(
+                f"Best-effort rollback failed: {rb_exc}. "
                 "The repo may be in a dirty state. "
                 f"Restore manually with: git -C {repo_root} reset --hard {baseline_commit} "
-                f"&& git -C {repo_root} clean -fd",
-                file=sys.stderr,
+                f"&& git -C {repo_root} clean -fd"
             )
 
-        # M-09: Check whether rollback actually succeeded and record the
-        # result as a machine-readable field in the summary.
+        # M-09: Check whether rollback actually succeeded
         try:
             _rollback_ok = is_clean(repo_root)
         except BaseException:
@@ -205,14 +210,10 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
         try:
             save_json(summary_dict, summary_path)
         except BaseException:
-            print(
-                f"CRITICAL: Failed to write run summary: {exc}",
-                file=sys.stderr,
-            )
+            con.critical(f"Failed to write run summary: {exc}")
 
-        print(f"Verdict: ERROR (unhandled exception)", file=sys.stderr)
-        print(f"Exception: {exc}", file=sys.stderr)
-        print(f"Run summary: {summary_path}", file=sys.stderr)
+        con.verdict("ERROR", f"unhandled exception: {exc}")
+        con.kv("Run summary", summary_path)
 
         # Type-specific exit codes (M-02):
         if isinstance(exc, KeyboardInterrupt):
@@ -243,8 +244,44 @@ def run_cli(args) -> None:  # noqa: ANN001 — argparse.Namespace
     summary_path = os.path.join(run_dir, ARTIFACT_RUN_SUMMARY)
     save_json(summary_dict, summary_path)
 
-    print(f"Verdict: {verdict}")
-    print(f"Run summary: {summary_path}")
+    # ------------------------------------------------------------------
+    # Console: show attempt summaries and verdict
+    # ------------------------------------------------------------------
+    for attempt in attempts:
+        idx = attempt["attempt_index"]
+        fb = attempt.get("failure_brief")
+        con.attempt_start(idx, args.max_attempts)
+
+        touched = attempt.get("touched_files", [])
+        if touched:
+            con.step("TR", f"wrote {len(touched)} file(s)", ", ".join(touched))
+
+        # Verify results
+        for vr in attempt.get("verify", []):
+            status = "PASS" if vr.get("exit_code") == 0 else "FAIL"
+            cmd_str = " ".join(vr.get("command", []))
+            con.step("PO", f"verify {status}", cmd_str)
+
+        # Acceptance results
+        acc = attempt.get("acceptance", [])
+        if acc:
+            passed = sum(1 for a in acc if a.get("exit_code") == 0)
+            total = len(acc)
+            status = "PASS" if passed == total else "FAIL"
+            con.step("PO", f"acceptance {status}", f"{passed}/{total}")
+
+        if fb:
+            stage = fb.get("stage", "unknown")
+            excerpt = fb.get("primary_error_excerpt", "")
+            con.step("", f"FAIL (stage={stage})")
+            if excerpt:
+                lines = excerpt.strip().splitlines()
+                con.error_block(lines)
+            if attempt.get("write_ok"):
+                con.rollback_notice(baseline_commit)
+
+    con.verdict(verdict)
+    con.kv("Run summary", summary_path)
 
     if verdict != "PASS":
         sys.exit(1)

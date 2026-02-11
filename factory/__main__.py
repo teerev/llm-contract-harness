@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from factory.console import Console
 from factory.defaults import (
     DEFAULT_LLM_TEMPERATURE,
     DEFAULT_MAX_ATTEMPTS,
@@ -15,7 +16,7 @@ from factory.defaults import (
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="factory",
-        description="Factory harness: deterministic SE → TR → PO loop.",
+        description="Factory harness: structural enforcement SE → TR → PO loop.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -60,6 +61,18 @@ def main() -> None:
             "Without this flag, verify_exempt is overridden to false with a warning."
         ),
     )
+    run_parser.add_argument(
+        "--verbose", action="store_true", default=False,
+        help="Show timestamps, durations, baseline commit, and full error excerpts",
+    )
+    run_parser.add_argument(
+        "--quiet", action="store_true", default=False,
+        help="Suppress all output except verdict and errors",
+    )
+    run_parser.add_argument(
+        "--no-color", action="store_true", default=False,
+        help="Disable colored output",
+    )
 
     args = parser.parse_args()
 
@@ -68,17 +81,20 @@ def main() -> None:
         sys.exit(1)
 
     if args.command == "run":
+        color = False if getattr(args, "no_color", False) else None
+        verbosity = "quiet" if getattr(args, "quiet", False) else (
+            "verbose" if getattr(args, "verbose", False) else "normal"
+        )
+        con = Console(verbosity=verbosity, color=color)
+
         if args.max_attempts < 1:
-            print(
-                "ERROR: --max-attempts must be at least 1.",
-                file=sys.stderr,
-            )
+            con.error("--max-attempts must be at least 1.")
             sys.exit(1)
 
         # Defer import so ``--help`` stays fast
         from factory.run import run_cli
 
-        run_cli(args)
+        run_cli(args, console=con)
 
 
 if __name__ == "__main__":

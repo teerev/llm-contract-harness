@@ -41,7 +41,18 @@ DUMP_DIR: Optional[str] = None  # set by compiler before calling
 
 
 def _log(msg: str) -> None:
-    print(f"  [openai] {msg}", file=sys.stderr)
+    """Log an OpenAI transport message to stderr.
+
+    Uses the Console object at module level if set, else falls back to
+    bare print. The Console is set by the CLI before calling compile_plan.
+    """
+    if _CONSOLE is not None:
+        _CONSOLE.step("LLM", msg)
+    else:
+        print(f"  [openai] {msg}", file=sys.stderr)
+
+
+_CONSOLE: Optional[object] = None  # set by cli.py before compile_plan
 
 
 # ---------------------------------------------------------------------------
