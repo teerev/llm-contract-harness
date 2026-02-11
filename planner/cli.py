@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from factory.console import Console
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -55,8 +57,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Print compile summary to stdout",
     )
+    compile_parser.add_argument(
+        "--verbose", action="store_true", default=False,
+        help="Show timestamps, token counts, and full error excerpts",
+    )
+    compile_parser.add_argument(
+        "--quiet", action="store_true", default=False,
+        help="Suppress all output except verdict and errors",
+    )
+    compile_parser.add_argument(
+        "--no-color", action="store_true", default=False,
+        help="Disable colored output",
+    )
 
     return parser
+
+
+def _verbosity(args: argparse.Namespace) -> str:
+    if getattr(args, "quiet", False):
+        return "quiet"
+    if getattr(args, "verbose", False):
+        return "verbose"
+    return "normal"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +100,12 @@ def _run_compile(args: argparse.Namespace) -> int:
     """Execute the compile command."""
     from planner.compiler import compile_plan
 
+    color = False if getattr(args, "no_color", False) else None
+    con = Console(verbosity=_verbosity(args), color=color)
+
+    con.header("planner compile")
+    con.kv("Spec", args.spec)
+
     try:
         result = compile_plan(
             spec_path=args.spec,
@@ -88,46 +116,46 @@ def _run_compile(args: argparse.Namespace) -> int:
             repo_path=args.repo,
         )
     except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        con.error(str(exc))
         return 1
     except FileExistsError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        con.error(str(exc))
         return 1
     except RuntimeError as exc:
-        # API errors
         msg = str(exc)
-        print(f"ERROR: {msg}", file=sys.stderr)
+        con.error(msg)
         if "API" in msg or "OPENAI" in msg:
             return 3
         return 1
     except Exception as exc:
-        # Catch transport/network errors (httpx, urllib, etc.)
-        print(f"ERROR: API request failed: {exc}", file=sys.stderr)
+        con.error(f"API request failed: {exc}")
         return 3
 
-    # --- Console output ---
-    print(f"Compile hash: {result.compile_hash}")
-    print(f"Artifacts:    {result.artifacts_dir}")
+    # --- Structured output ---
+    con.kv("Compile hash", result.compile_hash)
+    con.kv("Artifacts", result.artifacts_dir)
+    con.kv("Attempts", str(result.compile_attempts), verbose_only=True)
 
     if result.errors:
-        # Validation or parse error
         error_path = _find_validation_errors(result)
-        print(f"Work orders:  0 (validation failed)")
-        print(f"Errors:       {len(result.errors)}")
+        con.kv("Work orders", "0 (validation failed)")
+        con.kv("Errors", str(len(result.errors)))
         if error_path:
-            print(f"See:          {error_path}")
+            con.kv("See", error_path)
+        con.verdict("FAIL")
 
         is_parse = any("JSON parse" in e for e in result.errors)
         return 4 if is_parse else 2
 
-    print(f"Work orders:  {len(result.work_orders)}")
-    print(f"Output dir:   {result.outdir}")
+    con.kv("Work orders", str(len(result.work_orders)))
+    con.kv("Output dir", result.outdir)
 
-    if args.print_summary:
-        print()
+    if args.print_summary or _verbosity(args) == "verbose":
+        con.blank()
         for wo in result.work_orders:
-            print(f"  {wo['id']}  {wo.get('title', '')}")
+            con.bullet(f"{wo['id']}  {wo.get('title', '')}")
 
+    con.verdict("PASS")
     return 0
 
 

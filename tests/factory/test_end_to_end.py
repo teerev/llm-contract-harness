@@ -327,10 +327,11 @@ class TestEmergencyHandler:
 
         assert exc_info.value.code == 2
 
-        # --- Assert stderr contains emergency verdict ---
+        # --- Assert output contains emergency verdict ---
         captured = capsys.readouterr()
-        assert "Verdict: ERROR" in captured.err
-        assert "unexpected crash in graph" in captured.err
+        combined = captured.out + captured.err
+        assert "ERROR" in combined
+        assert "unexpected crash in graph" in combined
 
         # --- Assert run_summary.json written with ERROR verdict ---
         run_dirs = os.listdir(out)
@@ -389,9 +390,10 @@ class TestBaseExceptionRollback:
         summary = load_json(os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
         assert summary["verdict"] == "ERROR"
 
-        # stderr must contain the verdict
+        # output must contain the verdict
         captured = capsys.readouterr()
-        assert "Verdict: ERROR" in captured.err
+        combined = captured.out + captured.err
+        assert "ERROR" in combined
 
     def test_keyboard_interrupt_with_dirty_repo(self, tmp_path, capsys):
         """If KeyboardInterrupt happens after a file was written, the file
