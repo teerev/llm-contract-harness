@@ -54,6 +54,41 @@ def _log(msg: str) -> None:
 
 _CONSOLE: Optional[object] = None  # set by cli.py before compile_plan
 
+_DIM = "\033[2m"
+_RESET = "\033[0m"
+
+
+def _use_color() -> bool:
+    """Check if stderr supports color (for reasoning output)."""
+    try:
+        return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+    except Exception:
+        return False
+
+
+def _log_reasoning_start() -> None:
+    """Print the opening marker for streamed reasoning output."""
+    if _use_color():
+        sys.stderr.write(f"\n{_DIM}    [reasoning] ")
+    else:
+        sys.stderr.write("\n    [reasoning] ")
+    sys.stderr.flush()
+
+
+def _log_reasoning_delta(delta: str) -> None:
+    """Print a reasoning text delta inline (no newline)."""
+    sys.stderr.write(delta)
+    sys.stderr.flush()
+
+
+def _log_reasoning_end() -> None:
+    """Print the closing marker for streamed reasoning output."""
+    if _use_color():
+        sys.stderr.write(f"{_RESET}\n\n")
+    else:
+        sys.stderr.write("\n\n")
+    sys.stderr.flush()
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -101,8 +136,10 @@ class OpenAIResponsesClient:
     # ------------------------------------------------------------------
 
     def generate_text(self, prompt: str) -> LLMResult:
-        """Submit prompt, poll until done, return output text and reasoning.
+        """Submit prompt, stream or poll until done, return output text + reasoning.
 
+        Uses SSE streaming by default (real-time reasoning output).
+        Falls back to background polling if the stream connection fails.
         Retries once with a larger token budget on incomplete.
         """
         budgets = [
@@ -114,7 +151,18 @@ class OpenAIResponsesClient:
             _log(f"Attempt {i+1}: model={self.cfg.model} "
                  f"reasoning={self.cfg.reasoning_effort} max_out={budget}")
 
-            data = self._submit_and_poll(prompt, budget)
+            # Try streaming first; fall back to polling on connection failure.
+            try:
+                data = self._submit_and_stream(prompt, budget)
+            except (
+                httpx.RemoteProtocolError,
+                httpx.ReadTimeout,
+                httpx.ConnectError,
+                httpx.WriteTimeout,
+            ) as stream_exc:
+                _log(f"Stream failed ({stream_exc}), falling back to background poll")
+                data = self._submit_and_poll(prompt, budget)
+
             status = data.get("status", "unknown")
             resp_id = data.get("id", "?")
 
@@ -161,11 +209,112 @@ class OpenAIResponsesClient:
         raise RuntimeError("Exhausted all attempts")
 
     # ------------------------------------------------------------------
-    # Background submit + poll
+    # Streaming submit (real-time reasoning + output via SSE)
+    # ------------------------------------------------------------------
+
+    def _submit_and_stream(self, prompt: str, max_output_tokens: int) -> dict:
+        """Submit with stream=true, parse SSE events, print reasoning live.
+
+        Returns the full response dict (reconstructed from the final
+        response.completed event).  Reasoning summary deltas are printed
+        to the terminal via _log_reasoning as they arrive.
+        """
+        payload = {
+            "model": self.cfg.model,
+            "input": prompt,
+            "reasoning": {
+                "effort": self.cfg.reasoning_effort,
+                "summary": "auto",
+            },
+            "max_output_tokens": max_output_tokens,
+            "stream": True,
+        }
+
+        # Streaming needs a long read timeout — reasoning can take 30 min.
+        stream_timeout = httpx.Timeout(
+            connect=CONNECT_TIMEOUT,
+            read=POLL_DEADLINE_S,  # reuse the poll deadline as max wait
+            write=WRITE_TIMEOUT,
+            pool=POOL_TIMEOUT,
+        )
+
+        final_response: dict = {}
+        output_text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        _reasoning_started = False
+
+        _log("Streaming response...")
+
+        with httpx.Client(timeout=stream_timeout) as client:
+            with client.stream(
+                "POST",
+                RESPONSES_ENDPOINT,
+                headers=self._headers,
+                json=payload,
+            ) as resp:
+                if resp.status_code != 200:
+                    resp.read()
+                    raise RuntimeError(
+                        f"API error {resp.status_code}: {resp.text[:1000]}"
+                    )
+
+                for line in resp.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:]
+                    if raw.strip() == "[DONE]":
+                        break
+
+                    try:
+                        event = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+
+                    etype = event.get("type", "")
+
+                    # --- Reasoning summary deltas (printed live) ---
+                    if etype == "response.reasoning_summary_text.delta":
+                        delta = event.get("delta", "")
+                        if delta:
+                            if not _reasoning_started:
+                                _reasoning_started = True
+                                _log_reasoning_start()
+                            _log_reasoning_delta(delta)
+                            reasoning_parts.append(delta)
+
+                    elif etype == "response.reasoning_summary_text.done":
+                        if _reasoning_started:
+                            _log_reasoning_end()
+
+                    # --- Output text deltas (accumulated silently) ---
+                    elif etype == "response.output_text.delta":
+                        delta = event.get("delta", "")
+                        if delta:
+                            output_text_parts.append(delta)
+
+                    # --- Terminal events ---
+                    elif etype in (
+                        "response.completed",
+                        "response.failed",
+                        "response.incomplete",
+                    ):
+                        final_response = event.get("response", {})
+
+        if not final_response:
+            raise RuntimeError("Stream ended without a terminal response event")
+
+        return final_response
+
+    # ------------------------------------------------------------------
+    # Background submit + poll (fallback)
     # ------------------------------------------------------------------
 
     def _submit_and_poll(self, prompt: str, max_output_tokens: int) -> dict:
-        """Submit with background=true, then poll until terminal."""
+        """Submit with background=true, then poll until terminal.
+
+        Used as a fallback when streaming fails (e.g., connection drops
+        from a server-side load balancer).
+        """
         payload = {
             "model": self.cfg.model,
             "input": prompt,

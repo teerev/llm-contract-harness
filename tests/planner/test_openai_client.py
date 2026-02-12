@@ -333,10 +333,15 @@ def _failed_response(resp_id: str = "resp_1") -> dict:
 
 
 class TestGenerateText:
-    """Test the high-level generate_text method by mocking _submit_and_poll."""
+    """Test the high-level generate_text method by mocking _submit_and_stream.
+
+    generate_text tries _submit_and_stream first; on connection failure it
+    falls back to _submit_and_poll.  These tests mock _submit_and_stream
+    directly (the primary path).
+    """
 
     def test_completed_returns_llm_result(self, client):
-        with patch.object(client, "_submit_and_poll", return_value=_completed_response("the text")):
+        with patch.object(client, "_submit_and_stream", return_value=_completed_response("the text")):
             result = client.generate_text("prompt")
         assert isinstance(result, LLMResult)
         assert result.text == "the text"
@@ -344,7 +349,7 @@ class TestGenerateText:
 
     def test_completed_with_reasoning(self, client):
         resp = _completed_response("the text", reasoning_summary="I thought about it")
-        with patch.object(client, "_submit_and_poll", return_value=resp):
+        with patch.object(client, "_submit_and_stream", return_value=resp):
             result = client.generate_text("prompt")
         assert isinstance(result, LLMResult)
         assert result.text == "the text"
@@ -355,7 +360,7 @@ class TestGenerateText:
         resp = _completed_response()
         resp["output_text"] = ""
         resp.pop("output", None)
-        with patch.object(client, "_submit_and_poll", return_value=resp):
+        with patch.object(client, "_submit_and_stream", return_value=resp):
             with pytest.raises(RuntimeError, match="no output text"):
                 client.generate_text("prompt")
 
@@ -365,20 +370,20 @@ class TestGenerateText:
             _incomplete_response("max_output_tokens"),
             _completed_response("fixed output"),
         ]
-        with patch.object(client, "_submit_and_poll", side_effect=responses) as mock_poll:
+        with patch.object(client, "_submit_and_stream", side_effect=responses) as mock_stream:
             result = client.generate_text("prompt")
 
         assert result.text == "fixed output"
-        assert mock_poll.call_count == 2
+        assert mock_stream.call_count == 2
         # Second call should have a larger budget
-        first_budget = mock_poll.call_args_list[0][0][1]
-        second_budget = mock_poll.call_args_list[1][0][1]
+        first_budget = mock_stream.call_args_list[0][0][1]
+        second_budget = mock_stream.call_args_list[1][0][1]
         assert second_budget > first_budget
 
     def test_incomplete_non_retryable_reason_raises(self, client):
         """Incomplete with reason != max_output_tokens → RuntimeError immediately."""
         resp = _incomplete_response("content_filter")
-        with patch.object(client, "_submit_and_poll", return_value=resp):
+        with patch.object(client, "_submit_and_stream", return_value=resp):
             with pytest.raises(RuntimeError, match="content_filter"):
                 client.generate_text("prompt")
 
@@ -388,20 +393,28 @@ class TestGenerateText:
             _incomplete_response("max_output_tokens"),
             _incomplete_response("max_output_tokens"),
         ]
-        with patch.object(client, "_submit_and_poll", side_effect=responses):
+        with patch.object(client, "_submit_and_stream", side_effect=responses):
             with pytest.raises(RuntimeError, match="incomplete"):
                 client.generate_text("prompt")
 
     def test_failed_status_raises(self, client):
-        with patch.object(client, "_submit_and_poll", return_value=_failed_response()):
+        with patch.object(client, "_submit_and_stream", return_value=_failed_response()):
             with pytest.raises(RuntimeError, match="Unexpected response status"):
                 client.generate_text("prompt")
 
     def test_unknown_status_raises(self, client):
         resp = {"id": "resp_1", "status": "cancelled", "usage": {}}
-        with patch.object(client, "_submit_and_poll", return_value=resp):
+        with patch.object(client, "_submit_and_stream", return_value=resp):
             with pytest.raises(RuntimeError, match="Unexpected response status"):
                 client.generate_text("prompt")
+
+    def test_stream_failure_falls_back_to_poll(self, client):
+        """If streaming fails with a connection error, falls back to polling."""
+        import httpx
+        with patch.object(client, "_submit_and_stream", side_effect=httpx.ConnectError("conn refused")), \
+             patch.object(client, "_submit_and_poll", return_value=_completed_response("fallback text")):
+            result = client.generate_text("prompt")
+        assert result.text == "fallback text"
 
 
 # ---------------------------------------------------------------------------
