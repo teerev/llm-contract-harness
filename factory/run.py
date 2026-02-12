@@ -68,7 +68,7 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         con.error(
             f"{repo_root} has no commits. The factory requires at least one "
             "commit to establish a baseline for rollback.\n"
-            f"  Fix: cd {repo_root} && git add -A && git commit -m 'init'"
+            f"  Fix: cd {repo_root} && git add . && git commit -m 'init' --allow-empty"
         )
         sys.exit(1)
 
