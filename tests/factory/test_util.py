@@ -19,12 +19,14 @@ from factory.util import (
     ARTIFACT_WORK_ORDER,
     ARTIFACT_WRITE_RESULT,
     MAX_EXCERPT_CHARS,
+    _sandboxed_env,
     canonical_json_bytes,
     compute_run_id,
     is_path_inside_repo,
     load_json,
     make_attempt_dir,
     normalize_path,
+    run_command,
     save_json,
     sha256_bytes,
     sha256_file,
@@ -300,3 +302,57 @@ class TestSaveJsonAtomic:
         assert "\n" in raw
         # Trailing newline
         assert raw.endswith("\n")
+
+
+# ---------------------------------------------------------------------------
+# _sandboxed_env / run_command env — Issue 2 from GPT52ISSUES.md
+# ---------------------------------------------------------------------------
+
+
+class TestSandboxedEnv:
+    """Issue 2: subprocess environment must suppress repo pollution."""
+
+    def test_pythondontwritebytecode_set(self):
+        env = _sandboxed_env()
+        assert env.get("PYTHONDONTWRITEBYTECODE") == "1"
+
+    def test_pytest_cache_suppressed(self):
+        env = _sandboxed_env()
+        addopts = env.get("PYTEST_ADDOPTS", "")
+        assert "-p no:cacheprovider" in addopts
+
+    def test_inherits_parent_env(self):
+        env = _sandboxed_env()
+        # PATH must be inherited for subprocesses to find executables
+        assert "PATH" in env
+
+    def test_run_command_passes_sandboxed_env(self, tmp_path):
+        """run_command must pass env with PYTHONDONTWRITEBYTECODE to subprocess."""
+        from unittest.mock import patch, MagicMock
+        import subprocess
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = b"ok"
+        mock_proc.stderr = b""
+
+        stdout_p = str(tmp_path / "out.txt")
+        stderr_p = str(tmp_path / "err.txt")
+
+        with patch("factory.util.subprocess.run", return_value=mock_proc) as mock_run:
+            run_command(
+                cmd=["echo", "hello"],
+                cwd=str(tmp_path),
+                timeout=10,
+                stdout_path=stdout_p,
+                stderr_path=stderr_p,
+            )
+
+        # Verify env kwarg was passed with the sandbox overrides
+        call_kwargs = mock_run.call_args
+        assert "env" in call_kwargs.kwargs or (
+            len(call_kwargs.args) > 1 and isinstance(call_kwargs.args[1], dict)
+        )
+        passed_env = call_kwargs.kwargs.get("env") or call_kwargs.args[1]
+        assert passed_env["PYTHONDONTWRITEBYTECODE"] == "1"
+        assert "-p no:cacheprovider" in passed_env.get("PYTEST_ADDOPTS", "")

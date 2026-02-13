@@ -115,6 +115,22 @@ def load_json(path: str) -> Any:
 # ---------------------------------------------------------------------------
 
 
+def _sandboxed_env() -> dict[str, str]:
+    """Build a subprocess environment that suppresses repo pollution.
+
+    Inherits the parent environment but adds protective overrides so that
+    verify/acceptance commands don't litter the product repo with caches.
+    """
+    env = os.environ.copy()
+    # Suppress .pyc bytecode files (they pollute the repo and git history)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Suppress pytest's .pytest_cache/ directory
+    env["PYTEST_ADDOPTS"] = (
+        env.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider"
+    ).strip()
+    return env
+
+
 def run_command(
     cmd: list[str],
     cwd: str,
@@ -122,9 +138,15 @@ def run_command(
     stdout_path: str,
     stderr_path: str,
 ) -> CmdResult:
-    """Run *cmd* with no shell, capture output to files, enforce *timeout*."""
+    """Run *cmd* with no shell, capture output to files, enforce *timeout*.
+
+    Uses a sandboxed environment (``_sandboxed_env``) to suppress bytecode
+    and cache artifacts that would pollute the product repo.
+    """
     pathlib.Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(stderr_path).parent.mkdir(parents=True, exist_ok=True)
+
+    env = _sandboxed_env()
 
     start = time.monotonic()
     try:
@@ -134,6 +156,7 @@ def run_command(
             capture_output=True,
             timeout=timeout,
             shell=False,
+            env=env,
         )
         duration = time.monotonic() - start
 
