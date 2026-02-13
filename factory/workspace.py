@@ -85,6 +85,39 @@ def get_tree_hash(repo_root: str, touched_files: list[str] | None = None) -> str
 
 
 # ---------------------------------------------------------------------------
+# Repo drift detection (Issue 3 — post-PO cleanliness check)
+# ---------------------------------------------------------------------------
+
+
+def detect_repo_drift(repo_root: str, touched_files: list[str]) -> list[str]:
+    """Return paths of modified/untracked files NOT in *touched_files*.
+
+    Uses ``git status --porcelain`` to find all changes, then filters out
+    the expected ``touched_files``.  Returns an empty list if the repo
+    contains only the expected changes.
+    """
+    result = _git(["status", "--porcelain"], cwd=repo_root)
+    if result.returncode != 0:
+        return []  # can't detect — treat as clean
+
+    expected = set(touched_files)
+    drift: list[str] = []
+
+    for line in result.stdout.decode("utf-8", errors="replace").splitlines():
+        # porcelain format: "XY path" or "XY path -> renamed_path"
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        # Handle renames: "R  old -> new"
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if path not in expected:
+            drift.append(path)
+
+    return sorted(drift)
+
+
+# ---------------------------------------------------------------------------
 # Rollback
 # ---------------------------------------------------------------------------
 

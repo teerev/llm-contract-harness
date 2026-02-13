@@ -9,6 +9,7 @@ import pytest
 
 from factory.workspace import (
     GIT_TIMEOUT_SECONDS,
+    detect_repo_drift,
     get_baseline_commit,
     get_tree_hash,
     git_commit,
@@ -135,6 +136,53 @@ class TestGetTreeHash:
         h = get_tree_hash(git_repo, touched_files=["hello.txt"])
         # Tree hash exists
         assert len(h) == 40
+
+
+# ---------------------------------------------------------------------------
+# detect_repo_drift — Issue 3 from GPT52ISSUES.md
+# ---------------------------------------------------------------------------
+
+
+class TestDetectRepoDrift:
+    def test_no_drift_when_only_touched_files_changed(self, git_repo):
+        """Modified touched files are not drift."""
+        with open(os.path.join(git_repo, "hello.txt"), "w") as f:
+            f.write("changed")
+        drift = detect_repo_drift(git_repo, ["hello.txt"])
+        assert drift == []
+
+    def test_untracked_file_detected_as_drift(self, git_repo):
+        """An untracked file outside touched_files is drift."""
+        with open(os.path.join(git_repo, "hello.txt"), "w") as f:
+            f.write("changed")
+        with open(os.path.join(git_repo, "pollution.txt"), "w") as f:
+            f.write("verification artifact")
+        drift = detect_repo_drift(git_repo, ["hello.txt"])
+        assert "pollution.txt" in drift
+
+    def test_clean_repo_no_drift(self, git_repo):
+        """A clean repo has no drift."""
+        drift = detect_repo_drift(git_repo, ["hello.txt"])
+        assert drift == []
+
+    def test_multiple_drift_files(self, git_repo):
+        """Multiple unexpected files are all reported."""
+        with open(os.path.join(git_repo, "a.txt"), "w") as f:
+            f.write("x")
+        with open(os.path.join(git_repo, "b.txt"), "w") as f:
+            f.write("y")
+        drift = detect_repo_drift(git_repo, [])
+        assert "a.txt" in drift
+        assert "b.txt" in drift
+
+    def test_pytest_cache_detected_as_drift(self, git_repo):
+        """Verification artifacts like .pytest_cache/ appear as drift."""
+        cache_dir = os.path.join(git_repo, ".pytest_cache")
+        os.makedirs(cache_dir)
+        with open(os.path.join(cache_dir, "README.md"), "w") as f:
+            f.write("cache")
+        drift = detect_repo_drift(git_repo, ["hello.txt"])
+        assert any(".pytest_cache" in d for d in drift)
 
 
 # ---------------------------------------------------------------------------

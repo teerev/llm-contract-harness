@@ -16,7 +16,7 @@ from factory.util import (
     make_attempt_dir,
     save_json,
 )
-from factory.workspace import get_tree_hash, rollback
+from factory.workspace import detect_repo_drift, get_tree_hash, rollback
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +138,12 @@ def _finalize_node(state: dict) -> dict:
     if verdict == "FAIL":
         rollback(repo_root, baseline)
     else:
-        # PASS → stage only proposal-touched files, then compute tree hash.
-        # Scoping prevents verification artifacts from polluting the hash.
+        # PASS → detect repo drift (files changed outside the proposal),
+        # then stage only proposal-touched files and compute tree hash.
         touched = list(state.get("touched_files") or [])
+        drift = detect_repo_drift(repo_root, touched)
+        if drift:
+            attempt_record["repo_drift"] = drift
         repo_tree_hash_after = get_tree_hash(repo_root, touched_files=touched or None)
 
     return {
