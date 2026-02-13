@@ -433,9 +433,17 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     # ------------------------------------------------------------------
     commit_hashes: list[str] = []
     if verdict == "PASS" and _fd.GIT_AUTO_COMMIT:
+        # Extract touched_files from the successful attempt so we commit
+        # only proposal-intended files, not verification artifacts.
+        pass_touched: list[str] | None = None
+        if attempts:
+            last_attempt = attempts[-1]
+            tf = last_attempt.get("touched_files", [])
+            if tf:
+                pass_touched = list(tf)
         try:
             commit_msg = f"{work_order.id}: applied by factory (run {run_id})"
-            commit_sha = git_commit(repo_root, commit_msg)
+            commit_sha = git_commit(repo_root, commit_msg, touched_files=pass_touched)
             commit_hashes.append(commit_sha)
             con.step("git", "commit", commit_sha[:12])
         except RuntimeError as exc:

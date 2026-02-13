@@ -11,6 +11,7 @@ from factory.workspace import (
     GIT_TIMEOUT_SECONDS,
     get_baseline_commit,
     get_tree_hash,
+    git_commit,
     is_clean,
     is_git_repo,
     rollback,
@@ -134,6 +135,76 @@ class TestGetTreeHash:
         h = get_tree_hash(git_repo, touched_files=["hello.txt"])
         # Tree hash exists
         assert len(h) == 40
+
+
+# ---------------------------------------------------------------------------
+# git_commit — scoped staging (Issue 1 from GPT52ISSUES.md)
+# ---------------------------------------------------------------------------
+
+
+class TestGitCommit:
+    def test_unscoped_commits_all(self, git_repo):
+        """Without touched_files, git_commit stages everything (backward compat)."""
+        with open(os.path.join(git_repo, "hello.txt"), "w") as f:
+            f.write("changed")
+        with open(os.path.join(git_repo, "extra.txt"), "w") as f:
+            f.write("new file")
+
+        sha = git_commit(git_repo, "unscoped commit")
+        assert len(sha) == 40
+
+        # Both files should be in the commit
+        result = subprocess.run(
+            ["git", "show", "--stat", "--format=", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        )
+        assert "hello.txt" in result.stdout
+        assert "extra.txt" in result.stdout
+
+    def test_scoped_commits_only_touched_files(self, git_repo):
+        """With touched_files, only those files are staged and committed."""
+        with open(os.path.join(git_repo, "hello.txt"), "w") as f:
+            f.write("changed")
+        with open(os.path.join(git_repo, "pollution.txt"), "w") as f:
+            f.write("verification artifact")
+
+        sha = git_commit(git_repo, "scoped commit", touched_files=["hello.txt"])
+        assert len(sha) == 40
+
+        # Only hello.txt should be in the commit
+        result = subprocess.run(
+            ["git", "show", "--stat", "--format=", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        )
+        assert "hello.txt" in result.stdout
+        assert "pollution.txt" not in result.stdout
+
+        # pollution.txt should still exist as untracked
+        assert os.path.isfile(os.path.join(git_repo, "pollution.txt"))
+
+    def test_scoped_commit_ignores_pytest_cache(self, git_repo):
+        """Scoped commit does not include .pytest_cache/ even if present."""
+        # Simulate verification artifacts
+        cache_dir = os.path.join(git_repo, ".pytest_cache")
+        os.makedirs(cache_dir)
+        with open(os.path.join(cache_dir, "README.md"), "w") as f:
+            f.write("pytest cache")
+        with open(os.path.join(git_repo, "hello.txt"), "w") as f:
+            f.write("changed")
+
+        git_commit(git_repo, "scoped commit", touched_files=["hello.txt"])
+
+        result = subprocess.run(
+            ["git", "show", "--stat", "--format=", "HEAD"],
+            cwd=git_repo, capture_output=True, text=True,
+        )
+        assert "hello.txt" in result.stdout
+        assert ".pytest_cache" not in result.stdout
+
+    def test_nothing_to_commit_returns_head(self, git_repo):
+        """If touched_files haven't changed, returns current HEAD (no error)."""
+        sha = git_commit(git_repo, "no-op", touched_files=["hello.txt"])
+        assert len(sha) == 40  # returns HEAD hash, no exception
 
 
 # ---------------------------------------------------------------------------

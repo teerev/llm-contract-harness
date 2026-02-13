@@ -149,25 +149,41 @@ def git_pull(repo_root: str) -> str | None:
     return output
 
 
-def git_commit(repo_root: str, message: str) -> str:
-    """Stage all changes and commit. Returns the new commit hash.
+def git_commit(
+    repo_root: str,
+    message: str,
+    touched_files: list[str] | None = None,
+) -> str:
+    """Stage changes and commit. Returns the new commit hash.
 
-    Uses ``git add -A`` then ``git commit``. The ``--no-verify`` flag skips
-    pre-commit hooks that might fail on LLM-generated code.
+    If *touched_files* is provided, stages only those files (scoped commit).
+    Otherwise falls back to ``git add -A`` (stages everything).
+
+    Scoped staging prevents verification artifacts (``.pytest_cache/``,
+    ``__pycache__/``, etc.) from polluting commits.  The ``--no-verify``
+    flag skips pre-commit hooks that might fail on LLM-generated code.
     """
-    add = _git(["add", "-A"], cwd=repo_root)
+    if touched_files:
+        add = _git(["add", "--"] + sorted(touched_files), cwd=repo_root)
+        add_desc = f"git add -- {sorted(touched_files)}"
+    else:
+        add = _git(["add", "-A"], cwd=repo_root)
+        add_desc = "git add -A"
     if add.returncode != 0:
         raise RuntimeError(
-            f"git add -A failed: {add.stderr.decode('utf-8', errors='replace')}"
+            f"{add_desc} failed: {add.stderr.decode('utf-8', errors='replace')}"
         )
 
     commit = _git(["commit", "--no-verify", "-m", message], cwd=repo_root)
     if commit.returncode != 0:
         stderr = commit.stderr.decode("utf-8", errors="replace").strip()
-        # "nothing to commit" is not an error
-        if "nothing to commit" in stderr or "nothing added to commit" in stderr:
+        stdout = commit.stdout.decode("utf-8", errors="replace").strip()
+        combined = f"{stderr} {stdout}"
+        # "nothing to commit" is not an error — git may report this on
+        # stdout or stderr depending on the staging method.
+        if "nothing to commit" in combined or "nothing added to commit" in combined:
             return get_baseline_commit(repo_root)
-        raise RuntimeError(f"git commit failed: {stderr}")
+        raise RuntimeError(f"git commit failed: {stderr or stdout}")
 
     return get_baseline_commit(repo_root)
 
