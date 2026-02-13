@@ -12,8 +12,10 @@ from factory.console import Console
 from factory.graph import build_graph
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
+    ARTIFACT_FAILURE_BRIEF,
     ARTIFACT_RUN_SUMMARY,
     ARTIFACT_WORK_ORDER,
+    make_attempt_dir,
     save_json,
     sha256_file,
 )
@@ -530,6 +532,26 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     con.verdict(verdict)
     con.kv("Run summary", summary_path)
+
+    # On FAIL/ERROR: print the last attempt's artifact paths so users can
+    # find debugging files without navigating the artifact tree manually.
+    if verdict != "PASS" and attempts:
+        last = attempts[-1]
+        last_idx = last.get("attempt_index", len(attempts))
+        last_dir = make_attempt_dir(
+            os.path.join(artifacts_root, "factory"), run_id, last_idx
+        )
+        con.kv("Last attempt", last_dir)
+
+        # In verbose mode, also print the key debugging file paths.
+        fb_path = os.path.join(last_dir, ARTIFACT_FAILURE_BRIEF)
+        if os.path.isfile(fb_path):
+            con.kv("Failure brief", fb_path, verbose_only=True)
+        for vr in last.get("verify", []):
+            for key in ("stdout_path", "stderr_path"):
+                p = vr.get(key, "")
+                if p and os.path.isfile(p):
+                    con.kv(f"Verify {key.split('_')[0]}", p, verbose_only=True)
 
     if verdict != "PASS":
         sys.exit(1)
