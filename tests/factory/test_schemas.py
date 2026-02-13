@@ -61,6 +61,10 @@ class TestWorkOrder:
 
     # --- M-07: ".", NUL, and control char rejection ---
 
+    def test_backslash_path_rejected(self):
+        with pytest.raises(ValidationError, match="backslash"):
+            self._valid(allowed_files=["src\\file.py"])
+
     def test_dot_path_rejected(self):
         with pytest.raises(ValidationError, match="must not be '.'"):
             self._valid(allowed_files=["."])

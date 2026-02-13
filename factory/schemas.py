@@ -29,6 +29,9 @@ def _validate_relative_path(p: str) -> str:
     """Validate that *p* is a safe, relative path and return its normalized form."""
     if not p:
         raise ValueError("path must not be empty")
+    # Reject backslashes — valid on POSIX but confusing cross-platform.
+    if "\\" in p:
+        raise ValueError(f"path must not contain backslashes: {p}")
     # Reject absolute paths (POSIX or Windows style)
     if p.startswith("/") or pathlib.PurePosixPath(p).is_absolute():
         raise ValueError(f"path must be relative: {p}")
