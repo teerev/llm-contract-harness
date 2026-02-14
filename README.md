@@ -12,20 +12,31 @@ The work order JSON is the contract surface. Both sides parse it through the sam
 ## Quick start
 
 ```bash
-pip install pydantic langgraph openai httpx
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
 export OPENAI_API_KEY=sk-...
 ```
+
+### Full pipeline (plan + execute all work orders)
+
+```bash
+llmch pipeline \
+  --seed spec.txt \
+  --repo /path/to/product \
+  --branch factory/my-feature \
+  --create-branch
+```
+
+This compiles the spec into work orders, then executes them sequentially against the repo. Each passing work order is committed to the branch. Stops on the first failure.
 
 ### Compile a spec into work orders
 
 ```bash
-python -m planner compile \
-  --spec spec.txt \
-  --outdir wo/ \
-  --repo /path/to/product
+llmch plan --spec spec.txt
 ```
 
-This calls the planner LLM (up to 3 attempts with automatic self-correction), validates the output against structural checks (E0xx) and cross-work-order chain checks (E1xx), computes `verify_exempt` flags, and writes individual `WO-*.json` files plus a manifest.
+This calls the planner LLM (up to 5 attempts with automatic self-correction), validates the output against structural checks (E0xx) and cross-work-order chain checks (E1xx), computes `verify_exempt` flags, and writes individual `WO-*.json` files plus a manifest.
 
 All compile artifacts (prompts, LLM responses, reasoning traces, validation errors, and the normalized manifest) are written to a canonical, immutable run directory under `./artifacts/planner/{run_id}/`. Each run gets a unique ULID-based `run_id` and a `run.json` manifest suitable for DB indexing.
 
@@ -34,7 +45,7 @@ If `--outdir` is provided, work order files are also exported there for convenie
 ### Execute a single work order
 
 ```bash
-python -m factory run \
+llmch run \
   --repo /path/to/product \
   --work-order wo/WO-01.json
 ```
