@@ -17,9 +17,6 @@ export OPENAI_API_KEY=sk-...
 # Prepare a target repo (must be a git repo with at least one commit)
 mkdir my-project && cd my-project && git init && git commit --allow-empty -m init && cd ..
 
-# Write a one-line spec
-echo "Build a Python hangman game with CLI" > spec.txt
-
 # Plan: turn spec into work orders
 llmch plan --spec ./examples/hangman.txt --outdir wo/
 
