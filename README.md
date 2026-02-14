@@ -33,7 +33,7 @@ This compiles the spec into work orders, then executes them sequentially against
 ### Compile a spec into work orders
 
 ```bash
-llmch plan --spec spec.txt
+llmch plan --spec spec.txt --outdir wo
 ```
 
 This calls the planner LLM (up to 5 attempts with automatic self-correction), validates the output against structural checks (E0xx) and cross-work-order chain checks (E1xx), computes `verify_exempt` flags, and writes individual `WO-*.json` files plus a manifest.
