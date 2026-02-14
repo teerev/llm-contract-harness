@@ -12,7 +12,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -102,6 +102,29 @@ def _log_reasoning_end() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Streaming status indicator
+# ---------------------------------------------------------------------------
+
+_STREAM_STATUS_CB: Optional[Callable[[str], None]] = None
+
+
+def set_stream_status_callback(cb: Optional[Callable[[str], None]]) -> None:
+    """Register a callback for streaming status updates.
+
+    Signals emitted:
+      "start"           — streaming HTTP request is about to begin
+      "reasoning_start" — first reasoning delta arrived; spinner must stop
+      "reasoning_end"   — reasoning summary is complete
+      "done"            — stream finished (terminal event received)
+
+    The CLI uses this to show/hide a streaming indicator and to pause
+    the spinner while reasoning text is being written to stderr.
+    """
+    global _STREAM_STATUS_CB
+    _STREAM_STATUS_CB = cb
+
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -159,7 +182,7 @@ class OpenAIResponsesClient:
         ]
 
         for i, budget in enumerate(budgets):
-            _log(f"Attempt {i+1}: model={self.cfg.model} "
+            _log(f"model={self.cfg.model} "
                  f"reasoning={self.cfg.reasoning_effort} max_out={budget}")
 
             # Try streaming first; fall back to polling on connection failure.
@@ -255,6 +278,8 @@ class OpenAIResponsesClient:
         _reasoning_started = False
 
         _log("Streaming response...")
+        if _STREAM_STATUS_CB:
+            _STREAM_STATUS_CB("start")
 
         with httpx.Client(timeout=stream_timeout) as client:
             with client.stream(
@@ -289,6 +314,8 @@ class OpenAIResponsesClient:
                         if delta:
                             if not _reasoning_started:
                                 _reasoning_started = True
+                                if _STREAM_STATUS_CB:
+                                    _STREAM_STATUS_CB("reasoning_start")
                                 _log_reasoning_start()
                             _log_reasoning_delta(delta)
                             reasoning_parts.append(delta)
@@ -296,6 +323,8 @@ class OpenAIResponsesClient:
                     elif etype == "response.reasoning_summary_text.done":
                         if _reasoning_started:
                             _log_reasoning_end()
+                            if _STREAM_STATUS_CB:
+                                _STREAM_STATUS_CB("reasoning_end")
 
                     # --- Output text deltas (accumulated silently) ---
                     elif etype == "response.output_text.delta":
@@ -310,6 +339,9 @@ class OpenAIResponsesClient:
                         "response.incomplete",
                     ):
                         final_response = event.get("response", {})
+
+        if _STREAM_STATUS_CB:
+            _STREAM_STATUS_CB("done")
 
         if not final_response:
             raise RuntimeError("Stream ended without a terminal response event")

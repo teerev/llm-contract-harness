@@ -693,4 +693,4 @@ class TestCompileSummary:
         assert "max_compile_attempts" in ds
         assert ds["poll_deadline_s"] == 2400.0
         assert ds["max_transport_retries"] == 3
-        assert ds["max_compile_attempts"] == 3
+        assert ds["max_compile_attempts"] == MAX_COMPILE_ATTEMPTS

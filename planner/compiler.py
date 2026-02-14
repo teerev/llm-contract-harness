@@ -6,7 +6,8 @@ import hashlib
 import json
 import os
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable, Optional
 
 from planner.io import (
     check_overwrite,
@@ -42,6 +43,30 @@ from shared.run_context import (
     utc_now_iso,
     write_run_json,
 )
+
+
+# ---------------------------------------------------------------------------
+# Compile lifecycle callback (for CLI output)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class AttemptEvent:
+    """Structured event emitted during each compile attempt.
+
+    The CLI subscribes to these events to print per-attempt progress,
+    verdicts, and error summaries to the terminal.
+    """
+    kind: str          # "start", "fail", "pass"
+    attempt: int       # 1-based attempt number
+    max_attempts: int  # total allowed attempts
+    # Only populated on "fail":
+    errors: list[ValidationError] | None = None
+    errors_artifact: str | None = None
+    is_final: bool = False  # True when this is the last attempt (no retry)
+
+
+# Type alias for the callback
+AttemptCallback = Optional[Callable[[AttemptEvent], None]]
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +217,7 @@ def compile_plan(
     artifacts_dir: str | None = None,
     overwrite: bool = False,
     repo_path: str | None = None,
+    on_attempt: AttemptCallback = None,
 ) -> CompileResult:
     """Compile a product spec into validated work orders.
 
@@ -290,7 +316,18 @@ def compile_plan(
     final_hard_errors: list[ValidationError] = []
     final_warnings: list[ValidationError] = []
 
+    def _emit(kind: str, attempt: int, **kwargs: Any) -> None:
+        if on_attempt is not None:
+            on_attempt(AttemptEvent(
+                kind=kind,
+                attempt=attempt,
+                max_attempts=MAX_COMPILE_ATTEMPTS,
+                **kwargs,
+            ))
+
     for attempt in range(1, MAX_COMPILE_ATTEMPTS + 1):
+        _emit("start", attempt)
+
         # ── Save prompt for this attempt ──────────────────────────────
         write_text_artifact(
             os.path.join(compile_artifacts, f"prompt_attempt_{attempt}.txt"),
@@ -323,11 +360,14 @@ def compile_plan(
                 "attempt": attempt,
                 "errors": [e.to_dict() for e in parse_errors],
             })
-            write_json_artifact(
-                os.path.join(compile_artifacts, f"validation_errors_attempt_{attempt}.json"),
-                [e.to_dict() for e in parse_errors],
+            errors_path = os.path.join(
+                compile_artifacts, f"validation_errors_attempt_{attempt}.json"
             )
-            if attempt < MAX_COMPILE_ATTEMPTS:
+            write_json_artifact(errors_path, [e.to_dict() for e in parse_errors])
+            is_final = attempt >= MAX_COMPILE_ATTEMPTS
+            _emit("fail", attempt, errors=parse_errors,
+                  errors_artifact=errors_path, is_final=is_final)
+            if not is_final:
                 prompt = _build_revision_prompt(spec_text, raw_response, parse_errors)
                 continue
             # Final attempt — still can't parse
@@ -364,10 +404,10 @@ def compile_plan(
             "attempt": attempt,
             "errors": [e.to_dict() for e in all_this_attempt],
         })
-        write_json_artifact(
-            os.path.join(compile_artifacts, f"validation_errors_attempt_{attempt}.json"),
-            [e.to_dict() for e in all_this_attempt],
+        errors_path = os.path.join(
+            compile_artifacts, f"validation_errors_attempt_{attempt}.json"
         )
+        write_json_artifact(errors_path, [e.to_dict() for e in all_this_attempt])
 
         final_work_orders = work_orders
         final_parsed = parsed
@@ -376,9 +416,14 @@ def compile_plan(
 
         if not hard_errors:
             # Success — may have warnings but no blocking errors
+            _emit("pass", attempt)
             break
 
-        if attempt < MAX_COMPILE_ATTEMPTS:
+        is_final = attempt >= MAX_COMPILE_ATTEMPTS
+        _emit("fail", attempt, errors=hard_errors,
+              errors_artifact=errors_path, is_final=is_final)
+
+        if not is_final:
             prompt = _build_revision_prompt(spec_text, raw_response, hard_errors)
             continue
 
