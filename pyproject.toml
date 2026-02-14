@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llm-compiler"
+name = "llm-contract-harness"
 version = "0.1.0"
 description = "Structurally enforced work orders for LLM code generation"
 requires-python = ">=3.11"
