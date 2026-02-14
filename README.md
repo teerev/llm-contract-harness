@@ -21,7 +21,7 @@ mkdir my-project && cd my-project && git init && git commit --allow-empty -m ini
 echo "Build a Python hangman game with CLI" > spec.txt
 
 # Plan: turn spec into work orders
-llmch plan --spec spec.txt --outdir wo/
+llmch plan --spec ./examples/hangman.txt --outdir wo/
 
 # Run all work orders against the repo
 llmch run-all --repo my-project --workdir wo/ --branch factory/demo --create-branch
