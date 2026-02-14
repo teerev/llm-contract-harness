@@ -9,6 +9,17 @@ As today, this harness is designed to build fresh repos from scratch. It is not 
 
 ## TL;DR
 
+**Ultra-lazy demo** (requires Python 3.11+, git, and `OPENAI_API_KEY`):
+
+```bash
+export OPENAI_API_KEY=sk-...
+make demo
+```
+
+This creates a virtualenv, installs the package, sets up a fresh target repo, plans work orders from the example spec, and executes them all. Run `make clean` to remove demo artifacts.
+
+**Manual steps** (same thing, step by step):
+
 ```bash
 # Install
 python -m venv .venv && source .venv/bin/activate
