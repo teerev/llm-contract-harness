@@ -4,7 +4,7 @@ Structurally enforced work orders for LLM code generation.
 
 An LLM decomposes a product spec into validated work orders (the **planner**). A separate LLM executes each one inside a deterministic enforcement harness that checks scope, hashes, and acceptance tests — and rolls back on failure (the **factory**).
 
-As today, this harness is designed to build fresh repos from scratch. It is not (yet) an incremental dev tool for existing repos.
+As of today, this harness is designed to build fresh repos from scratch. It is not (yet) an incremental dev tool for existing repos.
 ---
 
 ## TL;DR
