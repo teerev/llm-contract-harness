@@ -1,4 +1,4 @@
-# llm-compiler
+# llm-contract-harness
 
 Structurally enforced work orders for LLM code generation.
 
