@@ -111,6 +111,14 @@ def main() -> None:
         ),
     )
     run_parser.add_argument(
+        "--python",
+        default=None,
+        help=(
+            "Absolute path to the Python interpreter used to create the "
+            "target-repo venv. Default: the harness's own sys.executable."
+        ),
+    )
+    run_parser.add_argument(
         "--verbose", action="store_true", default=False,
         help="Show timestamps, durations, baseline commit, and full error excerpts",
     )

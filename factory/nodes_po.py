@@ -64,13 +64,21 @@ def _combined_excerpt(cr: CmdResult) -> str:
 
 
 def po_node(state: dict) -> dict:
-    """PO node — run verify commands then acceptance commands."""
+    """PO node — run verify commands then acceptance commands.
+
+    If state contains ``"command_env"`` (a dict), it is forwarded to every
+    ``run_command`` call so that ``python``/``pytest`` resolve to the
+    target-repo venv.  See ``factory/runtime.py::venv_env`` and
+    ``factory/run.py`` (preflight) for where the env is built.
+    """
     work_order = WorkOrder(**state["work_order"])
     repo_root: str = state["repo_root"]
     timeout: int = state["timeout_seconds"]
     attempt_index: int = state["attempt_index"]
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
+    # Venv-aware env for subprocesses (may be None → run_command defaults)
+    command_env: dict[str, str] | None = state.get("command_env")
 
     attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)
@@ -95,6 +103,7 @@ def po_node(state: dict) -> dict:
             timeout=timeout,
             stdout_path=os.path.join(attempt_dir, f"verify_{idx}_stdout.txt"),
             stderr_path=os.path.join(attempt_dir, f"verify_{idx}_stderr.txt"),
+            env=command_env,
         )
         verify_results.append(cr.model_dump())
 
@@ -178,6 +187,7 @@ def po_node(state: dict) -> dict:
             timeout=timeout,
             stdout_path=os.path.join(attempt_dir, f"acceptance_{idx}_stdout.txt"),
             stderr_path=os.path.join(attempt_dir, f"acceptance_{idx}_stderr.txt"),
+            env=command_env,
         )
         acceptance_results.append(cr.model_dump())
 

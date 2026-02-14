@@ -647,12 +647,20 @@ class TestMultiWriteRollback:
         with open(os.path.join(repo, "second.txt")) as f:
             assert f.read() == orig_second, "second.txt must be restored"
 
-        # git status --porcelain must be empty
+        # git status --porcelain must be empty except for the harness-managed
+        # .llmch_venv/ directory which intentionally survives rollback.
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=repo, capture_output=True,
         )
-        assert result.stdout.strip() == b"", "git status must be empty after rollback"
+        status_lines = [
+            line for line in result.stdout.decode().splitlines()
+            if not line.lstrip("? ").startswith(".llmch_venv")
+        ]
+        assert status_lines == [], (
+            f"git status must be empty after rollback (excluding .llmch_venv): "
+            f"{status_lines}"
+        )
 
         # --- Artifacts survive (out_dir is outside repo) ---
         run_dir = _find_run_dir(out)

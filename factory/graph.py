@@ -36,6 +36,8 @@ class FactoryState(TypedDict, total=False):
     llm_temperature: float
     out_dir: str
     run_id: str
+    # Target-repo venv env for PO verify/acceptance subprocesses (set once)
+    command_env: dict
     # Per-attempt (reset by finalize between attempts)
     attempt_index: int
     proposal: Any          # dict | None

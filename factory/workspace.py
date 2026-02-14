@@ -12,6 +12,28 @@ from factory.defaults import (
     GIT_USER_EMAIL,
     GIT_USER_NAME,
 )
+from factory.runtime import LLMCH_VENV_DIR
+
+
+# ---------------------------------------------------------------------------
+# Harness-managed paths excluded from clean-tree checks and git clean
+# ---------------------------------------------------------------------------
+# The factory creates .llmch_venv/ inside the target repo for the PO-stage
+# runtime. This directory must survive:
+#   - preflight is_clean() (so subsequent WO runs don't fail)
+#   - rollback() between retry attempts (so the venv isn't destroyed mid-run)
+#   - clean_untracked() on the PASS path (so the next WO doesn't rebuild it)
+#
+# Justification: .llmch_venv/ is harness infrastructure, not product code.
+# It is never committed and cannot affect the tree hash.
+
+_HARNESS_EXCLUDE_DIRS: tuple[str, ...] = (LLMCH_VENV_DIR,)
+"""Directories excluded from clean-tree checks, rollback, and clean operations.
+
+The trailing-slash form (``dir/``) is appended automatically where git
+requires it (``-e`` patterns for ``git clean``).  Internally the helpers
+compare bare names and ``name/`` prefixes.
+"""
 
 
 def _git(args: list[str], cwd: str, timeout: int = GIT_TIMEOUT_SECONDS) -> subprocess.CompletedProcess:
@@ -26,6 +48,47 @@ def _git(args: list[str], cwd: str, timeout: int = GIT_TIMEOUT_SECONDS) -> subpr
 
 
 # ---------------------------------------------------------------------------
+# NUL-delimited porcelain parser (shared by is_clean + detect_repo_drift)
+# ---------------------------------------------------------------------------
+
+
+def _parse_porcelain_z(raw: bytes) -> list[str]:
+    """Parse paths from ``git status --porcelain -z`` output.
+
+    The ``-z`` format uses NUL as the field terminator (not newline) and
+    suppresses quoting/escaping entirely, making it safe for filenames
+    with spaces, newlines, and the literal sequence `` -> ``.
+
+    Rename/copy entries (``R`` / ``C``) produce *two* consecutive
+    NUL-terminated fields: the *destination* path first, then the
+    *source*.  We return only the destination (the file that currently
+    exists in the working tree), which is the relevant path for both
+    cleanliness and drift detection.
+
+    Returns a list of (decoded) paths — one per status entry.
+    """
+    parts = raw.split(b"\0")
+    paths: list[str] = []
+    skip_next = False
+    for part in parts:
+        if skip_next:
+            skip_next = False
+            continue
+        # Status entries have at least "XY " (3 bytes); the third byte is
+        # always a space in porcelain v1.  Anything shorter (including the
+        # trailing empty split from the final NUL) is skipped.
+        if len(part) < 3 or part[2:3] != b" ":
+            continue
+        status_xy = part[:2]
+        path = part[3:].decode("utf-8", errors="replace")
+        paths.append(path)
+        # Rename/copy: the next NUL-delimited field is the source path.
+        if status_xy[0:1] in (b"R", b"C"):
+            skip_next = True
+    return paths
+
+
+# ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
 
@@ -37,11 +100,35 @@ def is_git_repo(repo_root: str) -> bool:
 
 
 def is_clean(repo_root: str) -> bool:
-    """Return True when there are no staged, unstaged, or untracked changes."""
-    result = _git(["status", "--porcelain"], cwd=repo_root)
+    """Return True when there are no staged, unstaged, or untracked changes.
+
+    Uses ``git status --porcelain -z`` for robust NUL-delimited parsing
+    that handles filenames with spaces, newlines, or special characters.
+
+    Harness-managed directories (e.g. ``.llmch_venv/``) are excluded from
+    the check so the preflight doesn't falsely reject a repo that only
+    has the factory's own runtime dir as untracked content.
+    """
+    result = _git(["status", "--porcelain", "-z"], cwd=repo_root)
     if result.returncode != 0:
         return False
-    return result.stdout.strip() == b""
+    if not result.stdout:
+        return True
+    for path in _parse_porcelain_z(result.stdout):
+        # Strip trailing slash (git reports dirs as ".llmch_venv/")
+        path = path.rstrip("/")
+        if _is_harness_managed(path):
+            continue
+        return False
+    return True
+
+
+def _is_harness_managed(path: str) -> bool:
+    """Return True if *path* is inside a harness-managed directory."""
+    for excl in _HARNESS_EXCLUDE_DIRS:
+        if path == excl or path.startswith(excl + "/"):
+            return True
+    return False
 
 
 def get_baseline_commit(repo_root: str) -> str:
@@ -92,27 +179,24 @@ def get_tree_hash(repo_root: str, touched_files: list[str] | None = None) -> str
 def detect_repo_drift(repo_root: str, touched_files: list[str]) -> list[str]:
     """Return paths of modified/untracked files NOT in *touched_files*.
 
-    Uses ``git status --porcelain`` to find all changes, then filters out
-    the expected ``touched_files``.  Returns an empty list if the repo
-    contains only the expected changes.
+    Uses ``git status --porcelain -z`` for robust NUL-delimited parsing,
+    then filters out the expected *touched_files* and harness-managed
+    directories.  Returns an empty list if the repo contains only the
+    expected changes (plus any harness infrastructure).
     """
-    result = _git(["status", "--porcelain"], cwd=repo_root)
+    result = _git(["status", "--porcelain", "-z"], cwd=repo_root)
     if result.returncode != 0:
         return []  # can't detect — treat as clean
 
     expected = set(touched_files)
     drift: list[str] = []
 
-    for line in result.stdout.decode("utf-8", errors="replace").splitlines():
-        # porcelain format: "XY path" or "XY path -> renamed_path"
-        if len(line) < 4:
+    for path in _parse_porcelain_z(result.stdout):
+        path_stripped = path.rstrip("/")
+        if _is_harness_managed(path_stripped):
             continue
-        path = line[3:].strip()
-        # Handle renames: "R  old -> new"
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        if path not in expected:
-            drift.append(path)
+        if path_stripped not in expected:
+            drift.append(path_stripped)
 
     return sorted(drift)
 
@@ -126,8 +210,8 @@ def rollback(repo_root: str, baseline_commit: str) -> None:
     """Roll back to *baseline_commit*: ``git reset --hard`` + ``git clean -fdx``.
 
     Uses ``-fdx`` (not ``-fd``) so that files matching ``.gitignore`` patterns
-    are also removed.  This is safe because the preflight guarantees a clean
-    working tree before the run starts.
+    are also removed.  Excludes harness-managed directories (e.g.
+    ``.llmch_venv/``) so the target-repo runtime survives across retries.
     """
     res = _git(["reset", "--hard", baseline_commit], cwd=repo_root)
     if res.returncode != 0:
@@ -135,7 +219,7 @@ def rollback(repo_root: str, baseline_commit: str) -> None:
             f"git reset --hard failed: "
             f"{res.stderr.decode('utf-8', errors='replace')}"
         )
-    res = _git(["clean", "-fdx"], cwd=repo_root)
+    res = _git(_clean_args(), cwd=repo_root)
     if res.returncode != 0:
         raise RuntimeError(
             f"git clean -fdx failed: "
@@ -148,15 +232,31 @@ def clean_untracked(repo_root: str) -> None:
 
     Called after a scoped commit on the PASS path to remove verification
     artifacts (``__pycache__/``, ``.pytest_cache/``, etc.) that the scoped
-    commit intentionally excluded.  Leaves the working tree matching the
-    just-committed state so the next factory run passes preflight.
+    commit intentionally excluded.  Excludes harness-managed directories
+    (e.g. ``.llmch_venv/``) so the target-repo runtime persists across
+    sequential WO runs.
     """
-    res = _git(["clean", "-fdx"], cwd=repo_root)
+    res = _git(_clean_args(), cwd=repo_root)
     if res.returncode != 0:
         raise RuntimeError(
             f"git clean -fdx failed: "
             f"{res.stderr.decode('utf-8', errors='replace')}"
         )
+
+
+def _clean_args() -> list[str]:
+    """Build ``git clean`` args with harness-managed exclusions.
+
+    Uses trailing-slash patterns (``-e .llmch_venv/``) so the exclusion
+    matches only directories (per gitignore semantics), not hypothetical
+    files with the same name.  Single point of construction used by both
+    ``rollback()`` and ``clean_untracked()``.
+    """
+    args = ["clean", "-fdx"]
+    for excl in _HARNESS_EXCLUDE_DIRS:
+        # Trailing / → gitignore "directory only" pattern.
+        args += ["-e", excl + "/"]
+    return args
 
 
 # ---------------------------------------------------------------------------

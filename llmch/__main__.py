@@ -87,6 +87,7 @@ def _build_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--max-attempts", type=int, default=None, help="Max SE→TR→PO attempts (default: 5)")
     p.add_argument("--llm-model", default=None, help="LLM model name (default: gpt-5.2)")
     p.add_argument("--allow-verify-exempt", action="store_true", default=False, help="Honor verify_exempt=true")
+    p.add_argument("--python", default=None, help="Python interpreter for target-repo venv")
     p.add_argument("--artifacts-dir", default=None, help="Artifacts root directory (default: ./artifacts)")
     p.add_argument("--verbose", action="store_true", default=False)
     p.add_argument("--quiet", action="store_true", default=False)
@@ -112,6 +113,8 @@ def _build_factory_cmd(args: argparse.Namespace, wo_path: str, extra: list[str])
         cmd += ["--llm-model", args.llm_model]
     if getattr(args, "allow_verify_exempt", False):
         cmd += ["--allow-verify-exempt"]
+    if getattr(args, "python", None):
+        cmd += ["--python", args.python]
     if getattr(args, "artifacts_dir", None):
         cmd += ["--artifacts-dir", args.artifacts_dir]
     if getattr(args, "verbose", False):
@@ -171,6 +174,7 @@ def _build_run_all_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--max-attempts", type=int, default=None, help="Max SE→TR→PO attempts per WO (default: 5)")
     p.add_argument("--llm-model", default=None, help="LLM model name (default: gpt-5.2)")
     p.add_argument("--allow-verify-exempt", action="store_true", default=False, help="Honor verify_exempt=true")
+    p.add_argument("--python", default=None, help="Python interpreter for target-repo venv")
     p.add_argument("--artifacts-dir", default=None, help="Artifacts root directory (default: ./artifacts)")
     p.add_argument("--verbose", action="store_true", default=False)
     p.add_argument("--quiet", action="store_true", default=False)

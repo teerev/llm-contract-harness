@@ -10,11 +10,13 @@ import traceback
 from factory import defaults as _fd
 from factory.console import Console
 from factory.graph import build_graph
+from factory.runtime import ensure_repo_venv, venv_env
 from factory.schemas import WorkOrder, load_work_order
 from factory.util import (
     ARTIFACT_FAILURE_BRIEF,
     ARTIFACT_RUN_SUMMARY,
     ARTIFACT_WORK_ORDER,
+    _sandboxed_env,
     make_attempt_dir,
     save_json,
     sha256_file,
@@ -129,6 +131,24 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
             f"{repo_root} has uncommitted changes. "
             "The working tree must be clean (no staged, unstaged, or untracked changes)."
         )
+        sys.exit(1)
+
+    # ------------------------------------------------------------------
+    # Ensure target-repo venv (runtime for verify/acceptance commands)
+    # ------------------------------------------------------------------
+    # H1–H3 verified: all verify/acceptance commands run via run_command()
+    # in nodes_po.py with cwd=repo_root and env from _sandboxed_env().
+    # We create a dedicated venv so 'python' and 'pytest' resolve there.
+    python_override = getattr(args, "python", None)
+    try:
+        venv_root = ensure_repo_venv(
+            repo_root,
+            python=python_override,
+        )
+        command_env = venv_env(venv_root, _sandboxed_env())
+        con.kv("Runtime", f"{venv_root}  (pytest installed)")
+    except RuntimeError as exc:
+        con.error(f"Failed to set up target-repo runtime:\n{exc}")
         sys.exit(1)
 
     # ------------------------------------------------------------------
@@ -356,6 +376,8 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         "llm_temperature": args.llm_temperature,
         "out_dir": out_dir,
         "run_id": run_id,
+        # Target-repo venv env for PO verify/acceptance subprocesses
+        "command_env": command_env,
         # Per-attempt state (initial)
         "attempt_index": 1,
         "proposal": None,

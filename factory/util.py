@@ -137,16 +137,22 @@ def run_command(
     timeout: int,
     stdout_path: str,
     stderr_path: str,
+    env: dict[str, str] | None = None,
 ) -> CmdResult:
     """Run *cmd* with no shell, capture output to files, enforce *timeout*.
 
-    Uses a sandboxed environment (``_sandboxed_env``) to suppress bytecode
-    and cache artifacts that would pollute the product repo.
+    If *env* is provided it is used as-is (caller is responsible for
+    including sandbox overrides).  Otherwise falls back to the default
+    sandboxed environment (``_sandboxed_env``).
+
+    The PO node passes a venv-aware env built by ``factory.runtime.venv_env``
+    so that ``python`` and ``pytest`` resolve to the target-repo venv.
     """
     pathlib.Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(stderr_path).parent.mkdir(parents=True, exist_ok=True)
 
-    env = _sandboxed_env()
+    if env is None:
+        env = _sandboxed_env()
 
     start = time.monotonic()
     try:
