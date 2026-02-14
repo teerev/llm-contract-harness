@@ -1,0 +1,1 @@
+Build a CLI that generates a perfect maze (single unique path between any two cells) using a deterministic seed. Print the maze in ASCII and also print the solution path from start to end. Keep generation and solving separate. Include tests that generation is deterministic given seed and that the solver path is valid.
