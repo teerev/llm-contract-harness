@@ -650,3 +650,106 @@ class TestShort:
         result = OpenAIResponsesClient._short(object())
         assert isinstance(result, str)
         assert len(result) <= 2000
+
+
+# ---------------------------------------------------------------------------
+# Reasoning output helpers — plain text, no markup interpretation
+# ---------------------------------------------------------------------------
+
+
+class TestReasoningOutput:
+    """Verify that reasoning deltas are printed as plain text.
+
+    The streaming reasoning output must render **bold** literally, not
+    interpret it as Markdown/markup emphasis.  This prevents dim text
+    from flipping to bright-white mid-stream.
+    """
+
+    def test_delta_preserves_markdown_asterisks_no_color(self, monkeypatch):
+        """**bold** in a reasoning delta must appear literally in output."""
+        monkeypatch.setattr(oai_mod, "_use_color", lambda: False)
+
+        captured = []
+        monkeypatch.setattr(oai_mod.sys.stderr, "write", lambda s: captured.append(s))
+        monkeypatch.setattr(oai_mod.sys.stderr, "flush", lambda: None)
+
+        oai_mod._log_reasoning_delta("some **bold** text")
+
+        output = "".join(captured)
+        assert "**bold**" in output, (
+            f"Expected literal **bold** in output, got: {output!r}"
+        )
+
+    def test_delta_preserves_markdown_asterisks_with_color(self, monkeypatch):
+        """With color on, **bold** must still appear literally (wrapped in DIM)."""
+        monkeypatch.setattr(oai_mod, "_use_color", lambda: True)
+
+        captured = []
+        monkeypatch.setattr(oai_mod.sys.stderr, "write", lambda s: captured.append(s))
+        monkeypatch.setattr(oai_mod.sys.stderr, "flush", lambda: None)
+
+        oai_mod._log_reasoning_delta("some **bold** text")
+
+        output = "".join(captured)
+        # The literal asterisks must survive — not be stripped or reformatted.
+        assert "**bold**" in output, (
+            f"Expected literal **bold** in output, got: {output!r}"
+        )
+        # Must be wrapped in DIM + RESET
+        assert "\033[2m" in output, "Expected DIM escape code in colored output"
+        assert "\033[0m" in output, "Expected RESET escape code in colored output"
+
+    def test_each_delta_individually_dimmed(self, monkeypatch):
+        """Each delta call must emit its own DIM+RESET pair (not rely on
+        a single DIM set earlier), so mid-stream resets can't break style.
+        """
+        monkeypatch.setattr(oai_mod, "_use_color", lambda: True)
+
+        calls = []
+        monkeypatch.setattr(oai_mod.sys.stderr, "write", lambda s: calls.append(s))
+        monkeypatch.setattr(oai_mod.sys.stderr, "flush", lambda: None)
+
+        oai_mod._log_reasoning_delta("chunk1")
+        oai_mod._log_reasoning_delta("chunk2")
+
+        # Each call should produce exactly one write containing DIM...RESET
+        dim_writes = [c for c in calls if "\033[2m" in c and "\033[0m" in c]
+        assert len(dim_writes) == 2, (
+            f"Expected 2 individually-dimmed writes, got {len(dim_writes)}: {calls!r}"
+        )
+
+    def test_start_end_no_dangling_dim(self, monkeypatch):
+        """_log_reasoning_start should not leave an open DIM that persists;
+        _log_reasoning_end should not emit a redundant RESET.
+        """
+        monkeypatch.setattr(oai_mod, "_use_color", lambda: True)
+
+        captured = []
+        monkeypatch.setattr(oai_mod.sys.stderr, "write", lambda s: captured.append(s))
+        monkeypatch.setattr(oai_mod.sys.stderr, "flush", lambda: None)
+
+        oai_mod._log_reasoning_start()
+        start_output = "".join(captured)
+
+        # DIM in the start marker must be closed with RESET in the same write batch
+        dim_count = start_output.count("\033[2m")
+        reset_count = start_output.count("\033[0m")
+        assert dim_count == reset_count, (
+            f"Unbalanced DIM/RESET in start output: "
+            f"DIM={dim_count} RESET={reset_count} output={start_output!r}"
+        )
+
+    def test_markdown_heading_in_delta_not_reformatted(self, monkeypatch):
+        """Headings like '## Foo' must pass through literally."""
+        monkeypatch.setattr(oai_mod, "_use_color", lambda: False)
+
+        captured = []
+        monkeypatch.setattr(oai_mod.sys.stderr, "write", lambda s: captured.append(s))
+        monkeypatch.setattr(oai_mod.sys.stderr, "flush", lambda: None)
+
+        oai_mod._log_reasoning_delta("## Heading\n")
+
+        output = "".join(captured)
+        assert "## Heading" in output, (
+            f"Expected literal '## Heading' in output, got: {output!r}"
+        )

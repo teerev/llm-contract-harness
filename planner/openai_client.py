@@ -69,24 +69,35 @@ def _use_color() -> bool:
 def _log_reasoning_start() -> None:
     """Print the opening marker for streamed reasoning output."""
     if _use_color():
-        sys.stderr.write(f"\n{_DIM}    [reasoning] ")
+        sys.stderr.write(f"\n{_DIM}    [reasoning] {_RESET}")
     else:
         sys.stderr.write("\n    [reasoning] ")
     sys.stderr.flush()
 
 
 def _log_reasoning_delta(delta: str) -> None:
-    """Print a reasoning text delta inline (no newline)."""
-    sys.stderr.write(delta)
+    """Print a reasoning text delta inline (no newline).
+
+    Each delta is individually wrapped in DIM so that the style stays
+    uniform even when the text contains markdown-like emphasis (e.g.
+    ``**bold**``).  Previously a single DIM was set in
+    ``_log_reasoning_start`` and deltas were written raw; any content
+    that reset ANSI state (or terminal behaviour on newlines) caused
+    parts of the stream to render bright-white instead of dim.
+
+    Root cause: reasoning was rendered without per-chunk dim wrapping,
+    so bold/emphasis segments displayed brighter than the dim base style.
+    """
+    if _use_color():
+        sys.stderr.write(f"{_DIM}{delta}{_RESET}")
+    else:
+        sys.stderr.write(delta)
     sys.stderr.flush()
 
 
 def _log_reasoning_end() -> None:
     """Print the closing marker for streamed reasoning output."""
-    if _use_color():
-        sys.stderr.write(f"{_RESET}\n\n")
-    else:
-        sys.stderr.write("\n\n")
+    sys.stderr.write("\n\n")
     sys.stderr.flush()
 
 
