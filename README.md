@@ -38,42 +38,7 @@ llmch run --repo my-project --work-order wo/WO-01.json --branch factory/demo --c
 
 This is a two-stage pipeline that turns a plain-text product spec into an explicit, human-readable **work-order IR** (JSON), then executes those work orders against a target git repo using a **contract-enforced** LangGraph loop. LLM outputs are *stochastic*; the validation/enforcement gates are *deterministic*.
 
-```mermaid
-%%{init: {"flowchart": {"curve": "basis"}, "theme": "base"} }%%
-flowchart LR
-  %% ---------------------------
-  %% PLANNER STAGE
-  %% ---------------------------
-  subgraph P[PLANNER STAGE]
-    S[(seed spec.txt)]
-    L1[[LLM black box\n(planner)]]
-    G1{{Deterministic gates\n(schema + validators)}}
-    S --> L1 --> G1
-    G1 -- "fail: structured errors" --> L1
-  end
-
-  %% IR "leaf nodes"
-  IR[(Work-order IR\nWO-01.json\nWO-02.json\nWO-03.json\n...)]
-  G1 -- "pass: emit IR" --> IR
-
-  %% ---------------------------
-  %% FACTORY STAGE
-  %% ---------------------------
-  subgraph F[FACTORY STAGE (LangGraph)]
-    SE[[LLM black box\nSE: propose edits]]
-    TR{{TR: deterministic checks\n(scope + path safety + hashes)}}
-    PO{{PO: deterministic gates\n(verify + acceptance cmds)}}
-    SE --> TR --> PO
-    TR -- "fail: brief → retry" --> SE
-    PO -- "fail: brief → retry" --> SE
-  end
-
-  %% Target repo + outcome
-  R[(target git repo)]
-  IR --> SE
-  PO -- "pass: write + commit" --> R
-  R --> PUSH[(push dev branch to remote)]
-```
+![Diagram of planner → IR → factory](docs/diagram.png)
 
 ---
 
