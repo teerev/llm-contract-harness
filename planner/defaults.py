@@ -60,7 +60,7 @@ RESPONSES_ENDPOINT: str = f"{OPENAI_API_BASE}/responses"  # cat:paths — derive
 # Compile loop
 # ---------------------------------------------------------------------------
 
-MAX_COMPILE_ATTEMPTS: int = 3  # cat:retries — 1 initial + up to 2 revision retries
+MAX_COMPILE_ATTEMPTS: int = 5  # cat:retries — 1 initial + up to 2 revision retries
 
 # ---------------------------------------------------------------------------
 # Hashing (determinism)

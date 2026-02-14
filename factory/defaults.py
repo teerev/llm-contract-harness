@@ -20,7 +20,7 @@ from __future__ import annotations
 # CLI argparse defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_MAX_ATTEMPTS: int = 2  # cat:retries — max SE→TR→PO cycle attempts
+DEFAULT_MAX_ATTEMPTS: int = 5  # cat:retries — max SE→TR→PO cycle attempts
 DEFAULT_LLM_MODEL: str = "gpt-5.2"  # cat:model — default LLM model for factory SE calls
 DEFAULT_LLM_TEMPERATURE: float = 0  # cat:model — LLM temperature for factory SE calls
 DEFAULT_TIMEOUT_SECONDS: int = 600  # cat:timeout — per-command timeout (LLM + subprocess)

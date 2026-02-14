@@ -20,6 +20,7 @@ from factory.util import (
     sha256_file,
 )
 from factory.workspace import (
+    clean_untracked,
     current_branch_name,
     ensure_git_identity,
     ensure_working_branch,
@@ -488,6 +489,9 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
             commit_sha = git_commit(repo_root, commit_msg, touched_files=pass_touched)
             commit_hashes.append(commit_sha)
             con.step("git", "commit", commit_sha[:12])
+            # Clean verification artifacts (__pycache__, .pytest_cache, etc.)
+            # left by the scoped commit so the repo is clean for the next WO.
+            clean_untracked(repo_root)
         except RuntimeError as exc:
             con.warning(f"Auto-commit failed: {exc}")
 

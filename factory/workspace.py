@@ -143,6 +143,22 @@ def rollback(repo_root: str, baseline_commit: str) -> None:
         )
 
 
+def clean_untracked(repo_root: str) -> None:
+    """Remove untracked and ignored files: ``git clean -fdx``.
+
+    Called after a scoped commit on the PASS path to remove verification
+    artifacts (``__pycache__/``, ``.pytest_cache/``, etc.) that the scoped
+    commit intentionally excluded.  Leaves the working tree matching the
+    just-committed state so the next factory run passes preflight.
+    """
+    res = _git(["clean", "-fdx"], cwd=repo_root)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"git clean -fdx failed: "
+            f"{res.stderr.decode('utf-8', errors='replace')}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Git identity, pull, commit
 # ---------------------------------------------------------------------------
