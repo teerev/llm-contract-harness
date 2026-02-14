@@ -468,12 +468,24 @@ def compile_plan(
 
     # ── Inject provenance into work orders ────────────────────────────
     manifest_sha256 = sha256_json(manifest)
-    provenance = {
+    base_provenance = {
         "planner_run_id": run_id,
         "compile_hash": compile_hash,
         "manifest_sha256": manifest_sha256,
     }
-    final_work_orders = [{**wo, "provenance": provenance} for wo in final_work_orders]
+    final_work_orders = [
+        {
+            **wo,
+            "provenance": {
+                **base_provenance,
+                # Mark bootstrap WOs: verify_exempt=True means the planner
+                # determined this WO runs before the verify infrastructure is
+                # complete. The factory can auto-honor verify_exempt for these.
+                "bootstrap": bool(wo.get("verify_exempt")),
+            },
+        }
+        for wo in final_work_orders
+    ]
     result.work_orders = final_work_orders
 
     # Update manifest with provenance-bearing WOs

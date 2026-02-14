@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from factory.run import run_cli
+from factory.run import _check_verify_exempt_policy, run_cli
 from factory.util import (
     ARTIFACT_FAILURE_BRIEF,
     ARTIFACT_RUN_SUMMARY,
@@ -217,41 +217,30 @@ class TestArtifactOverwritePrevention:
 
 
 class TestVerifyExemptOverride:
-    """M-22: verify_exempt=true must be overridden unless operator opts in."""
+    """verify_exempt=true fails fast unless operator or provenance allows it."""
 
-    def test_verify_exempt_overridden_without_flag(self, tmp_path, capsys):
-        """verify_exempt=true without --allow-verify-exempt → full verify runs."""
+    def test_verify_exempt_fails_fast_without_flag_or_provenance(self, tmp_path, capsys):
+        """verify_exempt=true without --allow-verify-exempt and no bootstrap
+        provenance → fail fast with actionable error (exit 1)."""
         repo = init_git_repo(str(tmp_path / "repo"))
-        # Create a verify.sh that FAILS — proving full verify ran.
-        scripts_dir = os.path.join(repo, "scripts")
-        os.makedirs(scripts_dir, exist_ok=True)
-        with open(os.path.join(scripts_dir, "verify.sh"), "w") as f:
-            f.write("#!/bin/bash\nexit 1\n")
-        subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "add failing verify"], cwd=repo, capture_output=True)
-
         out = str(tmp_path / "out")
-        # WO with verify_exempt=true
+        # WO with verify_exempt=true but NO provenance
         wo_path = write_work_order(
             str(tmp_path / "wo.json"),
             verify_exempt=True,
         )
 
-        valid_json = make_valid_proposal_json(repo)
-        # Default: allow_verify_exempt=False
         args = _make_args(repo, wo_path, out)
 
         with pytest.raises(SystemExit) as exc_info:
-            with patch("factory.llm.complete", return_value=valid_json):
-                run_cli(args)
+            run_cli(args)
 
-        # Verdict is FAIL because full verify ran (and verify.sh exits 1)
         assert exc_info.value.code == 1
 
-        # Warning was printed
+        # Error message is actionable
         captured = capsys.readouterr()
         assert "verify_exempt=true" in captured.err
-        assert "Overriding to false" in captured.err
+        assert "--allow-verify-exempt" in captured.err
 
     def test_verify_exempt_honored_with_flag(self, tmp_path):
         """verify_exempt=true with --allow-verify-exempt → lightweight verify only."""
@@ -536,6 +525,80 @@ class TestRollbackFailedField:
 
         assert summary["verdict"] == "PASS"
         assert summary["rollback_failed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap verify_exempt policy (BOOTSTRAP_FIX)
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyExemptPolicy:
+    """Unit tests for _check_verify_exempt_policy — pure function, no I/O."""
+
+    def test_flag_allows_regardless_of_provenance(self):
+        """--allow-verify-exempt always allows, even without provenance."""
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=True, provenance=None,
+        )
+        assert allowed is True
+        assert "--allow-verify-exempt" in reason
+
+    def test_trusted_bootstrap_auto_allows(self):
+        """Trusted planner bootstrap provenance auto-allows verify_exempt."""
+        prov = {
+            "planner_run_id": "01ABC",
+            "compile_hash": "xyz",
+            "manifest_sha256": "abc123",
+            "bootstrap": True,
+        }
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance=prov,
+        )
+        assert allowed is True
+        assert "auto-honored" in reason
+        assert "01ABC" in reason
+
+    def test_no_provenance_denies(self):
+        """No provenance + no flag → denied with actionable error."""
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance=None,
+        )
+        assert allowed is False
+        assert "--allow-verify-exempt" in reason
+
+    def test_bootstrap_false_denies(self):
+        """provenance.bootstrap=False → denied."""
+        prov = {
+            "planner_run_id": "01ABC",
+            "bootstrap": False,
+        }
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance=prov,
+        )
+        assert allowed is False
+
+    def test_missing_planner_run_id_denies(self):
+        """provenance.bootstrap=True but no planner_run_id → denied."""
+        prov = {"bootstrap": True}
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance=prov,
+        )
+        assert allowed is False
+
+    def test_empty_planner_run_id_denies(self):
+        """provenance.bootstrap=True but empty planner_run_id → denied."""
+        prov = {"bootstrap": True, "planner_run_id": ""}
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance=prov,
+        )
+        assert allowed is False
+
+    def test_provenance_not_dict_denies(self):
+        """provenance is not a dict → denied."""
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=False, provenance="not a dict",  # type: ignore
+        )
+        assert allowed is False
 
 
 # ---------------------------------------------------------------------------

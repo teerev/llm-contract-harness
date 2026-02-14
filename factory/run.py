@@ -42,6 +42,43 @@ from shared.run_context import (
 )
 
 
+def _check_verify_exempt_policy(
+    allow_flag: bool,
+    provenance: dict | None,
+) -> tuple[bool, str]:
+    """Decide whether verify_exempt=True should be honored.
+
+    Returns (allowed, reason).  If not allowed, the reason is an actionable
+    error message for the operator.
+
+    Policy:
+    1. --allow-verify-exempt flag → always allow.
+    2. Trusted planner bootstrap provenance → auto-allow with explanation.
+    3. Otherwise → deny with instructions.
+    """
+    if allow_flag:
+        return True, "verify_exempt=true honored (--allow-verify-exempt)"
+
+    # Check for trusted planner bootstrap provenance.
+    if (
+        isinstance(provenance, dict)
+        and provenance.get("bootstrap") is True
+        and isinstance(provenance.get("planner_run_id"), str)
+        and provenance["planner_run_id"]
+    ):
+        run_id = provenance["planner_run_id"]
+        return True, (
+            f"verify_exempt=true auto-honored — trusted planner bootstrap "
+            f"(planner_run_id={run_id})"
+        )
+
+    return False, (
+        "work order has verify_exempt=true but cannot be auto-honored.\n"
+        "  To allow: pass --allow-verify-exempt\n"
+        "  Auto-allow requires: provenance.bootstrap=true + provenance.planner_run_id"
+    )
+
+
 def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     """Main entry point called by ``__main__``."""
     con = console or Console()
@@ -94,15 +131,17 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Read provenance from work order (needed before branch naming)
+    # Read provenance from work order (needed before branch naming + policy)
     # ------------------------------------------------------------------
     planner_ref = None
+    planner_ref_raw: dict | None = None  # full provenance dict for policy checks
     planner_run_id_for_branch: str | None = None
     try:
         with open(work_order_path, "r", encoding="utf-8") as fh:
             wo_file_data = json.load(fh)
         prov = wo_file_data.get("provenance")
         if isinstance(prov, dict) and prov.get("planner_run_id"):
+            planner_ref_raw = prov
             planner_ref = {
                 "planner_run_id": prov.get("planner_run_id"),
                 "compile_hash": prov.get("compile_hash"),
@@ -286,19 +325,20 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
     con.kv("Artifacts", run_dir)
 
     # ------------------------------------------------------------------
-    # M-22: Override verify_exempt unless explicitly allowed by operator.
-    # Part 5 TASK 1: removed bootstrap auto-detection — the factory must
-    # not inspect WO content to infer intent. verify_exempt is honored iff
-    # --allow-verify-exempt is passed; overridden to false otherwise.
-    # The planner (M-01) is solely responsible for computing verify_exempt.
+    # Verify-exempt policy: auto-allow for trusted planner bootstrap WOs,
+    # fail fast otherwise unless --allow-verify-exempt is passed.
     # ------------------------------------------------------------------
     wo_dict = work_order.model_dump()
-    if wo_dict.get("verify_exempt") and not getattr(args, "allow_verify_exempt", False):
-        con.warning(
-            "work order has verify_exempt=true but --allow-verify-exempt "
-            "was not passed. Overriding to false — full verification will run."
+    if wo_dict.get("verify_exempt"):
+        allowed, reason = _check_verify_exempt_policy(
+            allow_flag=getattr(args, "allow_verify_exempt", False),
+            provenance=planner_ref_raw,
         )
-        wo_dict["verify_exempt"] = False
+        if allowed:
+            con.step("policy", reason)
+        else:
+            con.error(reason)
+            sys.exit(1)
 
     # ------------------------------------------------------------------
     # Build & invoke graph
