@@ -93,19 +93,18 @@ output of a non-trivial computation.
 
 ## Milestones
 
-### M-11: Prompt Testability Hardening
+### M-11: Prompt Testability Hardening — REVERTED / ON HOLD
 
-Replace the ACCEPTANCE COMMAND DESIGN PRINCIPLE section in
-`planner/PLANNER_PROMPT.md` with a testability hierarchy. Remove scar
-tissue (unittest-discover ban, redundant WO-01 MUST NOT bullets). Add
-oracle-problem statement to the preamble.
+Attempted on a branch: replaced ACCEPTANCE COMMAND DESIGN PRINCIPLE with a
+testability hierarchy (tier 1/tier 2), removed unittest-discover ban and
+redundant WO-01 MUST NOT bullets, added oracle-problem statement.
 
-**Files:** `planner/PLANNER_PROMPT.md`
+**Result:** Repo author observed increased brittleness in planner output
+after the change. Cross-WO API name mismatches became more frequent on the
+same spec that previously worked. The change was not merged to main.
 
-**Acceptance criteria:**
-- Prompt contains "YOU DO NOT EXECUTE CODE" and tier 1/tier 2 examples.
-- Prompt does NOT contain "unittest discover" or redundant MUST NOT bullets.
-- `python -m pytest tests/ -q` passes (no code changes).
+**Status:** On hold. The prompt changes may have destabilised the planner's
+naming consistency. Further investigation needed before reattempting.
 
 ### M-12 (future): Acceptance Command Linting
 
