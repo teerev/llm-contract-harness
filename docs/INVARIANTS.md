@@ -1,5 +1,7 @@
 # INVARIANTS.md — Non-Negotiable System Constraints
 
+**Last updated:** 2026-02-14
+
 **Scope:** These invariants describe the *structural enforcement layer* —
 the deterministic checks applied to LLM output before any side effects.
 They do not guarantee end-to-end outcomes. The LLM may produce
@@ -33,8 +35,9 @@ no duplicates.
 Every field has the correct type. `acceptance_commands` is non-empty.
 `context_files` has at most 10 entries. Postconditions use only `file_exists`.
 All paths in `allowed_files`, `context_files`, preconditions, and
-postconditions are relative, normalized, contain no `..` prefix, no drive
-letters, no glob characters.
+postconditions are relative, normalized, contain no `..` prefix, no
+backslashes, no drive letters, no NUL bytes, no control characters, no
+glob characters, and do not normalize to `"."`.
 
 ### P3. Acceptance commands contain no bare shell operators.
 
@@ -49,7 +52,10 @@ without `SyntaxError`.
 ### P5. `bash scripts/verify.sh` does not appear in any acceptance command.
 
 Global verification is the factory's responsibility. Including it in
-acceptance creates redundancy and bootstrap circularity.
+acceptance creates redundancy and bootstrap circularity. Detection uses
+normalized `shlex.split` + `posixpath.normpath` comparison, so variants
+like `bash  scripts/verify.sh` (double space) and `bash ./scripts/verify.sh`
+are also caught.
 
 ### P6. Every precondition is satisfiable by the cumulative state.
 
@@ -81,8 +87,40 @@ work order satisfies every condition in `verify_contract.requires`.
 ### P11. Validation errors use structured, machine-readable codes.
 
 Every error is a `ValidationError` with a `code` field from the defined set
-(`E000`–`E006`, `E101`–`E106`, `W101`). Free-form error strings are not
+(`E000`–`E007`, `E101`–`E106`, `W101`). Free-form error strings are not
 emitted by the validator.
+
+### P12. Unparseable acceptance commands are rejected.
+
+If `shlex.split` raises `ValueError` on an acceptance command (e.g.
+unmatched quotes), an `E007` error is emitted. The command does not
+silently bypass validation.
+
+### P13. `verify_exempt` is always overwritten by the planner.
+
+The planner never trusts LLM-provided `verify_exempt` values. After
+validation, `compute_verify_exempt` overwrites the field based on the
+`verify_contract` and cumulative postconditions. If no valid
+`verify_contract` exists, all WOs get `verify_exempt=False`.
+
+### P14. Non-dict work order elements produce structured errors.
+
+If the LLM emits non-dict elements in the `work_orders` array (e.g.
+integers, strings), the validator returns `E000` errors instead of crashing
+with `AttributeError`. Similarly, non-dict `verify_contract` values produce
+`E000` instead of crashing.
+
+### P15. Path fields are normalized before chain validation.
+
+`normalize_work_order` applies `posixpath.normpath` to all path-bearing
+fields (`allowed_files`, `context_files`, precondition/postcondition paths)
+so that `"./src/a.py"` and `"src/a.py"` are treated identically by the
+chain validator.
+
+### P16. JSON payloads are size-guarded before parsing.
+
+`_parse_json` rejects LLM output exceeding 10 MB before calling
+`json.loads`, preventing OOM on adversarial payloads.
 
 ---
 
@@ -108,7 +146,8 @@ are no partial writes on stale context.
 
 On any non-PASS verdict, `git reset --hard <baseline>` and `git clean -fdx`
 are executed. This is performed by the finalize node and, on unhandled
-exceptions, by the emergency handler in `run.py`.
+exceptions (including `KeyboardInterrupt`), by the `BaseException` emergency
+handler in `run.py`.
 
 ### F5. All commands are executed with `shell=False`.
 
@@ -129,18 +168,18 @@ the acceptance command loop.
 
 When `verify_exempt` is `True`, the PO node runs only
 `python -m compileall -q .`, never `bash scripts/verify.sh` or the fallback
-command set.
+command set. The factory treats `verify_exempt` as an opaque IR field — it
+does not inspect work order content to infer intent.
 
 ### F9. `OSError` during command execution does not crash the factory.
 
 `run_command` catches `OSError` (including `PermissionError` and
 `FileNotFoundError`) and returns a `CmdResult` with `exit_code=-1`.
 
-### F10. The output directory is not inside the repository.
+### F10. The repository must have at least one commit.
 
-`run.py` preflight rejects runs where the output directory path is equal to
-or inside the repo root. This prevents artifacts from polluting the git
-working tree and being affected by rollback.
+`run.py` preflight checks `has_commits()` and rejects repos with no commit
+history (required for baseline establishment and rollback).
 
 ### F11. The repository must be a clean git working tree at run start.
 
@@ -151,7 +190,45 @@ The run is rejected if any staged, unstaged, or untracked changes exist.
 
 On normal completion (PASS or FAIL), `run.py` writes `run_summary.json`.
 On unhandled exception, the emergency handler writes an emergency summary
-with `verdict: "ERROR"` and the traceback.
+with `verdict: "ERROR"`, `rollback_failed` status, and the traceback.
+`save_json` uses atomic writes (tempfile + fsync + os.replace).
+
+### F13. Commits contain only proposal-touched files.
+
+On the PASS path, `git_commit` stages only the files listed in the
+proposal's `touched_files` (scoped `git add -- <files>`), not `git add -A`.
+Verification artifacts (`__pycache__/`, `.pytest_cache/`, etc.) are never
+committed.
+
+### F14. The working tree is clean after a PASS commit.
+
+After the scoped commit, `clean_untracked()` runs `git clean -fdx` to
+remove any files left by verification/acceptance commands. This ensures the
+next work order's preflight `is_clean` check passes.
+
+### F15. Subprocess environment is sandboxed.
+
+`run_command` passes a sandboxed environment to all subprocesses:
+`PYTHONDONTWRITEBYTECODE=1` (suppresses `.pyc` bytecode) and
+`PYTEST_ADDOPTS=-p no:cacheprovider` (suppresses `.pytest_cache/`).
+
+### F16. Repo drift is detected and recorded on PASS.
+
+After PO completes on the PASS path, `detect_repo_drift()` identifies files
+modified or created outside the proposal's `touched_files`. If drift is
+found, it is recorded in the attempt record (`repo_drift` field) for audit.
+
+### F17. The factory never commits to protected branches.
+
+`run.py` preflight rejects runs targeting `main` or `master` branches. The
+factory always works on a dedicated working branch.
+
+### F18. Non-retryable failures abort immediately.
+
+The graph router's `_NON_RETRYABLE_STAGES` (`preflight`, `write_failed`)
+cause the factory to abort without retrying. Preflight failures indicate
+planner-contract bugs; write failures indicate infrastructure problems.
+Neither can be fixed by the executor LLM.
 
 ---
 
@@ -167,7 +244,8 @@ parse as a `WorkOrder` is rejected by both sides.
 
 The planner's `compute_verify_exempt` injects `verify_exempt` into each
 work order dict based on the `verify_contract` and cumulative postconditions.
-The factory's PO node reads it. The factory does not compute it.
+The factory's PO node reads it as an opaque IR field. The factory does not
+compute it, and the planner never trusts LLM-provided values (P13).
 
 ### C3. Preconditions declared by the planner are enforced by the factory.
 
@@ -196,6 +274,13 @@ verify, acceptance) produces a `FailureBrief` with a `stage` field from
 the fixed set `{preflight, llm_output_invalid, write_scope_violation,
 stale_context, write_failed, verify_failed, acceptance_failed, exception}`.
 
+### C7. Provenance links factory runs to planner runs.
+
+Each work order carries a `provenance` dict with `planner_run_id`,
+`compile_hash`, `manifest_sha256`, and `bootstrap`. The factory extracts
+provenance from the raw JSON (not the Pydantic model, which strips unknown
+fields) for branch naming and verify-exempt policy decisions.
+
 ---
 
 ## 5. LLM Interaction Invariants
@@ -212,13 +297,15 @@ separate LLM call), not by the SE LLM being evaluated.
 Planner output passes through `parse_and_validate` and `validate_plan_v2`
 before any work order is written to disk. Factory SE output passes through
 `WriteProposal` pydantic parsing and TR node checks before any file is
-written to the repo.
+written to the repo. Non-dict elements and non-dict `verify_contract`
+values are caught by type guards (P14).
 
 ### L3. LLM failure does not leave the repository in a dirty state.
 
 If the SE LLM call fails (exception, timeout, invalid output), no writes
 have been applied. If writes were applied and a later stage fails, the
-finalize node rolls back.
+finalize node rolls back. `KeyboardInterrupt` during writes also triggers
+rollback via the `BaseException` emergency handler (F4).
 
 ### L4. LLM non-determinism does not violate deterministic invariants.
 
@@ -229,8 +316,9 @@ Non-deterministic LLM output cannot bypass deterministic enforcement.
 ### L5. The system defends against LLM path traversal.
 
 Proposed write paths are validated as relative, normalized, free of `..`
-prefixes, and resolving inside the repo root. An LLM that proposes
-`../../etc/passwd` is rejected by both schema validation and TR node checks.
+prefixes, free of backslashes, free of NUL bytes and control characters,
+and resolving inside the repo root. An LLM that proposes `../../etc/passwd`
+is rejected by both schema validation and TR node checks.
 
 ### L6. The system defends against LLM scope violation.
 
@@ -254,34 +342,46 @@ on file A enables a stale write on file B.
 | P2 (schema) | `factory/schemas.py` `WorkOrder` validators; `planner/validation.py` E005 | Compile error (planner) or load failure (factory) |
 | P3 (shell operators) | `planner/validation.py` `validate_plan` E003 | Compile error |
 | P4 (python -c syntax) | `planner/validation.py` `_check_python_c_syntax` E006 | Compile error |
-| P5 (no verify in acceptance) | `planner/validation.py` `validate_plan_v2` E105 | Compile error |
+| P5 (no verify in acceptance) | `planner/validation.py` `validate_plan_v2` E105 (normalized match) | Compile error |
 | P6 (precondition chain) | `planner/validation.py` `validate_plan_v2` E101 | Compile error |
 | P7 (no contradictions) | `planner/validation.py` `validate_plan_v2` E102 | Compile error |
 | P8 (postcond in allowed) | `planner/validation.py` `validate_plan_v2` E103 | Compile error |
 | P9 (allowed has postcond) | `planner/validation.py` `validate_plan_v2` E104 | Compile error |
 | P10 (verify contract) | `planner/validation.py` `validate_plan_v2` E106 | Compile error |
-| P11 (structured errors) | `planner/validation.py` `ValidationError` dataclass | N/A (structural; no runtime violation) |
+| P11 (structured errors) | `planner/validation.py` `ValidationError` dataclass | N/A (structural) |
+| P12 (shlex failure) | `planner/validation.py` `validate_plan` + `_check_python_c_syntax` E007 | Compile error |
+| P13 (verify_exempt overwrite) | `planner/compiler.py` M-01 block | LLM value replaced |
+| P14 (type guards) | `planner/validation.py` `parse_and_validate` + `validate_plan` + `validate_plan_v2` | E000 error, not crash |
+| P15 (path normalization) | `planner/validation.py` `normalize_work_order` | Normalized before chain checks |
+| P16 (payload size guard) | `planner/compiler.py` `_parse_json` | ValueError before `json.loads` |
 | F1 (scope) | `factory/nodes_tr.py` `tr_node` scope check | `FailureBrief(stage="write_scope_violation")` |
 | F2 (path safety) | `factory/nodes_tr.py` `tr_node` + `factory/util.py` `is_path_inside_repo` | `FailureBrief(stage="write_scope_violation")` |
 | F3 (hash batch check) | `factory/nodes_tr.py` `tr_node` hash loop | `FailureBrief(stage="stale_context")` |
-| F4 (rollback) | `factory/workspace.py` `rollback`; `factory/graph.py` `_finalize_node`; `factory/run.py` emergency handler | Git repo restored to baseline |
-| F5 (shell=False) | `factory/util.py` `run_command` `subprocess.run(shell=False)` | N/A (structural; shell never invoked) |
+| F4 (rollback) | `factory/workspace.py` `rollback`; `factory/graph.py` `_finalize_node`; `factory/run.py` `BaseException` handler | Git repo restored to baseline |
+| F5 (shell=False) | `factory/util.py` `run_command` `subprocess.run(shell=False)` | N/A (structural) |
 | F6 (precond before LLM) | `factory/nodes_se.py` `se_node` precondition gate | `FailureBrief(stage="preflight")` |
 | F7 (postcond before acceptance) | `factory/nodes_po.py` `po_node` postcondition gate | `FailureBrief(stage="acceptance_failed")` |
 | F8 (verify_exempt) | `factory/nodes_po.py` `po_node` verify_exempt branch | Compileall runs instead of verify.sh |
 | F9 (OSError caught) | `factory/util.py` `run_command` except-OSError | `CmdResult(exit_code=-1)` |
-| F10 (out != repo) | `factory/run.py` preflight check | `sys.exit(1)` before graph invocation |
+| F10 (has commits) | `factory/run.py` preflight `has_commits` check | `sys.exit(1)` before graph invocation |
 | F11 (clean tree) | `factory/run.py` preflight via `workspace.is_clean` | `sys.exit(1)` before graph invocation |
-| F12 (run summary) | `factory/run.py` normal path + emergency handler | `run_summary.json` always written |
+| F12 (run summary) | `factory/run.py` normal path + `BaseException` handler; atomic `save_json` | `run_summary.json` always written |
+| F13 (scoped commits) | `factory/workspace.py` `git_commit(touched_files=...)` | Only proposal files committed |
+| F14 (post-commit clean) | `factory/run.py` `clean_untracked()` after commit | Working tree clean for next WO |
+| F15 (sandboxed env) | `factory/util.py` `_sandboxed_env` + `run_command` | `PYTHONDONTWRITEBYTECODE=1`, no `.pytest_cache` |
+| F16 (drift detection) | `factory/graph.py` `_finalize_node` → `detect_repo_drift` | `repo_drift` recorded in attempt |
+| F17 (protected branches) | `factory/run.py` preflight branch check | `sys.exit(1)` before graph invocation |
+| F18 (non-retryable abort) | `factory/graph.py` `_route_after_finalize` | END immediately on preflight/write_failed |
 | C1 (shared schema) | `factory/schemas.py` imported by both `planner/validation.py` and factory nodes | Parse error on either side |
-| C2 (verify_exempt flow) | `planner/validation.py` `compute_verify_exempt`; `factory/nodes_po.py` reads field | Incorrect verify behavior if violated |
+| C2 (verify_exempt flow) | `planner/compiler.py` M-01; `factory/nodes_po.py` reads field | Incorrect verify behavior if violated |
 | C3 (precond enforced) | `planner/validation.py` E101; `factory/nodes_se.py` precondition gate | Compile error or `FailureBrief(stage="preflight")` |
 | C4 (postcond enforced) | `planner/validation.py` E103/E104; `factory/nodes_po.py` postcondition gate | Compile error or `FailureBrief(stage="acceptance_failed")` |
 | C5 (no output on error) | `planner/compiler.py` `compile_plan` early return on errors | No WO files; `success=False` |
 | C6 (FailureBrief on violation) | All factory nodes return `FailureBrief` on failure | Structured failure with `stage` from fixed set |
+| C7 (provenance) | `planner/compiler.py` provenance injection; `factory/run.py` provenance extraction | Branch naming + verify-exempt policy |
 | L1 (no eval) | System-wide: JSON parsing only, no `eval`/`exec` | N/A (structural) |
 | L2 (validated before use) | `planner/validation.py`; `factory/schemas.py`; `factory/nodes_tr.py` | Rejection before side effects |
-| L3 (no dirty state) | `factory/graph.py` `_finalize_node` rollback; SE failure returns before writes | Git repo clean after failure |
+| L3 (no dirty state) | `factory/graph.py` `_finalize_node` rollback; `factory/run.py` `BaseException` handler | Git repo clean after failure |
 | L4 (determinism unbreakable) | All checks run after LLM output, before side effects | Deterministic rejection regardless of LLM output |
 | L5 (path traversal) | `factory/schemas.py` `_validate_relative_path`; `factory/nodes_tr.py` `is_path_inside_repo` | Schema error or `FailureBrief(stage="write_scope_violation")` |
 | L6 (scope violation) | `factory/nodes_tr.py` scope check | `FailureBrief(stage="write_scope_violation")` |
