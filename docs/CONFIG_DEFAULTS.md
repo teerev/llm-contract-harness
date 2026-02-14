@@ -24,7 +24,7 @@ python tools/dump_defaults.py
 | `POLL_DEADLINE_S` | `2400.0` | float | polling |  |  | max wait for LLM response (40 min) |
 | `OPENAI_API_BASE` | `'https://api.openai.com/v1'` | str | paths |  |  | OpenAI API base URL |
 | `RESPONSES_ENDPOINT` | `'https://api.openai.com/v1/responses'` | str | paths |  |  | derived responses endpoint |
-| `MAX_COMPILE_ATTEMPTS` | `3` | int | retries |  |  | 1 initial + up to 2 revision retries |
+| `MAX_COMPILE_ATTEMPTS` | `5` | int | retries |  |  | 1 initial + up to 2 revision retries |
 | `COMPILE_HASH_HEX_LENGTH` | `16` | int | hashing | yes |  | compile hash truncation length |
 | `VERIFY_SCRIPT_PATH` | `'scripts/verify.sh'` | str | paths |  |  | global verify script path (dup of factory) |
 | `VERIFY_COMMAND` | `'bash scripts/verify.sh'` | str | paths |  |  | verify command string for E105 validation |
@@ -39,7 +39,7 @@ python tools/dump_defaults.py
 ## Factory (`factory.defaults`)
 | Name | Value | Type | Category | Det. | Safety | Description |
 |------|-------|------|----------|------|--------|-------------|
-| `DEFAULT_MAX_ATTEMPTS` | `2` | int | retries |  |  | max SE→TR→PO cycle attempts |
+| `DEFAULT_MAX_ATTEMPTS` | `5` | int | retries |  |  | max SE→TR→PO cycle attempts |
 | `DEFAULT_LLM_MODEL` | `'gpt-5.2'` | str | model |  |  | default LLM model for factory SE calls |
 | `DEFAULT_LLM_TEMPERATURE` | `0` | int | model |  |  | LLM temperature for factory SE calls |
 | `DEFAULT_TIMEOUT_SECONDS` | `600` | int | timeout |  |  | per-command timeout (LLM + subprocess) |
