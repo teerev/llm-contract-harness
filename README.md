@@ -23,7 +23,7 @@ export OPENAI_API_KEY=sk-...
 ```bash
 llmch pipeline \
   --seed spec.txt \
-  --repo /path/to/product \
+  --repo /path/to/local/repository \
   --branch factory/my-feature \
   --create-branch
 ```
