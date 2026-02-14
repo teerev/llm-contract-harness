@@ -276,6 +276,31 @@ class TestCompileSinglePass:
         assert wo2["verify_exempt"] is False  # verify.sh + tests = satisfied
 
     @patch("planner.compiler.OpenAIResponsesClient")
+    def test_provenance_bootstrap_matches_verify_exempt(self, MockClient, spec_file,
+                                                         template_file, outdir,
+                                                         artifacts_dir):
+        """provenance.bootstrap must be True on verify-exempt WOs, False on others."""
+        mock_client = _mock_client_returning(json.dumps(_VALID_MANIFEST))
+        MockClient.return_value = mock_client
+
+        result = compile_plan(
+            spec_path=spec_file,
+            outdir=outdir,
+            template_path=template_file,
+            artifacts_dir=artifacts_dir,
+        )
+
+        assert result.success is True
+        wo1 = result.work_orders[0]
+        wo2 = result.work_orders[1]
+        # WO-01 is verify_exempt → bootstrap=True
+        assert wo1["provenance"]["bootstrap"] is True
+        assert isinstance(wo1["provenance"]["planner_run_id"], str)
+        assert wo1["provenance"]["planner_run_id"] != ""
+        # WO-02 is not verify_exempt → bootstrap=False
+        assert wo2["provenance"]["bootstrap"] is False
+
+    @patch("planner.compiler.OpenAIResponsesClient")
     def test_verify_exempt_written_to_json(self, MockClient, spec_file,
                                             template_file, outdir, artifacts_dir):
         """verify_exempt should appear in the written WO-01.json file."""
