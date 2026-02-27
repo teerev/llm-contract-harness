@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Generated pipeline outputs
+artifacts/
+my-project/
+wo/
+
+# Node
+web/ui/node_modules/
+web/ui/*.tsbuildinfo
+web/ui/dist/
