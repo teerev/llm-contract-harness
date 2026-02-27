@@ -191,58 +191,8 @@
 /* ── File explorer ── */
 
 .explorerPanel {
-  display: flex;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
-}
-
-.treePane {
-  width: 260px;
-  min-width: 200px;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.treeList {
-  flex: 1;
-  overflow-y: auto;
-  list-style: none;
-  padding: 8px 0;
-}
-
-.treeRoot {
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-}
-
-.treeRoot:hover {
-  color: var(--text);
-  background: var(--bg-input);
-}
-
-.viewerPane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.viewerContent {
-  flex: 1;
-  overflow: auto;
-  padding: 10px 14px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-dim);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /* ── Result strip ── */

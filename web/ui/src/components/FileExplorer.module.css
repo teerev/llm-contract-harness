@@ -1,0 +1,163 @@
+.explorer {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Tree pane ── */
+
+.treePane {
+  width: 280px;
+  min-width: 200px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panelHeader {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.treeScroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.placeholder {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ── Root row ── */
+
+.rootRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.rootRow:hover {
+  color: var(--text);
+  background: var(--bg-input);
+}
+
+.rootLabel {
+  flex: 1;
+}
+
+.refreshBtn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.refreshBtn:hover {
+  color: var(--accent);
+}
+
+.chevron {
+  font-size: 10px;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Directory / file rows ── */
+
+.dirRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.dirRow:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.dirName {
+  font-weight: 500;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.fileRow:hover {
+  background: var(--bg-input);
+}
+
+.fileSelected {
+  background: rgba(79, 143, 247, 0.12);
+  color: var(--accent);
+}
+
+.fileName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileMeta {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.loadingRow,
+.emptyRow {
+  padding: 4px 28px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ── Viewer pane ── */
+
+.viewerPane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewerScroll {
+  flex: 1;
+  overflow: auto;
+}

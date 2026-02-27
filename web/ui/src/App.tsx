@@ -1,4 +1,5 @@
 import { useState } from "react";
+import FileExplorer from "./components/FileExplorer";
 import styles from "./App.module.css";
 
 type Status = "idle" | "running" | "complete" | "failed";
@@ -105,20 +106,7 @@ export default function App() {
 
       {/* ── File Explorer ── */}
       <section className={styles.explorerPanel}>
-        <div className={styles.treePane}>
-          <div className={styles.panelLabel}>Files</div>
-          <ul className={styles.treeList}>
-            <li className={styles.treeRoot}>work_orders</li>
-            <li className={styles.treeRoot}>artifacts</li>
-            <li className={styles.treeRoot}>repo</li>
-          </ul>
-        </div>
-        <div className={styles.viewerPane}>
-          <div className={styles.panelLabel}>Viewer</div>
-          <pre className={styles.viewerContent}>
-            Select a file to view its contents.
-          </pre>
-        </div>
+        <FileExplorer runId={_runId} />
       </section>
 
       {/* ── Result Strip ── */}
