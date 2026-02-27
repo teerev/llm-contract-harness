@@ -63,6 +63,13 @@ class LocalRunStore:
             data = json.load(fh)
         opts_raw = data.pop("opts", {})
         opts = RunOptions(**opts_raw) if isinstance(opts_raw, dict) else RunOptions()
+        # Handle legacy push_result field from older meta.json files
+        push_result = data.pop("push_result", None)
+        if push_result and isinstance(push_result, dict):
+            data.setdefault("push_remote", push_result.get("remote"))
+            data.setdefault("push_branch", push_result.get("branch"))
+            data.setdefault("push_commit_sha", push_result.get("commit_sha"))
+            data.setdefault("push_url", push_result.get("url"))
         return RunMeta(**data, opts=opts)
 
     def update(self, run_id: str, **fields) -> None:
@@ -103,6 +110,43 @@ class LocalFileStore:
         self._artifacts_dir = artifacts_dir or config.ARTIFACTS_DIR
         self._run_store = run_store
 
+    def _get_artifacts_mapping(self, run_id: str) -> dict[str, str]:
+        """Return virtual-path-prefix -> physical-dir mapping for artifacts root.
+        
+        Creates a virtual tree with:
+          planner/{planner_run_id}/  -> artifacts/planner/{planner_run_id}/
+          factory/{factory_run_id}/  -> artifacts/factory/{factory_run_id}/  (for each)
+          pipeline/{pipeline_run_id}/ -> artifacts/pipeline/{pipeline_run_id}/
+        """
+        mapping: dict[str, str] = {}
+        
+        # Always include pipeline artifacts
+        pipeline_dir = os.path.join(self._artifacts_dir, "pipeline", run_id)
+        if os.path.isdir(pipeline_dir):
+            mapping[f"pipeline/{run_id}"] = pipeline_dir
+        
+        if not self._run_store:
+            return mapping
+            
+        try:
+            meta = self._run_store.get(run_id)
+        except FileNotFoundError:
+            return mapping
+        
+        # Planner artifacts
+        if meta.planner_run_id:
+            planner_dir = os.path.join(self._artifacts_dir, "planner", meta.planner_run_id)
+            if os.path.isdir(planner_dir):
+                mapping[f"planner/{meta.planner_run_id}"] = planner_dir
+        
+        # Factory artifacts (one per WO execution)
+        for fid in meta.factory_run_ids:
+            factory_dir = os.path.join(self._artifacts_dir, "factory", fid)
+            if os.path.isdir(factory_dir):
+                mapping[f"factory/{fid}"] = factory_dir
+        
+        return mapping
+
     def _resolve_base(self, run_id: str, root: str) -> str:
         if root not in VALID_ROOTS:
             raise ValueError(f"Invalid root: {root!r}. Must be one of {VALID_ROOTS}")
@@ -111,6 +155,8 @@ class LocalFileStore:
             return os.path.join(self._artifacts_dir, "pipeline", run_id, "repo")
 
         if root == "artifacts":
+            # Special: handled by _get_artifacts_mapping for tree/read
+            # Return artifacts_dir as a fallback (not used directly)
             return self._artifacts_dir
 
         # root == "work_orders" -> canonical planner output
@@ -125,11 +171,64 @@ class LocalFileStore:
                 pass
         return os.path.join(self._artifacts_dir, "pipeline", run_id, "work_orders")
 
+    def _resolve_artifacts_path(self, run_id: str, path: str) -> str | None:
+        """Resolve a virtual artifacts path to a physical path."""
+        mapping = self._get_artifacts_mapping(run_id)
+        for prefix, phys_dir in mapping.items():
+            if path == prefix or path == prefix + "/":
+                return phys_dir
+            if path.startswith(prefix + "/"):
+                rel = path[len(prefix) + 1:]
+                return os.path.join(phys_dir, rel)
+        return None
+
     def tree(self, run_id: str, root: str) -> list[TreeEntry]:
+        if root == "artifacts":
+            return self._tree_artifacts(run_id)
+        
         base = self._resolve_base(run_id, root)
         if not os.path.isdir(base):
             return []
+        return self._walk_dir(base)
 
+    def _tree_artifacts(self, run_id: str) -> list[TreeEntry]:
+        """Build a virtual tree for artifacts root.
+
+        Emits intermediate parent dirs (``planner/``, ``factory/``,
+        ``pipeline/``) so the frontend tree renderer can discover them as
+        top-level entries.
+        """
+        mapping = self._get_artifacts_mapping(run_id)
+        if not mapping:
+            return []
+
+        emitted_parents: set[str] = set()
+        entries: list[TreeEntry] = []
+
+        for prefix, phys_dir in sorted(mapping.items()):
+            # Emit the category parent dir (e.g. "planner/") once
+            parent = prefix.split("/", 1)[0]
+            if parent not in emitted_parents:
+                emitted_parents.add(parent)
+                entries.append(TreeEntry(path=parent + "/", type="dir"))
+
+            # Emit the run-specific dir (e.g. "planner/01KJG.../")
+            entries.append(TreeEntry(path=prefix + "/", type="dir"))
+
+            # Walk the physical directory and prefix paths
+            for entry in self._walk_dir(phys_dir):
+                entries.append(TreeEntry(
+                    path=f"{prefix}/{entry.path}",
+                    type=entry.type,
+                    size=entry.size,
+                    line_count=entry.line_count,
+                ))
+
+        entries.sort(key=lambda e: (e.type != "dir", e.path.lower()))
+        return entries
+
+    def _walk_dir(self, base: str) -> list[TreeEntry]:
+        """Walk a physical directory and return entries with relative paths."""
         entries: list[TreeEntry] = []
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -147,15 +246,23 @@ class LocalFileStore:
                     size = 0
                 lc = self._line_count(abs_path, size)
                 entries.append(TreeEntry(path=rel_path, type="file", size=size, line_count=lc))
-
-        entries.sort(key=lambda e: (e.type != "dir", e.path.lower()))
         return entries
 
     def read(self, run_id: str, root: str, path: str) -> bytes:
-        base = self._resolve_base(run_id, root)
-        full = os.path.realpath(os.path.join(base, path))
-        if not full.startswith(os.path.realpath(base)):
-            raise PermissionError("Path escapes root")
+        if root == "artifacts":
+            full = self._resolve_artifacts_path(run_id, path)
+            if not full:
+                raise FileNotFoundError(f"File not found: artifacts/{path}")
+            full = os.path.realpath(full)
+            # Security: ensure it's within artifacts_dir
+            if not full.startswith(os.path.realpath(self._artifacts_dir)):
+                raise PermissionError("Path escapes root")
+        else:
+            base = self._resolve_base(run_id, root)
+            full = os.path.realpath(os.path.join(base, path))
+            if not full.startswith(os.path.realpath(base)):
+                raise PermissionError("Path escapes root")
+        
         if not os.path.isfile(full):
             raise FileNotFoundError(f"File not found: {root}/{path}")
         with open(full, "rb") as fh:
@@ -163,11 +270,18 @@ class LocalFileStore:
 
     def exists(self, run_id: str, root: str, path: str) -> bool:
         try:
-            base = self._resolve_base(run_id, root)
+            if root == "artifacts":
+                full = self._resolve_artifacts_path(run_id, path)
+                if not full:
+                    return False
+                full = os.path.realpath(full)
+                return full.startswith(os.path.realpath(self._artifacts_dir)) and os.path.exists(full)
+            else:
+                base = self._resolve_base(run_id, root)
+                full = os.path.realpath(os.path.join(base, path))
+                return full.startswith(os.path.realpath(base)) and os.path.exists(full)
         except (ValueError, FileNotFoundError):
             return False
-        full = os.path.realpath(os.path.join(base, path))
-        return full.startswith(os.path.realpath(base)) and os.path.exists(full)
 
     @staticmethod
     def _line_count(path: str, size: int) -> int | None:
