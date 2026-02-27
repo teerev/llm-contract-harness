@@ -621,3 +621,188 @@ def run_cli(args, console: Console | None = None) -> None:  # noqa: ANN001
 
     if verdict != "PASS":
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Programmatic entry point (used by the web pipeline runner)
+# ---------------------------------------------------------------------------
+
+
+def run_work_order(
+    *,
+    repo_root: str,
+    work_order_path: str,
+    branch: str,
+    artifacts_dir: str,
+    command_env: dict[str, str],
+    is_first_wo: bool = True,
+    event_log: object | None = None,
+    llm_model: str = _fd.DEFAULT_LLM_MODEL,
+    llm_temperature: float = _fd.DEFAULT_LLM_TEMPERATURE,
+    max_attempts: int = _fd.DEFAULT_MAX_ATTEMPTS,
+    timeout_seconds: int = _fd.DEFAULT_TIMEOUT_SECONDS,
+) -> dict:
+    """Execute a single work order and return a result dict.
+
+    Unlike ``run_cli()``, this function:
+    - Takes explicit parameters (no argparse Namespace).
+    - Returns a result dict instead of calling ``sys.exit()``.
+    - Accepts ``event_log`` and injects it into the LangGraph state.
+    - Skips git push (the caller handles push separately).
+
+    The caller is responsible for preflight (venv setup, branch creation on
+    the first WO, ensuring the repo is clean).
+
+    Returns::
+
+        {
+            "verdict": "PASS" | "FAIL" | "ERROR",
+            "run_id": str,
+            "attempts": list[dict],
+            "error": str | None,
+        }
+    """
+    work_order = load_work_order(work_order_path)
+    wo_dict = work_order.model_dump()
+
+    ensure_git_identity(repo_root)
+    baseline_commit = get_baseline_commit(repo_root)
+
+    # Branch: first WO creates it, subsequent WOs reuse it.
+    try:
+        ensure_working_branch(
+            repo_root,
+            branch,
+            baseline_commit,
+            require_new=is_first_wo,
+            require_exists=not is_first_wo,
+        )
+    except (ValueError, RuntimeError) as exc:
+        return {"verdict": "ERROR", "run_id": "", "attempts": [], "error": str(exc)}
+
+    baseline_commit = get_baseline_commit(repo_root)
+
+    # Verify-exempt: auto-allow for trusted planner bootstrap WOs.
+    if wo_dict.get("verify_exempt"):
+        prov = wo_dict.get("provenance")
+        allowed, _reason = _check_verify_exempt_policy(
+            allow_flag=True, provenance=prov,
+        )
+        if not allowed:
+            wo_dict["verify_exempt"] = False
+
+    # Artifact directory
+    run_id = generate_ulid()
+    artifacts_root = resolve_artifacts_root(artifacts_dir)
+    run_dir = os.path.join(artifacts_root, "factory", run_id)
+    os.makedirs(run_dir, exist_ok=False)
+    out_dir = os.path.join(artifacts_root, "factory")
+
+    save_json(wo_dict, os.path.join(run_dir, ARTIFACT_WORK_ORDER))
+
+    started_at = utc_now_iso()
+    run_json: dict = {
+        "run_id": run_id,
+        "tool": "factory",
+        "started_at_utc": started_at,
+        "finished_at_utc": None,
+        "verdict": None,
+        "work_order_id": work_order.id,
+        "version": get_tool_version(),
+        "config": {
+            "llm_model": llm_model,
+            "llm_temperature": llm_temperature,
+            "max_attempts": max_attempts,
+            "timeout_seconds": timeout_seconds,
+            "repo_root": repo_root,
+        },
+        "inputs": {
+            "work_order_path": work_order_path,
+            "work_order_sha256": sha256_file(work_order_path),
+            "baseline_commit": baseline_commit,
+        },
+        "outputs": None,
+    }
+    write_run_json(run_dir, run_json)
+
+    # Build & invoke graph
+    graph = build_graph()
+    initial_state: dict = {
+        "work_order": wo_dict,
+        "repo_root": repo_root,
+        "baseline_commit": baseline_commit,
+        "max_attempts": max_attempts,
+        "timeout_seconds": timeout_seconds,
+        "llm_model": llm_model,
+        "llm_temperature": llm_temperature,
+        "out_dir": out_dir,
+        "run_id": run_id,
+        "command_env": command_env,
+        "event_log": event_log,
+        "attempt_index": 1,
+        "proposal": None,
+        "touched_files": [],
+        "write_ok": False,
+        "failure_brief": None,
+        "verify_results": [],
+        "acceptance_results": [],
+        "attempts": [],
+        "verdict": "",
+        "repo_tree_hash_after": None,
+    }
+
+    try:
+        final_state = graph.invoke(initial_state)
+    except BaseException as exc:
+        try:
+            rollback(repo_root, baseline_commit)
+        except BaseException:
+            pass
+        run_json["finished_at_utc"] = utc_now_iso()
+        run_json["verdict"] = "ERROR"
+        write_run_json(run_dir, run_json)
+        return {"verdict": "ERROR", "run_id": run_id, "attempts": [], "error": str(exc)}
+
+    verdict = final_state.get("verdict", "FAIL")
+    attempts = final_state.get("attempts", [])
+
+    # Write run_summary + finalize run.json
+    summary_dict = {
+        "run_id": run_id,
+        "work_order_id": work_order.id,
+        "verdict": verdict,
+        "total_attempts": len(attempts),
+        "baseline_commit": baseline_commit,
+        "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
+        "attempts": attempts,
+    }
+    save_json(summary_dict, os.path.join(run_dir, ARTIFACT_RUN_SUMMARY))
+
+    run_json["finished_at_utc"] = utc_now_iso()
+    run_json["verdict"] = verdict
+    run_json["outputs"] = {
+        "total_attempts": len(attempts),
+        "repo_tree_hash_after": final_state.get("repo_tree_hash_after"),
+    }
+    write_run_json(run_dir, run_json)
+
+    # Auto-commit on PASS
+    if verdict == "PASS" and _fd.GIT_AUTO_COMMIT:
+        pass_touched = None
+        if attempts:
+            tf = attempts[-1].get("touched_files", [])
+            if tf:
+                pass_touched = list(tf)
+        try:
+            commit_msg = f"{work_order.id}: applied by factory (run {run_id})"
+            git_commit(repo_root, commit_msg, touched_files=pass_touched)
+            clean_untracked(repo_root)
+        except RuntimeError:
+            pass
+
+    return {
+        "verdict": verdict,
+        "run_id": run_id,
+        "attempts": attempts,
+        "error": None,
+    }

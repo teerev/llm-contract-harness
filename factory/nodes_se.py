@@ -156,6 +156,15 @@ def se_node(state: dict) -> dict:
     attempt_index: int = state["attempt_index"]
     run_id: str = state["run_id"]
     out_dir: str = state["out_dir"]
+    event_log = state.get("event_log")
+
+    if event_log is not None:
+        event_log.emit(
+            "wo_status",
+            wo_id=work_order.id,
+            status=f"attempt_{attempt_index}",
+            attempt=attempt_index,
+        )
 
     attempt_dir = make_attempt_dir(out_dir, run_id, attempt_index)
     os.makedirs(attempt_dir, exist_ok=True)

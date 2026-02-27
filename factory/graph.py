@@ -38,6 +38,8 @@ class FactoryState(TypedDict, total=False):
     run_id: str
     # Target-repo venv env for PO verify/acceptance subprocesses (set once)
     command_env: dict
+    # Optional event log for SSE streaming (set once, used by nodes)
+    event_log: Any  # shared.event_log.EventLog | None
     # Per-attempt (reset by finalize between attempts)
     attempt_index: int
     proposal: Any          # dict | None
@@ -134,6 +136,19 @@ def _finalize_node(state: dict) -> dict:
 
     attempts = list(state.get("attempts") or [])
     attempts.append(attempt_record)
+
+    # --- Emit per-attempt verdict event ---
+    event_log = state.get("event_log")
+    if event_log is not None:
+        wo_id = state.get("work_order", {}).get("id", "?")
+        ev_data: dict[str, Any] = {
+            "wo_id": wo_id,
+            "status": "pass" if verdict == "PASS" else "fail",
+            "attempt": attempt_index,
+        }
+        if failure_brief:
+            ev_data["failure_stage"] = failure_brief.get("stage", "unknown")
+        event_log.emit("wo_status", **ev_data)
 
     # --- Rollback on failure (safe even when no writes were applied) ---
     repo_tree_hash_after: Optional[str] = None
