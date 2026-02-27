@@ -8,7 +8,7 @@ interface Props {
 
 export default function StreamPanel({ text, isRunning }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLPreElement>(null);
-  const shouldAutoScrollRef = useRef(true);
+  const userScrolledUpRef = useRef(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -17,8 +17,8 @@ export default function StreamPanel({ text, isRunning }: Props): React.JSX.Eleme
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-      shouldAutoScrollRef.current = isAtBottom;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      userScrolledUpRef.current = distanceFromBottom > 80;
     };
 
     container.addEventListener("scroll", handleScroll);
@@ -26,10 +26,22 @@ export default function StreamPanel({ text, isRunning }: Props): React.JSX.Eleme
   }, []);
 
   useEffect(() => {
-    if (shouldAutoScrollRef.current && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
+    if (!containerRef.current) return;
+    if (userScrolledUpRef.current) return;
+
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      }
+    });
   }, [text]);
+
+  // Re-engage auto-scroll when a new run starts
+  useEffect(() => {
+    if (isRunning) {
+      userScrolledUpRef.current = false;
+    }
+  }, [isRunning]);
 
   const handleCopy = useCallback(async () => {
     if (!text) return;
@@ -42,6 +54,13 @@ export default function StreamPanel({ text, isRunning }: Props): React.JSX.Eleme
     }
   }, [text]);
 
+  const scrollToBottom = useCallback(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      userScrolledUpRef.current = false;
+    }
+  }, []);
+
   const placeholder = isRunning
     ? "Connected. Waiting for events..."
     : "Planner reasoning and factory output will appear here...";
@@ -49,6 +68,15 @@ export default function StreamPanel({ text, isRunning }: Props): React.JSX.Eleme
   return (
     <>
       <div className={styles.toolbar}>
+        {text && userScrolledUpRef.current && isRunning && (
+          <button
+            className={styles.followBtn}
+            onClick={scrollToBottom}
+            title="Scroll to latest output"
+          >
+            ↓ Follow
+          </button>
+        )}
         {text && (
           <button
             className={styles.copyBtn}

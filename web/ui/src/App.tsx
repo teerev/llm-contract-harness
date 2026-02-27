@@ -82,25 +82,27 @@ export default function App() {
 
   return (
     <div className={styles.layout}>
-      {/* ── Error banner ── */}
-      {(submitError || showDisconnectBanner) && (
-        <div className={styles.errorBanner}>
-          <span>{submitError || runState.error}</span>
-          {showDisconnectBanner && (
-            <button className={styles.reconnectBtn} onClick={runState.reconnect}>
-              Reconnect
-            </button>
-          )}
-          {submitError && (
-            <button
-              className={styles.reconnectBtn}
-              onClick={() => { setSubmitError(null); setUiStatus("idle"); }}
-            >
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
+      {/* ── Error banner (always rendered to keep grid child count stable) ── */}
+      <div className={styles.errorBannerSlot}>
+        {(submitError || showDisconnectBanner) && (
+          <div className={styles.errorBanner}>
+            <span>{submitError || runState.error}</span>
+            {showDisconnectBanner && (
+              <button className={styles.reconnectBtn} onClick={runState.reconnect}>
+                Reconnect
+              </button>
+            )}
+            {submitError && (
+              <button
+                className={styles.reconnectBtn}
+                onClick={() => { setSubmitError(null); setUiStatus("idle"); }}
+              >
+                Dismiss
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Header ── */}
       <header className={styles.header}>

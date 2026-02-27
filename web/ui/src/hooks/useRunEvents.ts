@@ -103,6 +103,17 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             if (event.error) {
               newState.error = String(event.error);
             }
+            let extra = "";
+            if (status === "building") {
+              extra = "\n\n━━━ Factory: building work orders ━━━\n\n";
+            } else if (status === "pushing") {
+              extra = "\n━━━ Pushing to demo remote ━━━\n\n";
+            } else if (status === "complete") {
+              extra = "\n━━━ Pipeline complete ━━━\n";
+            } else if (status === "failed") {
+              extra = `\n━━━ Pipeline failed${event.error ? ": " + String(event.error) : ""} ━━━\n`;
+            }
+            if (extra) newState.streamText = prev.streamText + extra;
             return { ...prev, ...newState };
           }
 
@@ -135,7 +146,11 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               title: wo.title,
               status: "idle",
             }));
-            return { ...prev, workOrders };
+            const summary = woList
+              .map((wo) => `  ${wo.id}: ${wo.title}`)
+              .join("\n");
+            const extra = `\n━━━ Planner created ${woList.length} work orders ━━━\n${summary}\n`;
+            return { ...prev, workOrders, streamText: prev.streamText + extra };
           }
 
           case "wo_status": {
@@ -170,7 +185,28 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             if (status === "pass") woPassCount++;
             if (status === "fail") woFailCount++;
 
-            return { ...prev, workOrders, woPassCount, woFailCount };
+            const woTitle = prev.workOrders.find((w) => w.id === woId)?.title || "";
+            let extra = "";
+            if (status === "running") {
+              extra = `── ${woId}: ${woTitle} ──\n`;
+            } else if (status.startsWith("attempt_")) {
+              const n = status.replace("attempt_", "");
+              extra = `  Attempt ${n}...\n`;
+            } else if (status === "pass") {
+              extra = `  ✓ ${woId} passed\n\n`;
+            } else if (status === "fail") {
+              const reason = event.failure_stage ? ` (${event.failure_stage})` : "";
+              const errMsg = event.error ? `: ${event.error}` : "";
+              extra = `  ✗ ${woId} failed${reason}${errMsg}\n\n`;
+            }
+
+            return {
+              ...prev,
+              workOrders,
+              woPassCount,
+              woFailCount,
+              streamText: extra ? prev.streamText + extra : prev.streamText,
+            };
           }
 
           case "file_written": {
@@ -181,10 +217,14 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               path: f.path,
               lineCount: f.line_count,
             }));
+            const fileLines = files
+              .map((f) => `  ✎ ${f.path} (${f.line_count} lines)`)
+              .join("\n");
             return {
               ...prev,
               filesWritten: [...prev.filesWritten, ...newFiles],
               fileCount: prev.fileCount + newFiles.length,
+              streamText: prev.streamText + fileLines + "\n",
             };
           }
 

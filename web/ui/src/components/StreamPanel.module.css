@@ -9,7 +9,8 @@
   flex-shrink: 0;
 }
 
-.copyBtn {
+.copyBtn,
+.followBtn {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -20,9 +21,15 @@
   transition: color 0.15s, border-color 0.15s;
 }
 
-.copyBtn:hover {
+.copyBtn:hover,
+.followBtn:hover {
   color: var(--text);
   border-color: var(--text-dim);
+}
+
+.followBtn {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .container {
