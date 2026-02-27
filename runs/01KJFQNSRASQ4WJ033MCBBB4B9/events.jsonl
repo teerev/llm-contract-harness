@@ -1,0 +1,37 @@
+{"seq":1,"ts":"2026-02-27T14:22:37.836379Z","type":"pipeline_status","status":"planning"}
+{"seq":2,"ts":"2026-02-27T14:22:38.141567Z","type":"planner_reasoning_status","status":"start"}
+{"seq":3,"ts":"2026-02-27T14:22:38.141773Z","type":"planner_chunk","text":"Analyzing the product specification...\n"}
+{"seq":4,"ts":"2026-02-27T14:22:38.446565Z","type":"planner_chunk","text":"The user wants a command-line application.\n"}
+{"seq":5,"ts":"2026-02-27T14:22:38.751753Z","type":"planner_chunk","text":"I need to decompose this into work orders:\n"}
+{"seq":6,"ts":"2026-02-27T14:22:39.056916Z","type":"planner_chunk","text":"1. Bootstrap the verify script\n"}
+{"seq":7,"ts":"2026-02-27T14:22:39.363575Z","type":"planner_chunk","text":"2. Create the project scaffold with __init__.py\n"}
+{"seq":8,"ts":"2026-02-27T14:22:39.664533Z","type":"planner_chunk","text":"3. Implement the core game logic\n"}
+{"seq":9,"ts":"2026-02-27T14:22:39.967607Z","type":"planner_chunk","text":"4. Add a CLI entry point via __main__.py\n"}
+{"seq":10,"ts":"2026-02-27T14:22:40.272739Z","type":"planner_chunk","text":"5. Write comprehensive tests\n"}
+{"seq":11,"ts":"2026-02-27T14:22:40.576630Z","type":"planner_reasoning_status","status":"end"}
+{"seq":12,"ts":"2026-02-27T14:22:40.576729Z","type":"planner_status","status":"attempt_start","attempt":1,"max_attempts":5}
+{"seq":13,"ts":"2026-02-27T14:22:41.078951Z","type":"planner_status","status":"attempt_pass","attempt":1,"max_attempts":5}
+{"seq":14,"ts":"2026-02-27T14:22:41.080316Z","type":"work_orders_created","count":5,"work_orders":[{"id":"WO-01","title":"Bootstrap verify script"},{"id":"WO-02","title":"Create project scaffold"},{"id":"WO-03","title":"Implement core logic"},{"id":"WO-04","title":"Add CLI entry point"},{"id":"WO-05","title":"Write tests"}]}
+{"seq":15,"ts":"2026-02-27T14:22:41.080370Z","type":"planner_status","status":"done"}
+{"seq":16,"ts":"2026-02-27T14:22:41.388176Z","type":"pipeline_status","status":"building"}
+{"seq":17,"ts":"2026-02-27T14:22:41.388226Z","type":"wo_status","wo_id":"WO-01","status":"running","factory_run_id":"FAKE_FACTORY_WO-01"}
+{"seq":18,"ts":"2026-02-27T14:22:41.693291Z","type":"wo_status","wo_id":"WO-01","status":"attempt_1","attempt":1}
+{"seq":19,"ts":"2026-02-27T14:22:41.998443Z","type":"file_written","wo_id":"WO-01","files":[{"path":"src/wo_01.py","line_count":42}]}
+{"seq":20,"ts":"2026-02-27T14:22:42.200996Z","type":"wo_status","wo_id":"WO-01","status":"pass"}
+{"seq":21,"ts":"2026-02-27T14:22:42.407181Z","type":"wo_status","wo_id":"WO-02","status":"running","factory_run_id":"FAKE_FACTORY_WO-02"}
+{"seq":22,"ts":"2026-02-27T14:22:42.707717Z","type":"wo_status","wo_id":"WO-02","status":"attempt_1","attempt":1}
+{"seq":23,"ts":"2026-02-27T14:22:43.013454Z","type":"file_written","wo_id":"WO-02","files":[{"path":"src/wo_02.py","line_count":42}]}
+{"seq":24,"ts":"2026-02-27T14:22:43.218729Z","type":"wo_status","wo_id":"WO-02","status":"pass"}
+{"seq":25,"ts":"2026-02-27T14:22:43.424972Z","type":"wo_status","wo_id":"WO-03","status":"running","factory_run_id":"FAKE_FACTORY_WO-03"}
+{"seq":26,"ts":"2026-02-27T14:22:43.729655Z","type":"wo_status","wo_id":"WO-03","status":"attempt_1","attempt":1}
+{"seq":27,"ts":"2026-02-27T14:22:44.034825Z","type":"file_written","wo_id":"WO-03","files":[{"path":"src/wo_03.py","line_count":42}]}
+{"seq":28,"ts":"2026-02-27T14:22:44.236598Z","type":"wo_status","wo_id":"WO-03","status":"pass"}
+{"seq":29,"ts":"2026-02-27T14:22:44.442539Z","type":"wo_status","wo_id":"WO-04","status":"running","factory_run_id":"FAKE_FACTORY_WO-04"}
+{"seq":30,"ts":"2026-02-27T14:22:44.745615Z","type":"wo_status","wo_id":"WO-04","status":"attempt_1","attempt":1}
+{"seq":31,"ts":"2026-02-27T14:22:45.049374Z","type":"file_written","wo_id":"WO-04","files":[{"path":"src/wo_04.py","line_count":42}]}
+{"seq":32,"ts":"2026-02-27T14:22:45.253928Z","type":"wo_status","wo_id":"WO-04","status":"pass"}
+{"seq":33,"ts":"2026-02-27T14:22:45.460012Z","type":"wo_status","wo_id":"WO-05","status":"running","factory_run_id":"FAKE_FACTORY_WO-05"}
+{"seq":34,"ts":"2026-02-27T14:22:45.764705Z","type":"wo_status","wo_id":"WO-05","status":"attempt_1","attempt":1}
+{"seq":35,"ts":"2026-02-27T14:22:46.067717Z","type":"file_written","wo_id":"WO-05","files":[{"path":"src/wo_05.py","line_count":42}]}
+{"seq":36,"ts":"2026-02-27T14:22:46.270453Z","type":"wo_status","wo_id":"WO-05","status":"pass"}
+{"seq":37,"ts":"2026-02-27T14:22:46.476485Z","type":"pipeline_status","status":"complete"}

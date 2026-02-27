@@ -5,10 +5,12 @@ from __future__ import annotations
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from web.server import config
+from web.server.routes import init_routes, router
+from web.server.runner_fake import FakeRunner
+from web.server.store_local import LocalFileStore, LocalRunStore
 
 app = FastAPI(title="llmch", version="0.1.0")
 
@@ -18,6 +20,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Wire dependencies ---
+_run_store = LocalRunStore()
+_file_store = LocalFileStore(run_store=_run_store)
+_runner = FakeRunner(run_store=_run_store)
+init_routes(_run_store, _file_store, _runner)
+
+app.include_router(router)
 
 
 @app.get("/api/v1/health")
@@ -35,34 +45,6 @@ async def get_config() -> dict:
     }
 
 
-# --- Placeholder routes (replaced in WP1) ---
-
-
-@app.post("/api/v1/runs")
-async def create_run() -> JSONResponse:
-    return JSONResponse({"error": "not implemented"}, status_code=501)
-
-
-@app.get("/api/v1/runs/{run_id}")
-async def get_run(run_id: str) -> JSONResponse:
-    return JSONResponse({"error": "not implemented"}, status_code=501)
-
-
-@app.get("/api/v1/runs/{run_id}/events")
-async def get_events(run_id: str) -> JSONResponse:
-    return JSONResponse({"error": "not implemented"}, status_code=501)
-
-
-@app.get("/api/v1/runs/{run_id}/tree")
-async def get_tree(run_id: str, root: str = "repo") -> JSONResponse:
-    return JSONResponse({"error": "not implemented"}, status_code=501)
-
-
-@app.get("/api/v1/runs/{run_id}/file")
-async def get_file(run_id: str, root: str = "repo", path: str = "") -> JSONResponse:
-    return JSONResponse({"error": "not implemented"}, status_code=501)
-
-
 if config.STATIC_DIR:
     app.mount("/", StaticFiles(directory=config.STATIC_DIR, html=True), name="ui")
 
@@ -73,6 +55,7 @@ def main() -> None:
         host=config.HOST,
         port=config.PORT,
         reload=True,
+        reload_excludes=["runs/*", "artifacts/*", "my-project/*", "wo/*"],
     )
 
 

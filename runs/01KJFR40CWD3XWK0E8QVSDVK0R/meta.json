@@ -1,0 +1,29 @@
+{
+  "pipeline_run_id": "01KJFR40CWD3XWK0E8QVSDVK0R",
+  "status": "complete",
+  "prompt": "SSE readline fix",
+  "planner_run_id": "FAKE_PLANNER_01KJFR40CWD3",
+  "factory_run_ids": [
+    "FAKE_FACTORY_WO-01",
+    "FAKE_FACTORY_WO-02",
+    "FAKE_FACTORY_WO-03",
+    "FAKE_FACTORY_WO-04",
+    "FAKE_FACTORY_WO-05"
+  ],
+  "work_order_count": 5,
+  "work_order_verdicts": {
+    "WO-01": "pass",
+    "WO-02": "pass",
+    "WO-03": "pass",
+    "WO-04": "pass",
+    "WO-05": "pass"
+  },
+  "push_result": null,
+  "started_at": "2026-02-27T14:30:23.388949Z",
+  "finished_at": "2026-02-27T14:30:32.030522Z",
+  "error": null,
+  "opts": {
+    "push_to_demo": false,
+    "branch_name": null
+  }
+}
