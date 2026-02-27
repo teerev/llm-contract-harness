@@ -1,22 +1,42 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import FileExplorer from "./components/FileExplorer";
+import NodeDiagram from "./components/NodeDiagram";
+import StreamPanel from "./components/StreamPanel";
+import { useRunEvents } from "./hooks/useRunEvents";
 import styles from "./App.module.css";
 
-type Status = "idle" | "running" | "complete" | "failed";
+type UIStatus = "idle" | "running" | "complete" | "failed";
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
   const [pushDemo, setPushDemo] = useState(false);
   const [branchName, setBranchName] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [_runId, setRunId] = useState<string | null>(null);
+  const [uiStatus, setUiStatus] = useState<UIStatus>("idle");
+  const [runId, setRunId] = useState<string | null>(null);
+
+  const runState = useRunEvents(runId);
+
+  const derivedStatus: UIStatus =
+    runState.pipelineStatus === "complete"
+      ? "complete"
+      : runState.pipelineStatus === "failed"
+        ? "failed"
+        : runState.pipelineStatus === "idle"
+          ? uiStatus
+          : "running";
+
+  const isRunning = derivedStatus === "running";
 
   const canSubmit =
-    status !== "running" && prompt.trim().length > 0 && (!pushDemo || branchName.trim().length > 0);
+    !isRunning && prompt.trim().length > 0 && (!pushDemo || branchName.trim().length > 0);
 
-  async function handleRun() {
+  const fileExplorerKey = `${runId ?? "none"}-${runState.filesWritten.length}-${runState.artifactsWritten.length}`;
+
+  const handleRun = useCallback(async () => {
     if (!canSubmit) return;
-    setStatus("running");
+    setUiStatus("running");
+    runState.reset();
+
     try {
       const res = await fetch("/api/v1/runs", {
         method: "POST",
@@ -31,9 +51,9 @@ export default function App() {
       const data = await res.json();
       setRunId(data.run_id);
     } catch {
-      setStatus("failed");
+      setUiStatus("failed");
     }
-  }
+  }, [canSubmit, prompt, pushDemo, branchName, runState]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -59,7 +79,7 @@ export default function App() {
             disabled={!canSubmit}
             onClick={handleRun}
           >
-            {status === "running" ? "Running..." : "Run"}
+            {isRunning ? "Running..." : "Run"}
           </button>
         </div>
         <div className={styles.optionsRow}>
@@ -85,38 +105,45 @@ export default function App() {
       {/* ── Stream Panel ── */}
       <section className={styles.streamPanel}>
         <div className={styles.panelLabel}>Stream</div>
-        <pre className={styles.streamContent}>
-          {status === "idle"
-            ? "Planner reasoning and factory output will appear here..."
-            : "Connected. Waiting for events..."}
-        </pre>
+        <StreamPanel text={runState.streamText} isRunning={isRunning} />
       </section>
 
       {/* ── Node Diagram ── */}
       <section className={styles.diagramPanel}>
         <div className={styles.panelLabel}>Pipeline</div>
         <div className={styles.diagramContent}>
-          <div className={styles.node} data-status="idle">Planner</div>
-          <div className={styles.edge} />
-          <div className={styles.nodePlaceholder}>Work orders will appear here</div>
-          <div className={styles.edge} />
-          <div className={styles.node} data-status="idle">Complete</div>
+          <NodeDiagram
+            plannerStatus={runState.plannerStatus}
+            workOrders={runState.workOrders}
+            pipelineComplete={runState.pipelineStatus === "complete"}
+            pipelineFailed={runState.pipelineStatus === "failed"}
+          />
         </div>
       </section>
 
       {/* ── File Explorer ── */}
       <section className={styles.explorerPanel}>
-        <FileExplorer runId={_runId} />
+        <FileExplorer key={fileExplorerKey} runId={runId} />
       </section>
 
       {/* ── Result Strip ── */}
       <footer className={styles.resultStrip}>
-        <span className={styles.statusBadge} data-status={status}>
-          {status === "idle" && "Ready"}
-          {status === "running" && "Running..."}
-          {status === "complete" && "Complete"}
-          {status === "failed" && "Failed"}
+        <span className={styles.statusBadge} data-status={derivedStatus}>
+          {derivedStatus === "idle" && "Ready"}
+          {derivedStatus === "running" && `Running (${runState.pipelineStatus})...`}
+          {derivedStatus === "complete" && "Complete"}
+          {derivedStatus === "failed" && "Failed"}
         </span>
+        {(derivedStatus === "complete" || derivedStatus === "failed") && (
+          <span className={styles.summary}>
+            WO: {runState.woPassCount} passed, {runState.woFailCount} failed
+            {" · "}
+            Files: {runState.fileCount}
+          </span>
+        )}
+        {runState.error && (
+          <span className={styles.errorText}>{runState.error}</span>
+        )}
       </footer>
     </div>
   );
