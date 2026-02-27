@@ -9,10 +9,8 @@ from datetime import datetime, timezone
 from web.server import config
 from web.server.interfaces import (
     VALID_ROOTS,
-    FileStore,
     RunMeta,
     RunOptions,
-    RunStore,
     TreeEntry,
 )
 
@@ -31,13 +29,13 @@ SKIP_DIRS = frozenset({
 # ---------------------------------------------------------------------------
 
 class LocalRunStore:
-    """Persists RunMeta as ``runs/{id}/meta.json``."""
+    """Persists RunMeta as ``artifacts/pipeline/{id}/meta.json``."""
 
-    def __init__(self, runs_dir: str | None = None) -> None:
-        self._dir = runs_dir or config.RUNS_DIR
+    def __init__(self, artifacts_dir: str | None = None) -> None:
+        self._artifacts_dir = artifacts_dir or config.ARTIFACTS_DIR
 
     def _run_dir(self, run_id: str) -> str:
-        return os.path.join(self._dir, run_id)
+        return os.path.join(self._artifacts_dir, "pipeline", run_id)
 
     def _meta_path(self, run_id: str) -> str:
         return os.path.join(self._run_dir(run_id), "meta.json")
@@ -99,11 +97,9 @@ class LocalFileStore:
 
     def __init__(
         self,
-        runs_dir: str | None = None,
         artifacts_dir: str | None = None,
         run_store: LocalRunStore | None = None,
     ) -> None:
-        self._runs_dir = runs_dir or config.RUNS_DIR
         self._artifacts_dir = artifacts_dir or config.ARTIFACTS_DIR
         self._run_store = run_store
 
@@ -112,7 +108,7 @@ class LocalFileStore:
             raise ValueError(f"Invalid root: {root!r}. Must be one of {VALID_ROOTS}")
 
         if root == "repo":
-            return os.path.join(self._runs_dir, run_id, "repo")
+            return os.path.join(self._artifacts_dir, "pipeline", run_id, "repo")
 
         if root == "artifacts":
             return self._artifacts_dir
@@ -127,13 +123,7 @@ class LocalFileStore:
                     )
             except FileNotFoundError:
                 pass
-        # Fallback: scan for most-recent planner run
-        planner_root = os.path.join(self._artifacts_dir, "planner")
-        if os.path.isdir(planner_root):
-            runs = sorted(os.listdir(planner_root))
-            if runs:
-                return os.path.join(planner_root, runs[-1], "output")
-        return os.path.join(self._runs_dir, run_id, "work_orders")
+        return os.path.join(self._artifacts_dir, "pipeline", run_id, "work_orders")
 
     def tree(self, run_id: str, root: str) -> list[TreeEntry]:
         base = self._resolve_base(run_id, root)

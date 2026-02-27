@@ -106,6 +106,7 @@ def _log_reasoning_end() -> None:
 # ---------------------------------------------------------------------------
 
 _STREAM_STATUS_CB: Optional[Callable[[str], None]] = None
+_EVENT_LOG: Optional[Any] = None  # shared.event_log.EventLog when set
 
 
 def set_stream_status_callback(cb: Optional[Callable[[str], None]]) -> None:
@@ -122,6 +123,16 @@ def set_stream_status_callback(cb: Optional[Callable[[str], None]]) -> None:
     """
     global _STREAM_STATUS_CB
     _STREAM_STATUS_CB = cb
+
+
+def set_event_log(log: Optional[Any]) -> None:
+    """Attach an EventLog for emitting ``planner_chunk`` / ``planner_reasoning_status`` events.
+
+    Set to ``None`` to detach.  The CLI never calls this — it is used by
+    the web pipeline runner (WP2).
+    """
+    global _EVENT_LOG
+    _EVENT_LOG = log
 
 
 # ---------------------------------------------------------------------------
@@ -316,15 +327,21 @@ class OpenAIResponsesClient:
                                 _reasoning_started = True
                                 if _STREAM_STATUS_CB:
                                     _STREAM_STATUS_CB("reasoning_start")
+                                if _EVENT_LOG:
+                                    _EVENT_LOG.emit("planner_reasoning_status", status="start")
                                 _log_reasoning_start()
                             _log_reasoning_delta(delta)
                             reasoning_parts.append(delta)
+                            if _EVENT_LOG:
+                                _EVENT_LOG.emit("planner_chunk", text=delta)
 
                     elif etype == "response.reasoning_summary_text.done":
                         if _reasoning_started:
                             _log_reasoning_end()
                             if _STREAM_STATUS_CB:
                                 _STREAM_STATUS_CB("reasoning_end")
+                            if _EVENT_LOG:
+                                _EVENT_LOG.emit("planner_reasoning_status", status="end")
 
                     # --- Output text deltas (accumulated silently) ---
                     elif etype == "response.output_text.delta":

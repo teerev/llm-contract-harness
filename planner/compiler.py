@@ -218,6 +218,7 @@ def compile_plan(
     overwrite: bool = False,
     repo_path: str | None = None,
     on_attempt: AttemptCallback = None,
+    event_log: Any | None = None,
 ) -> CompileResult:
     """Compile a product spec into validated work orders.
 
@@ -307,6 +308,8 @@ def compile_plan(
 
     # --- Compile loop: generate → validate → revise ───────────────────
     _oai.DUMP_DIR = compile_artifacts
+    if event_log is not None:
+        _oai.set_event_log(event_log)
     client = OpenAIResponsesClient()
 
     # Track per-attempt results for the summary
@@ -324,6 +327,17 @@ def compile_plan(
                 max_attempts=MAX_COMPILE_ATTEMPTS,
                 **kwargs,
             ))
+        if event_log is not None:
+            status_map = {"start": "attempt_start", "pass": "attempt_pass", "fail": "attempt_fail"}
+            ev_data: dict[str, Any] = {
+                "status": status_map.get(kind, kind),
+                "attempt": attempt,
+                "max_attempts": MAX_COMPILE_ATTEMPTS,
+            }
+            errors = kwargs.get("errors")
+            if errors:
+                ev_data["errors"] = [str(e) for e in errors]
+            event_log.emit("planner_status", **ev_data)
 
     for attempt in range(1, MAX_COMPILE_ATTEMPTS + 1):
         _emit("start", attempt)
@@ -373,6 +387,9 @@ def compile_plan(
             # Final attempt — still can't parse
             result.errors = [str(e) for e in parse_errors]
             result.compile_attempts = attempt
+            if event_log is not None:
+                event_log.emit("planner_status", status="done")
+                _oai.set_event_log(None)
             _write_summary(result, compile_artifacts, ts_start, spec_path,
                            template_path, attempt_records)
             _finalize_run_json(run_dir, run_json, result, attempt_records)
@@ -443,6 +460,9 @@ def compile_plan(
             write_json_artifact(
                 os.path.join(outdir, "validation_errors.json"), structured
             )
+        if event_log is not None:
+            event_log.emit("planner_status", status="done")
+            _oai.set_event_log(None)
         _write_summary(result, compile_artifacts, ts_start, spec_path,
                        template_path, attempt_records)
         _finalize_run_json(run_dir, run_json, result, attempt_records)
@@ -539,12 +559,26 @@ def compile_plan(
     # ── Write canonical output ────────────────────────────────────────
     write_work_orders(canonical_output, final_work_orders, manifest)
 
+    if event_log is not None:
+        event_log.emit(
+            "work_orders_created",
+            count=len(final_work_orders),
+            work_orders=[
+                {"id": wo.get("id", ""), "title": wo.get("title", "")}
+                for wo in final_work_orders
+            ],
+        )
+
     # ── Optional export to user-specified outdir ──────────────────────
     if outdir:
         check_overwrite(outdir, overwrite)
         write_work_orders(outdir, final_work_orders, manifest)
 
     result.success = True
+
+    if event_log is not None:
+        event_log.emit("planner_status", status="done")
+        _oai.set_event_log(None)
 
     _write_summary(result, compile_artifacts, ts_start, spec_path,
                    template_path, attempt_records)

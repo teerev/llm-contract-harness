@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from web.server import config
 from web.server.routes import init_routes, router
-from web.server.runner_fake import FakeRunner
+from web.server.runner_local import LocalRunner
 from web.server.store_local import LocalFileStore, LocalRunStore
 
 app = FastAPI(title="llmch", version="0.1.0")
@@ -24,7 +24,7 @@ app.add_middleware(
 # --- Wire dependencies ---
 _run_store = LocalRunStore()
 _file_store = LocalFileStore(run_store=_run_store)
-_runner = FakeRunner(run_store=_run_store)
+_runner = LocalRunner(run_store=_run_store)
 init_routes(_run_store, _file_store, _runner)
 
 app.include_router(router)
@@ -55,7 +55,7 @@ def main() -> None:
         host=config.HOST,
         port=config.PORT,
         reload=True,
-        reload_excludes=["runs/*", "artifacts/*", "my-project/*", "wo/*"],
+        reload_excludes=["artifacts/*", "my-project/*", "wo/*", "runs/*"],
     )
 
 
