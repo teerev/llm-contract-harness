@@ -1,3 +1,30 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 2px 8px;
+  min-height: 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.copyBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.copyBtn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
 .container {
   flex: 1;
   overflow-y: auto;
@@ -12,9 +39,8 @@
   background: var(--bg);
 }
 
-.container:empty::before,
-.container:not(:empty) {
-  color: var(--text);
+.placeholderText {
+  color: var(--text-dim);
 }
 
 .cursor {

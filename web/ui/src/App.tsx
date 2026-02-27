@@ -15,6 +15,7 @@ export default function App() {
   const [uiStatus, setUiStatus] = useState<UIStatus>("idle");
   const [runId, setRunId] = useState<string | null>(null);
   const [demoRemoteConfigured, setDemoRemoteConfigured] = useState<boolean | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const runState = useRunEvents(runId);
 
@@ -44,6 +45,7 @@ export default function App() {
   const handleRun = useCallback(async () => {
     if (!canSubmit) return;
     setUiStatus("running");
+    setSubmitError(null);
     runState.reset();
 
     try {
@@ -56,11 +58,15 @@ export default function App() {
           branch_name: branchName.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       setRunId(data.run_id);
-    } catch {
+    } catch (err) {
       setUiStatus("failed");
+      setSubmitError(err instanceof Error ? err.message : "Failed to start run");
     }
   }, [canSubmit, prompt, pushDemo, branchName, runState]);
 
@@ -71,9 +77,31 @@ export default function App() {
   }
 
   const pushDisabled = demoRemoteConfigured === false;
+  const showDisconnectBanner =
+    runId && !runState.sseConnected && runState.error && derivedStatus === "running";
 
   return (
     <div className={styles.layout}>
+      {/* ── Error banner ── */}
+      {(submitError || showDisconnectBanner) && (
+        <div className={styles.errorBanner}>
+          <span>{submitError || runState.error}</span>
+          {showDisconnectBanner && (
+            <button className={styles.reconnectBtn} onClick={runState.reconnect}>
+              Reconnect
+            </button>
+          )}
+          {submitError && (
+            <button
+              className={styles.reconnectBtn}
+              onClick={() => { setSubmitError(null); setUiStatus("idle"); }}
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Header ── */}
       <header className={styles.header}>
         <div className={styles.promptRow}>
@@ -85,13 +113,18 @@ export default function App() {
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <button
-            className={styles.runBtn}
-            disabled={!canSubmit}
-            onClick={handleRun}
-          >
-            {isRunning ? "Running..." : "Run"}
-          </button>
+          <div className={styles.runBtnGroup}>
+            <button
+              className={styles.runBtn}
+              disabled={!canSubmit}
+              onClick={handleRun}
+            >
+              {isRunning ? "Running..." : "Run"}
+            </button>
+            <kbd className={styles.kbdHint}>
+              {navigator.platform?.includes("Mac") ? "\u2318" : "Ctrl"}+Enter
+            </kbd>
+          </div>
         </div>
         <div className={styles.optionsRow}>
           <label

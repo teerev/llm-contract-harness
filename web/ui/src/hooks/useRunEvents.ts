@@ -38,6 +38,7 @@ export interface RunState {
   woFailCount: number;
   fileCount: number;
   pushResult?: PushResult;
+  sseConnected: boolean;
 }
 
 const INITIAL_STATE: RunState = {
@@ -50,18 +51,24 @@ const INITIAL_STATE: RunState = {
   woPassCount: 0,
   woFailCount: 0,
   fileCount: 0,
+  sseConnected: false,
 };
 
 type EventHandler = (event: Record<string, unknown>) => void;
 
-export function useRunEvents(runId: string | null): RunState & { reset: () => void } {
+export function useRunEvents(runId: string | null): RunState & { reset: () => void; reconnect: () => void } {
   const [state, setState] = useState<RunState>(INITIAL_STATE);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastSeqRef = useRef<number>(0);
+  const [connectEpoch, setConnectEpoch] = useState(0);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
     lastSeqRef.current = 0;
+  }, []);
+
+  const reconnect = useCallback(() => {
+    setConnectEpoch((n) => n + 1);
   }, []);
 
   useEffect(() => {
@@ -69,10 +76,16 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       return;
     }
 
-    reset();
+    if (connectEpoch === 0) {
+      reset();
+    }
     const url = `/api/v1/runs/${runId}/events?last_seq=${lastSeqRef.current}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
+
+    es.onopen = () => {
+      setState((prev) => ({ ...prev, sseConnected: true, error: undefined }));
+    };
 
     const handleEvent: EventHandler = (event) => {
       const seq = typeof event.seq === "number" ? event.seq : 0;
@@ -237,7 +250,11 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
         const data = JSON.parse((e as MessageEvent).data);
         handleEvent(data);
       } catch {
-        setState((prev) => ({ ...prev, error: "SSE connection error" }));
+        setState((prev) => ({
+          ...prev,
+          error: "SSE connection lost. The pipeline may still be running.",
+          sseConnected: false,
+        }));
       }
       es.close();
     });
@@ -246,7 +263,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       es.close();
       eventSourceRef.current = null;
     };
-  }, [runId, reset]);
+  }, [runId, reset, connectEpoch]);
 
-  return { ...state, reset };
+  return { ...state, reset, reconnect };
 }
