@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { NodeStatus, WorkOrderNode } from "../hooks/useRunEvents";
 import styles from "./NodeDiagram.module.css";
 
@@ -7,6 +7,12 @@ interface Props {
   workOrders: WorkOrderNode[];
   pipelineComplete: boolean;
   pipelineFailed: boolean;
+}
+
+interface Edge {
+  id: string;
+  d: string;
+  color: string;
 }
 
 const STATUS_COLORS: Record<NodeStatus, string> = {
@@ -30,84 +36,191 @@ const STATUS_LABEL: Record<NodeStatus, string> = {
   fail: "Failed",
 };
 
+function bezierPath(x1: number, y1: number, x2: number, y2: number): string {
+  const dx = Math.abs(x2 - x1) * 0.4;
+  return `M ${x1},${y1} C ${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+}
+
+function edgeColor(status: NodeStatus): string {
+  switch (status) {
+    case "running":
+      return "var(--accent)";
+    case "pass":
+      return "var(--green)";
+    case "fail":
+      return "var(--red)";
+    default:
+      return "var(--border)";
+  }
+}
+
 export default function NodeDiagram({
   plannerStatus,
   workOrders,
   pipelineComplete,
   pipelineFailed,
 }: Props): React.JSX.Element {
-  const finalStatus: NodeStatus = pipelineFailed
+  const containerRef = useRef<HTMLDivElement>(null);
+  const plannerRef = useRef<HTMLDivElement>(null);
+  const repoRef = useRef<HTMLDivElement>(null);
+  const woRefs = useRef(new Map<string, HTMLDivElement>());
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
+
+  const repoStatus: NodeStatus = pipelineFailed
     ? "fail"
     : pipelineComplete
       ? "pass"
       : "idle";
 
-  return (
-    <div className={styles.container}>
-      <PipelineNode
-        label="Planner"
-        status={plannerStatus}
-        tooltip={`Planner — ${STATUS_LABEL[plannerStatus]}`}
-      />
-      <Edge />
+  const computeEdges = useCallback(() => {
+    const cEl = containerRef.current;
+    const pEl = plannerRef.current;
+    const rEl = repoRef.current;
+    if (!cEl || !pEl || !rEl) return;
 
-      {workOrders.length === 0 ? (
-        <div className={styles.placeholder}>Work orders will appear here</div>
-      ) : (
-        <div className={styles.woGroup}>
-          {workOrders.map((wo, idx) => {
-            const parts = [`${wo.id}: ${wo.title || "(untitled)"}`];
-            parts.push(`Status: ${STATUS_LABEL[wo.status]}`);
-            if (wo.attempt) parts.push(`Attempt: ${wo.attempt}`);
-            if (wo.factoryRunId) parts.push(`Factory: ${wo.factoryRunId}`);
-            return (
-              <React.Fragment key={wo.id}>
-                <PipelineNode
-                  label={wo.title || wo.id}
-                  status={wo.status}
-                  subtitle={wo.attempt ? `Attempt ${wo.attempt}` : undefined}
-                  tooltip={parts.join("\n")}
-                />
-                {idx < workOrders.length - 1 && <Edge />}
-              </React.Fragment>
-            );
-          })}
-        </div>
+    const cR = cEl.getBoundingClientRect();
+    setSvgSize({ w: cR.width, h: cR.height });
+
+    if (workOrders.length === 0) {
+      setEdges([]);
+      return;
+    }
+
+    const pR = pEl.getBoundingClientRect();
+    const rR = rEl.getBoundingClientRect();
+
+    const pRightX = pR.right - cR.left;
+    const pCY = pR.top + pR.height / 2 - cR.top;
+    const rLeftX = rR.left - cR.left;
+    const rCY = rR.top + rR.height / 2 - cR.top;
+
+    const next: Edge[] = [];
+
+    for (const wo of workOrders) {
+      const el = woRefs.current.get(wo.id);
+      if (!el) continue;
+      const wR = el.getBoundingClientRect();
+      const wLeftX = wR.left - cR.left;
+      const wRightX = wR.right - cR.left;
+      const wCY = wR.top + wR.height / 2 - cR.top;
+
+      next.push({
+        id: `p-${wo.id}`,
+        d: bezierPath(pRightX, pCY, wLeftX, wCY),
+        color: "var(--green)",
+      });
+
+      next.push({
+        id: `${wo.id}-r`,
+        d: bezierPath(wRightX, wCY, rLeftX, rCY),
+        color: edgeColor(wo.status),
+      });
+    }
+
+    setEdges(next);
+  }, [workOrders]);
+
+  const computeRef = useRef(computeEdges);
+  computeRef.current = computeEdges;
+
+  useEffect(() => {
+    requestAnimationFrame(() => computeRef.current());
+  }, [workOrders, plannerStatus, pipelineComplete, pipelineFailed]);
+
+  useEffect(() => {
+    const cEl = containerRef.current;
+    if (!cEl) return;
+    const ro = new ResizeObserver(() => computeRef.current());
+    ro.observe(cEl);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className={styles.container}>
+      {svgSize.w > 0 && svgSize.h > 0 && (
+        <svg
+          className={styles.edgeLayer}
+          viewBox={`0 0 ${svgSize.w} ${svgSize.h}`}
+        >
+          {edges.map((e) => (
+            <path
+              key={e.id}
+              d={e.d}
+              stroke={e.color}
+              className={styles.edgePath}
+            />
+          ))}
+        </svg>
       )}
 
-      <Edge />
-      <PipelineNode
-        label="Complete"
-        status={finalStatus}
-        tooltip={`Pipeline — ${STATUS_LABEL[finalStatus]}`}
-      />
+      <div className={styles.leftCol}>
+        <DiagramNode
+          ref={plannerRef}
+          label="Planner"
+          status={plannerStatus}
+          tooltip={`Planner — ${STATUS_LABEL[plannerStatus]}`}
+        />
+      </div>
+
+      <div className={styles.middleCol}>
+        {workOrders.length === 0 ? (
+          <div className={styles.placeholder}>
+            Work orders will appear here
+          </div>
+        ) : (
+          workOrders.map((wo) => {
+            const tip = [
+              `${wo.id}: ${wo.title || "(untitled)"}`,
+              `Status: ${STATUS_LABEL[wo.status]}`,
+              wo.attempt ? `Attempt: ${wo.attempt}` : "",
+              wo.factoryRunId ? `Factory: ${wo.factoryRunId}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            return (
+              <DiagramNode
+                key={wo.id}
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) woRefs.current.set(wo.id, el);
+                  else woRefs.current.delete(wo.id);
+                }}
+                label={wo.title || wo.id}
+                status={wo.status}
+                subtitle={wo.title ? wo.id : undefined}
+                tooltip={tip}
+              />
+            );
+          })
+        )}
+      </div>
+
+      <div className={styles.rightCol}>
+        <DiagramNode
+          ref={repoRef}
+          label="Repo"
+          status={repoStatus}
+          tooltip={`Repo — ${STATUS_LABEL[repoStatus]}`}
+        />
+      </div>
     </div>
   );
 }
 
-function PipelineNode({
-  label,
-  status,
-  subtitle,
-  tooltip,
-}: {
-  label: string;
-  status: NodeStatus;
-  subtitle?: string;
-  tooltip?: string;
-}): React.JSX.Element {
+const DiagramNode = React.forwardRef<
+  HTMLDivElement,
+  { label: string; status: NodeStatus; subtitle?: string; tooltip?: string }
+>(function DiagramNode({ label, status, subtitle, tooltip }, ref) {
   const borderColor = STATUS_COLORS[status];
   const bgColor = STATUS_BG[status];
   const textColor = status === "idle" ? "var(--text-dim)" : borderColor;
 
   return (
     <div
+      ref={ref}
       className={styles.node}
-      style={{
-        borderColor,
-        backgroundColor: bgColor,
-        color: textColor,
-      }}
+      style={{ borderColor, backgroundColor: bgColor, color: textColor }}
       title={tooltip}
     >
       <span className={styles.nodeLabel}>{label}</span>
@@ -115,8 +228,4 @@ function PipelineNode({
       {status === "running" && <span className={styles.pulse} />}
     </div>
   );
-}
-
-function Edge(): React.JSX.Element {
-  return <div className={styles.edge} />;
-}
+});

@@ -161,14 +161,12 @@ export default function App() {
       {/* ── Node Diagram ── */}
       <section className={styles.diagramPanel}>
         <div className={styles.panelLabel}>Pipeline</div>
-        <div className={styles.diagramContent}>
-          <NodeDiagram
-            plannerStatus={runState.plannerStatus}
-            workOrders={runState.workOrders}
-            pipelineComplete={runState.pipelineStatus === "complete"}
-            pipelineFailed={runState.pipelineStatus === "failed"}
-          />
-        </div>
+        <NodeDiagram
+          plannerStatus={runState.plannerStatus}
+          workOrders={runState.workOrders}
+          pipelineComplete={runState.pipelineStatus === "complete"}
+          pipelineFailed={runState.pipelineStatus === "failed"}
+        />
       </section>
 
       {/* ── File Explorer ── */}
