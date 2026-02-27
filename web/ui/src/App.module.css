@@ -1,0 +1,278 @@
+/* ── Root layout: stacked panels filling viewport ── */
+
+.layout {
+  display: grid;
+  grid-template-rows: auto 1fr 200px 2fr auto;
+  height: 100vh;
+  min-width: 900px;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+
+.header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.promptRow {
+  display: flex;
+  gap: 10px;
+}
+
+.promptInput {
+  flex: 1;
+  resize: none;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.promptInput::placeholder {
+  color: var(--text-dim);
+}
+
+.promptInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.runBtn {
+  padding: 8px 24px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: stretch;
+}
+
+.runBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.optionsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.branchInput {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  width: 220px;
+}
+
+.branchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Panel label (shared) ── */
+
+.panelLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+/* ── Stream panel ── */
+
+.streamPanel {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.streamContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Node diagram ── */
+
+.diagramPanel {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.diagramContent {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 20px;
+  overflow-x: auto;
+}
+
+.node {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 2px solid var(--border);
+  color: var(--text-dim);
+  background: var(--bg-input);
+  white-space: nowrap;
+}
+
+.node[data-status="running"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.node[data-status="pass"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.node[data-status="fail"] {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.edge {
+  width: 32px;
+  height: 2px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.nodePlaceholder {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+/* ── File explorer ── */
+
+.explorerPanel {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.treePane {
+  width: 260px;
+  min-width: 200px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.treeList {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 8px 0;
+}
+
+.treeRoot {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.treeRoot:hover {
+  color: var(--text);
+  background: var(--bg-input);
+}
+
+.viewerPane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewerContent {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Result strip ── */
+
+.resultStrip {
+  padding: 8px 16px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.statusBadge {
+  font-weight: 600;
+}
+
+.statusBadge[data-status="idle"] {
+  color: var(--text-dim);
+}
+
+.statusBadge[data-status="running"] {
+  color: var(--accent);
+}
+
+.statusBadge[data-status="complete"] {
+  color: var(--green);
+}
+
+.statusBadge[data-status="failed"] {
+  color: var(--red);
+}
