@@ -29,14 +29,17 @@ class RunMeta:
     factory_run_ids: list[str] = field(default_factory=list)
     work_order_count: int = 0
     work_order_verdicts: dict[str, str] = field(default_factory=dict)
-    push_result: dict[str, Any] | None = None
+    push_remote: str | None = None
+    push_branch: str | None = None
+    push_commit_sha: str | None = None
+    push_url: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
     opts: RunOptions = field(default_factory=RunOptions)
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "pipeline_run_id": self.pipeline_run_id,
             "status": self.status,
             "prompt": self.prompt,
@@ -44,11 +47,18 @@ class RunMeta:
             "factory_run_ids": self.factory_run_ids,
             "work_order_count": self.work_order_count,
             "work_order_verdicts": self.work_order_verdicts,
-            "push_result": self.push_result,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "error": self.error,
         }
+        if self.push_remote:
+            d["push_result"] = {
+                "remote": self.push_remote,
+                "branch": self.push_branch,
+                "commit_sha": self.push_commit_sha,
+                "url": self.push_url,
+            }
+        return d
 
 
 @dataclass

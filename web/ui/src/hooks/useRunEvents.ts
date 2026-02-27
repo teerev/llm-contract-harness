@@ -17,6 +17,15 @@ export interface FileWrittenEvent {
   lineCount: number;
 }
 
+export interface PushResult {
+  ok: boolean;
+  remote: string;
+  branch: string;
+  commitSha?: string;
+  url?: string;
+  error?: string;
+}
+
 export interface RunState {
   pipelineStatus: PipelineStatus;
   plannerStatus: NodeStatus;
@@ -28,6 +37,7 @@ export interface RunState {
   woPassCount: number;
   woFailCount: number;
   fileCount: number;
+  pushResult?: PushResult;
 }
 
 const INITIAL_STATE: RunState = {
@@ -178,9 +188,27 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             return { ...prev, streamText: prev.streamText + text + "\n" };
           }
 
-          case "git_push_started":
-          case "git_push_done":
-            return prev;
+          case "git_push_started": {
+            const remote = event.remote as string;
+            const branch = event.branch as string;
+            return {
+              ...prev,
+              pushResult: { ok: false, remote, branch },
+            };
+          }
+
+          case "git_push_done": {
+            const ok = event.ok as boolean;
+            const remote = event.remote as string;
+            const branch = event.branch as string;
+            const commitSha = event.commit_sha as string | undefined;
+            const url = event.url as string | undefined;
+            const error = event.error as string | undefined;
+            return {
+              ...prev,
+              pushResult: { ok, remote, branch, commitSha, url, error },
+            };
+          }
 
           default:
             return prev;

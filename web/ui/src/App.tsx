@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import FileExplorer from "./components/FileExplorer";
 import NodeDiagram from "./components/NodeDiagram";
 import StreamPanel from "./components/StreamPanel";
+import ResultStrip from "./components/ResultStrip";
 import { useRunEvents } from "./hooks/useRunEvents";
 import styles from "./App.module.css";
 
@@ -13,8 +14,16 @@ export default function App() {
   const [branchName, setBranchName] = useState("");
   const [uiStatus, setUiStatus] = useState<UIStatus>("idle");
   const [runId, setRunId] = useState<string | null>(null);
+  const [demoRemoteConfigured, setDemoRemoteConfigured] = useState<boolean | null>(null);
 
   const runState = useRunEvents(runId);
+
+  useEffect(() => {
+    fetch("/api/v1/config")
+      .then((res) => res.json())
+      .then((data) => setDemoRemoteConfigured(data.demo_remote_configured ?? false))
+      .catch(() => setDemoRemoteConfigured(false));
+  }, []);
 
   const derivedStatus: UIStatus =
     runState.pipelineStatus === "complete"
@@ -61,6 +70,8 @@ export default function App() {
     }
   }
 
+  const pushDisabled = demoRemoteConfigured === false;
+
   return (
     <div className={styles.layout}>
       {/* ── Header ── */}
@@ -83,15 +94,19 @@ export default function App() {
           </button>
         </div>
         <div className={styles.optionsRow}>
-          <label className={styles.checkLabel}>
+          <label
+            className={`${styles.checkLabel} ${pushDisabled ? styles.disabled : ""}`}
+            title={pushDisabled ? "Demo remote not configured (set LLMCH_DEMO_REMOTE_URL)" : undefined}
+          >
             <input
               type="checkbox"
               checked={pushDemo}
               onChange={(e) => setPushDemo(e.target.checked)}
+              disabled={pushDisabled}
             />
             Push to demo repo
           </label>
-          {pushDemo && (
+          {pushDemo && !pushDisabled && (
             <input
               className={styles.branchInput}
               placeholder="Branch name (required)"
@@ -127,24 +142,14 @@ export default function App() {
       </section>
 
       {/* ── Result Strip ── */}
-      <footer className={styles.resultStrip}>
-        <span className={styles.statusBadge} data-status={derivedStatus}>
-          {derivedStatus === "idle" && "Ready"}
-          {derivedStatus === "running" && `Running (${runState.pipelineStatus})...`}
-          {derivedStatus === "complete" && "Complete"}
-          {derivedStatus === "failed" && "Failed"}
-        </span>
-        {(derivedStatus === "complete" || derivedStatus === "failed") && (
-          <span className={styles.summary}>
-            WO: {runState.woPassCount} passed, {runState.woFailCount} failed
-            {" · "}
-            Files: {runState.fileCount}
-          </span>
-        )}
-        {runState.error && (
-          <span className={styles.errorText}>{runState.error}</span>
-        )}
-      </footer>
+      <ResultStrip
+        pipelineStatus={runState.pipelineStatus}
+        woPassCount={runState.woPassCount}
+        woFailCount={runState.woFailCount}
+        fileCount={runState.fileCount}
+        error={runState.error}
+        pushResult={runState.pushResult}
+      />
     </div>
   );
 }

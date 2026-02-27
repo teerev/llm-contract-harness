@@ -28,7 +28,7 @@ def execute_pipeline(
     opts: RunOptions,
     run_store: RunStore,
 ) -> None:
-    """Run the full pipeline: planner compile → factory run per WO.
+    """Run the full pipeline: planner compile → factory run per WO → optional push.
 
     This function blocks — the caller is responsible for running it in a
     background thread.
@@ -40,7 +40,13 @@ def execute_pipeline(
     try:
         wo_files = _run_planner(run_id, prompt, run_dir, log, run_store)
         if wo_files:
-            _run_factory(run_id, run_dir, wo_files, log, run_store)
+            factory_ok = _run_factory(run_id, run_dir, wo_files, log, run_store)
+            if factory_ok:
+                if opts.push_to_demo and opts.branch_name:
+                    _push_to_demo(run_id, run_dir, opts.branch_name, log, run_store)
+                else:
+                    run_store.update(run_id, status="complete", finished_at=_ts())
+                    log.emit("pipeline_status", status="complete")
     except Exception as exc:
         run_store.update(run_id, status="failed", finished_at=_ts(), error=str(exc))
         log.emit("pipeline_status", status="failed", error=str(exc))
@@ -109,8 +115,8 @@ def _run_factory(
     wo_files: list[str],
     log: EventLog,
     run_store: RunStore,
-) -> None:
-    """Execute factory for each WO sequentially."""
+) -> bool:
+    """Execute factory for each WO sequentially. Returns True if all passed."""
     from factory.run import run_work_order
     from factory.runtime import ensure_repo_venv, venv_env
     from factory.util import _sandboxed_env
@@ -167,11 +173,128 @@ def _run_factory(
             error_msg = result.get("error") or f"{wo_id} failed with verdict {verdict}"
             run_store.update(run_id, status="failed", finished_at=_ts(), error=error_msg)
             log.emit("pipeline_status", status="failed", error=error_msg)
-            return
+            return False
 
-    # All WOs passed
+    # All WOs passed — but don't emit complete yet if push is pending
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Push stage
+# ---------------------------------------------------------------------------
+
+def _push_to_demo(
+    run_id: str,
+    run_dir: str,
+    branch_name: str,
+    log: EventLog,
+    run_store: RunStore,
+) -> None:
+    """Push the repo to the demo remote. This is a post-step; failure doesn't fail the pipeline."""
+    demo_remote = config.DEMO_REMOTE_URL
+    if not demo_remote:
+        log.emit("console", text="Demo remote not configured, skipping push", level="warning")
+        run_store.update(run_id, status="complete", finished_at=_ts())
+        log.emit("pipeline_status", status="complete")
+        return
+
+    run_store.update(run_id, status="pushing")
+    log.emit("pipeline_status", status="pushing")
+
+    repo_dir = os.path.join(run_dir, "repo")
+
+    log.emit("git_push_started", remote=demo_remote, branch=branch_name)
+
+    try:
+        # Add demo remote (remove first if exists)
+        subprocess.run(
+            ["git", "remote", "remove", "demo"],
+            cwd=repo_dir, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "remote", "add", "demo", demo_remote],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+
+        # Get the current commit SHA
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir, check=True, capture_output=True, text=True,
+        )
+        commit_sha = result.stdout.strip()[:7]
+
+        # Push to demo remote
+        push_result = subprocess.run(
+            ["git", "push", "-f", "demo", f"HEAD:refs/heads/{branch_name}"],
+            cwd=repo_dir, capture_output=True, text=True,
+        )
+
+        if push_result.returncode != 0:
+            error = push_result.stderr.strip() or push_result.stdout.strip() or "push failed"
+            log.emit(
+                "git_push_done",
+                ok=False,
+                remote=demo_remote,
+                branch=branch_name,
+                error=error,
+            )
+            log.emit("console", text=f"Push failed: {error}", level="error")
+        else:
+            # Try to construct a web URL from the remote
+            web_url = _remote_to_web_url(demo_remote, branch_name)
+            log.emit(
+                "git_push_done",
+                ok=True,
+                remote=demo_remote,
+                branch=branch_name,
+                commit_sha=commit_sha,
+                url=web_url,
+            )
+            log.emit("console", text=f"Pushed to {demo_remote} @ {branch_name} ({commit_sha})", level="info")
+            run_store.update(
+                run_id,
+                push_remote=demo_remote,
+                push_branch=branch_name,
+                push_commit_sha=commit_sha,
+                push_url=web_url,
+            )
+
+    except subprocess.CalledProcessError as exc:
+        error = exc.stderr if hasattr(exc, "stderr") and exc.stderr else str(exc)
+        log.emit(
+            "git_push_done",
+            ok=False,
+            remote=demo_remote,
+            branch=branch_name,
+            error=error,
+        )
+        log.emit("console", text=f"Push error: {error}", level="error")
+    except Exception as exc:
+        log.emit(
+            "git_push_done",
+            ok=False,
+            remote=demo_remote,
+            branch=branch_name,
+            error=str(exc),
+        )
+        log.emit("console", text=f"Push error: {exc}", level="error")
+
+    # Always mark complete after push attempt (push failure is not pipeline failure)
     run_store.update(run_id, status="complete", finished_at=_ts())
     log.emit("pipeline_status", status="complete")
+
+
+def _remote_to_web_url(remote: str, branch: str) -> str | None:
+    """Convert a git remote URL to a web URL if possible."""
+    # git@github.com:org/repo.git -> https://github.com/org/repo/tree/branch
+    if remote.startswith("git@github.com:"):
+        path = remote.replace("git@github.com:", "").rstrip(".git")
+        return f"https://github.com/{path}/tree/{branch}"
+    # https://github.com/org/repo.git -> https://github.com/org/repo/tree/branch
+    if remote.startswith("https://github.com/"):
+        path = remote.replace("https://github.com/", "").rstrip(".git")
+        return f"https://github.com/{path}/tree/{branch}"
+    return None
 
 
 # ---------------------------------------------------------------------------
