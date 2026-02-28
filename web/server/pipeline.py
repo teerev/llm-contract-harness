@@ -209,24 +209,24 @@ def _push_to_demo(
         # Add demo remote (remove first if exists)
         subprocess.run(
             ["git", "remote", "remove", "demo"],
-            cwd=repo_dir, capture_output=True,
+            cwd=repo_dir, capture_output=True, timeout=_GIT_TIMEOUT,
         )
         subprocess.run(
             ["git", "remote", "add", "demo", demo_remote],
-            cwd=repo_dir, check=True, capture_output=True,
+            cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT,
         )
 
         # Get the current commit SHA
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=repo_dir, check=True, capture_output=True, text=True,
+            cwd=repo_dir, check=True, capture_output=True, text=True, timeout=_GIT_TIMEOUT,
         )
         commit_sha = result.stdout.strip()[:7]
 
         # Push to demo remote
         push_result = subprocess.run(
             ["git", "push", "-f", "demo", f"HEAD:refs/heads/{branch_name}"],
-            cwd=repo_dir, capture_output=True, text=True,
+            cwd=repo_dir, capture_output=True, text=True, timeout=_PUSH_TIMEOUT,
         )
 
         if push_result.returncode != 0:
@@ -259,6 +259,16 @@ def _push_to_demo(
                 push_url=web_url,
             )
 
+    except subprocess.TimeoutExpired:
+        error = f"Git push timed out after {_PUSH_TIMEOUT}s — remote may be unreachable"
+        log.emit(
+            "git_push_done",
+            ok=False,
+            remote=demo_remote,
+            branch=branch_name,
+            error=error,
+        )
+        log.emit("console", text=error, level="error")
     except subprocess.CalledProcessError as exc:
         error = exc.stderr if hasattr(exc, "stderr") and exc.stderr else str(exc)
         log.emit(
@@ -301,19 +311,23 @@ def _remote_to_web_url(remote: str, branch: str) -> str | None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+_GIT_TIMEOUT = 30   # seconds — local git operations
+_PUSH_TIMEOUT = 60  # seconds — network push (longer for remote I/O)
+
+
 def _init_repo(repo_dir: str) -> None:
     """Create a fresh git repo with one empty commit."""
     os.makedirs(repo_dir, exist_ok=True)
-    subprocess.run(["git", "init", "-q"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT)
     subprocess.run(
         ["git", "config", "user.email", "llmch@local"],
-        cwd=repo_dir, check=True, capture_output=True,
+        cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT,
     )
     subprocess.run(
         ["git", "config", "user.name", "llmch"],
-        cwd=repo_dir, check=True, capture_output=True,
+        cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT,
     )
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init", "-q"],
-        cwd=repo_dir, check=True, capture_output=True,
+        cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT,
     )
