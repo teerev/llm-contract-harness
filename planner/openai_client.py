@@ -211,8 +211,8 @@ class OpenAIResponsesClient:
             status = data.get("status", "unknown")
             resp_id = data.get("id", "?")
 
-            usage = data.get("usage", {})
-            reasoning_tok = usage.get("output_tokens_details", {}).get("reasoning_tokens", 0)
+            usage = data.get("usage") or {}
+            reasoning_tok = (usage.get("output_tokens_details") or {}).get("reasoning_tokens", 0)
             output_tok = usage.get("output_tokens", 0)
             _log(f"Response {resp_id}: status={status} "
                  f"output_tokens={output_tok} reasoning_tokens={reasoning_tok}")

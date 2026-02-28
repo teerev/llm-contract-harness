@@ -8,23 +8,42 @@ import styles from "./App.module.css";
 
 type UIStatus = "idle" | "running" | "complete" | "failed";
 
+interface Quota {
+  ip_remaining: number;
+  ip_limit: number;
+  global_remaining: number;
+  global_limit: number;
+}
+
 export default function App() {
   const [prompt, setPrompt] = useState("");
-  const [pushDemo, setPushDemo] = useState(false);
-  const [branchName, setBranchName] = useState("");
+  const [pushDemo, setPushDemo] = useState(true);
   const [uiStatus, setUiStatus] = useState<UIStatus>("idle");
   const [runId, setRunId] = useState<string | null>(null);
   const [demoRemoteConfigured, setDemoRemoteConfigured] = useState<boolean | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<Quota | null>(null);
 
   const runState = useRunEvents(runId);
+
+  const fetchQuota = useCallback(() => {
+    fetch("/api/v1/quota")
+      .then((r) => r.json())
+      .then((d) => setQuota(d))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/v1/config")
       .then((res) => res.json())
-      .then((data) => setDemoRemoteConfigured(data.demo_remote_configured ?? false))
+      .then((data) => {
+        const configured = data.demo_remote_configured ?? false;
+        setDemoRemoteConfigured(configured);
+        setPushDemo(configured);
+      })
       .catch(() => setDemoRemoteConfigured(false));
-  }, []);
+    fetchQuota();
+  }, [fetchQuota]);
 
   const derivedStatus: UIStatus =
     runState.pipelineStatus === "complete"
@@ -37,8 +56,10 @@ export default function App() {
 
   const isRunning = derivedStatus === "running";
 
-  const canSubmit =
-    !isRunning && prompt.trim().length > 0 && (!pushDemo || branchName.trim().length > 0);
+  const quotaExhausted =
+    quota !== null && (quota.ip_remaining <= 0 || quota.global_remaining <= 0);
+
+  const canSubmit = !isRunning && prompt.trim().length > 0 && !quotaExhausted;
 
   const fileExplorerKey = `${runId ?? "none"}-${runState.filesWritten.length}-${runState.artifactsWritten.length}`;
 
@@ -55,20 +76,33 @@ export default function App() {
         body: JSON.stringify({
           prompt: prompt.trim(),
           push_to_demo: pushDemo,
-          branch_name: branchName.trim() || null,
         }),
       });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
-      }
+
       const data = await res.json();
+
+      if (data.quota) {
+        setQuota(data.quota);
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
       setRunId(data.run_id);
     } catch (err) {
       setUiStatus("failed");
       setSubmitError(err instanceof Error ? err.message : "Failed to start run");
+      fetchQuota();
     }
-  }, [canSubmit, prompt, pushDemo, branchName, runState]);
+  }, [canSubmit, prompt, pushDemo, runState, fetchQuota]);
+
+  // Refresh quota when pipeline finishes
+  useEffect(() => {
+    if (runState.pipelineStatus === "complete" || runState.pipelineStatus === "failed") {
+      fetchQuota();
+    }
+  }, [runState.pipelineStatus, fetchQuota]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -82,7 +116,7 @@ export default function App() {
 
   return (
     <div className={styles.layout}>
-      {/* ── Error banner (always rendered to keep grid child count stable) ── */}
+      {/* ── Error banner ── */}
       <div className={styles.errorBannerSlot}>
         {(submitError || showDisconnectBanner) && (
           <div className={styles.errorBanner}>
@@ -141,13 +175,12 @@ export default function App() {
             />
             Push to demo repo
           </label>
-          {pushDemo && !pushDisabled && (
-            <input
-              className={styles.branchInput}
-              placeholder="Branch name (required)"
-              value={branchName}
-              onChange={(e) => setBranchName(e.target.value)}
-            />
+          {quota && (
+            <span className={`${styles.quotaInfo} ${quotaExhausted ? styles.quotaExhausted : ""}`}>
+              Your runs: {quota.ip_remaining}/{quota.ip_limit} remaining
+              {" · "}
+              Global: {quota.global_remaining}/{quota.global_limit} remaining
+            </span>
           )}
         </div>
       </header>

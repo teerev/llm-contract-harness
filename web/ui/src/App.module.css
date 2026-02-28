@@ -117,6 +117,17 @@
   margin-top: 8px;
 }
 
+.quotaInfo {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.quotaExhausted {
+  color: var(--red);
+  font-weight: 600;
+}
+
 .checkLabel {
   display: flex;
   align-items: center;

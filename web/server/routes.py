@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from web.server.interfaces import VALID_ROOTS
+from web.server.rate_limit import check_quota, try_consume
 from web.server.sse import stream_events
 from web.server.store_local import MAX_FILE_READ_BYTES
 
@@ -20,7 +21,6 @@ router = APIRouter(prefix="/api/v1")
 class CreateRunRequest(BaseModel):
     prompt: str
     push_to_demo: bool = False
-    branch_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -43,22 +43,54 @@ def init_routes(run_store, file_store, runner) -> None:  # noqa: ANN001
 # POST /runs
 # ---------------------------------------------------------------------------
 
+@router.get("/quota")
+async def get_quota(request: Request):
+    ip = request.client.host if request.client else "unknown"
+    return check_quota(ip)
+
+
 @router.post("/runs")
-async def create_run(body: CreateRunRequest) -> JSONResponse:
+async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
     if not body.prompt.strip():
         raise HTTPException(400, "prompt is required")
-    if body.push_to_demo and not (body.branch_name and body.branch_name.strip()):
-        raise HTTPException(400, "branch_name is required when push_to_demo is true")
 
+    ip = request.client.host if request.client else "unknown"
+    allowed, quota = try_consume(ip)
+    if not allowed:
+        reason = quota.get("reason", "")
+        if reason == "ip":
+            msg = (
+                f"Rate limit reached: you have used all {quota['ip_limit']} "
+                f"runs allowed per day. Try again tomorrow."
+            )
+        else:
+            msg = (
+                f"Global daily limit reached: {quota['global_limit']} total runs "
+                f"have been used today. Try again tomorrow."
+            )
+        return JSONResponse(
+            {"error": msg, "quota": quota},
+            status_code=429,
+        )
+
+    import secrets
     from web.server.interfaces import RunOptions
+
+    branch_name = None
+    if body.push_to_demo:
+        suffix = secrets.token_hex(3)
+        branch_name = f"build-{suffix}"
 
     opts = RunOptions(
         push_to_demo=body.push_to_demo,
-        branch_name=body.branch_name,
+        branch_name=branch_name,
     )
     run_id = _run_store.create(body.prompt.strip(), opts)
     _runner.start(run_id, body.prompt.strip(), opts)
-    return JSONResponse({"run_id": run_id}, status_code=202)
+    return JSONResponse(
+        {"run_id": run_id, "branch_name": branch_name, "quota": quota},
+        status_code=202,
+    )
 
 
 # ---------------------------------------------------------------------------

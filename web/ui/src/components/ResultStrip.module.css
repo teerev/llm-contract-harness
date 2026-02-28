@@ -1,3 +1,57 @@
+/* ── Prominent success banner ── */
+
+.successBanner {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%);
+  border-top: 2px solid var(--green);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.successIcon {
+  font-size: 20px;
+  color: var(--green);
+}
+
+.successText {
+  color: var(--text);
+  flex: 1;
+}
+
+.successLink {
+  color: var(--green);
+  font-weight: 600;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.successLink:hover {
+  text-decoration: underline;
+}
+
+.copyBtn {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid var(--green);
+  border-radius: 4px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.copyBtn:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+/* ── Standard strip ── */
+
 .strip {
   position: sticky;
   bottom: 0;

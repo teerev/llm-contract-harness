@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import type { PipelineStatus, PushResult } from "../hooks/useRunEvents";
 import styles from "./ResultStrip.module.css";
 
@@ -23,6 +23,41 @@ export default function ResultStrip({
   const isFailed = pipelineStatus === "failed";
   const isRunning = !isComplete && !isFailed && pipelineStatus !== "idle";
   const showSummary = isComplete || isFailed;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUrl = useCallback(async () => {
+    if (!pushResult?.url) return;
+    try {
+      await navigator.clipboard.writeText(pushResult.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may fail in some contexts
+    }
+  }, [pushResult?.url]);
+
+  // Show prominent success banner when push succeeded
+  if (isComplete && pushResult?.ok && pushResult.url) {
+    return (
+      <footer className={styles.successBanner}>
+        <span className={styles.successIcon}>✓</span>
+        <span className={styles.successText}>
+          Success! Your code is live at{" "}
+          <a
+            href={pushResult.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.successLink}
+          >
+            {pushResult.url}
+          </a>
+        </span>
+        <button className={styles.copyBtn} onClick={handleCopyUrl} title="Copy URL">
+          {copied ? "Copied!" : "Copy"}
+        </button>
+      </footer>
+    );
+  }
 
   return (
     <footer className={styles.strip}>
@@ -43,30 +78,9 @@ export default function ResultStrip({
         </span>
       )}
 
-      {pushResult && (
-        <span className={pushResult.ok ? styles.pushSuccess : styles.pushError}>
-          {pushResult.ok ? (
-            <>
-              Pushed to{" "}
-              {pushResult.url ? (
-                <a
-                  href={pushResult.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.pushLink}
-                >
-                  {pushResult.branch}
-                </a>
-              ) : (
-                <span>{pushResult.branch}</span>
-              )}
-              {pushResult.commitSha && (
-                <span className={styles.commitSha}> ({pushResult.commitSha})</span>
-              )}
-            </>
-          ) : (
-            <>Push failed: {pushResult.error || "unknown error"}</>
-          )}
+      {pushResult && pushResult.ok === false && (
+        <span className={styles.pushError}>
+          Push failed: {pushResult.error || "unknown error"}
         </span>
       )}
 

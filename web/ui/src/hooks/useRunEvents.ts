@@ -18,7 +18,7 @@ export interface FileWrittenEvent {
 }
 
 export interface PushResult {
-  ok: boolean;
+  ok?: boolean;  // undefined = pending, true = success, false = failed
   remote: string;
   branch: string;
   commitSha?: string;
@@ -246,7 +246,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             const branch = event.branch as string;
             return {
               ...prev,
-              pushResult: { ok: false, remote, branch },
+              pushResult: { ok: undefined, remote, branch },
             };
           }
 
