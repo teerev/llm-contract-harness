@@ -81,8 +81,8 @@ bootstrap: ## Create .venv, install package + dev deps
 	fi
 	@echo "  Upgrading pip..."
 	@$(PIP) install --upgrade pip -q
-	@echo "  Installing llm-contract-harness (editable + dev)..."
-	@$(PIP) install -e ".[dev]" -q
+	@echo "  Installing llm-contract-harness (editable + dev + web)..."
+	@$(PIP) install -c requirements.lock -e ".[dev,web]" -q
 	@echo ""
 	@echo "  ✔  Installed.  Entrypoint: $(LLMCH)"
 	@echo ""

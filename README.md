@@ -21,10 +21,11 @@ This creates a virtualenv, installs the package, sets up a fresh target repo, pl
 **Manual steps** (same thing, step by step):
 
 ```bash
-# Install
+# Install (reproducible — uses pinned versions from requirements.lock)
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
-export OPENAI_API_KEY=sk-...
+pip install -c requirements.lock -e ".[web]"
+cp .env.example .env          # then fill in OPENAI_API_KEY
+set -a && source .env && set +a
 
 # Prepare a target repo (must be a git repo with at least one commit)
 mkdir my-project && cd my-project && git init && git commit --allow-empty -m init && cd ..
@@ -247,7 +248,7 @@ streams reasoning live, and lets you browse all generated artifacts.
 ### Extra prerequisites
 
 - **Node.js 20+** and **npm** (for the frontend dev server)
-- Install with: `pip install -e ".[web]"`
+- Install with: `pip install -c requirements.lock -e ".[web]"`
 
 ### Quick start (two terminals)
 
