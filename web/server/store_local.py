@@ -216,7 +216,14 @@ class LocalFileStore:
             entries.append(TreeEntry(path=prefix + "/", type="dir"))
 
             # Walk the physical directory and prefix paths
-            for entry in self._walk_dir(phys_dir):
+            # Exclude "output" from planner dirs (redundant with work_orders root)
+            # Exclude "repo" from pipeline dirs (redundant with repo root)
+            extra_skip: set[str] = set()
+            if parent == "planner":
+                extra_skip.add("output")
+            elif parent == "pipeline":
+                extra_skip.add("repo")
+            for entry in self._walk_dir(phys_dir, extra_skip=extra_skip):
                 entries.append(TreeEntry(
                     path=f"{prefix}/{entry.path}",
                     type=entry.type,
@@ -227,11 +234,12 @@ class LocalFileStore:
         entries.sort(key=lambda e: (e.type != "dir", e.path.lower()))
         return entries
 
-    def _walk_dir(self, base: str) -> list[TreeEntry]:
+    def _walk_dir(self, base: str, extra_skip: set[str] | None = None) -> list[TreeEntry]:
         """Walk a physical directory and return entries with relative paths."""
+        skip = SKIP_DIRS | (extra_skip or set())
         entries: list[TreeEntry] = []
         for dirpath, dirnames, filenames in os.walk(base):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            dirnames[:] = [d for d in dirnames if d not in skip]
             rel_dir = os.path.relpath(dirpath, base)
 
             if rel_dir != ".":

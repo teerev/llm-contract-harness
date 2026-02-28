@@ -307,8 +307,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
     es.addEventListener("git_push_started", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("git_push_done", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("ping", () => {});
-    es.addEventListener("done", (e) => {
-      handleEvent(JSON.parse(e.data));
+    es.addEventListener("done", () => {
       es.close();
     });
     es.addEventListener("error", (e) => {

@@ -40,6 +40,41 @@ from planner.defaults import (  # noqa: F401 — re-exported for backward compat
 DUMP_DIR: Optional[str] = None  # set by compiler before calling
 
 
+# ---------------------------------------------------------------------------
+# User-friendly error messages for common OpenAI API errors
+# ---------------------------------------------------------------------------
+
+def _friendly_api_error(status_code: int, response_text: str) -> str:
+    """Parse OpenAI error response and return a user-friendly message."""
+    try:
+        data = json.loads(response_text)
+        error = data.get("error", {})
+        code = error.get("code", "")
+        message = error.get("message", "")
+        
+        if code == "insufficient_quota":
+            return (
+                "OpenAI API quota exceeded. The API credits for this demo have been "
+                "exhausted. Please try again later or contact the administrator."
+            )
+        if code == "rate_limit_exceeded" or "rate limit" in message.lower():
+            return (
+                "OpenAI API rate limit reached. Too many requests are being made. "
+                "Please wait a moment and try again."
+            )
+        if code == "invalid_api_key":
+            return "OpenAI API key is invalid or expired. Please contact the administrator."
+        if code == "model_not_found":
+            return f"OpenAI model not found: {message}"
+        
+        if message:
+            return f"OpenAI API error: {message}"
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    
+    return f"OpenAI API error {status_code}: {response_text[:500]}"
+
+
 def _log(msg: str) -> None:
     """Log an OpenAI transport message to stderr.
 
@@ -301,9 +336,7 @@ class OpenAIResponsesClient:
             ) as resp:
                 if resp.status_code != 200:
                     resp.read()
-                    raise RuntimeError(
-                        f"API error {resp.status_code}: {resp.text[:1000]}"
-                    )
+                    raise RuntimeError(_friendly_api_error(resp.status_code, resp.text))
 
                 for line in resp.iter_lines():
                     if not line.startswith("data: "):
@@ -454,17 +487,12 @@ class OpenAIResponsesClient:
                     _log(f"{method} {r.status_code}. Retry in {delay:.0f}s "
                          f"(attempt {attempt}/{MAX_TRANSPORT_RETRIES})")
                     if attempt >= MAX_TRANSPORT_RETRIES:
-                        raise RuntimeError(
-                            f"API returned {r.status_code} after "
-                            f"{MAX_TRANSPORT_RETRIES} attempts: {r.text[:500]}"
-                        )
+                        raise RuntimeError(_friendly_api_error(r.status_code, r.text))
                     time.sleep(delay)
                     continue
 
                 if r.status_code < 200 or r.status_code >= 300:
-                    raise RuntimeError(
-                        f"API error {r.status_code}: {r.text[:1000]}"
-                    )
+                    raise RuntimeError(_friendly_api_error(r.status_code, r.text))
                 return r.json()
 
             except (
