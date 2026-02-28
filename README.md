@@ -281,3 +281,64 @@ python -m web.server.main     # serves the built UI at http://localhost:8000
 | `LLMCH_PORT` | `8000` | Backend bind port |
 | `LLMCH_ARTIFACTS_DIR` | `./artifacts` | Artifacts root — all data lives here |
 | `LLMCH_DEMO_REMOTE_URL` | *(none)* | Git remote URL for the demo push feature |
+| `LLMCH_RATE_LIMIT_PER_IP` | `100` | Max pipeline runs per IP per day |
+| `LLMCH_RATE_LIMIT_GLOBAL` | `100` | Max pipeline runs globally per day |
+
+---
+
+## Security & Limitations
+
+This project is a **solo-developer demo** designed for a public LinkedIn audience.
+The following trade-offs are intentional and documented here for transparency.
+
+### Execution sandbox
+
+Verify and acceptance commands (e.g. `bash scripts/verify.sh`, `python -m pytest`)
+run **unsandboxed** with the server process's privileges.  There is no network
+isolation, filesystem jail, or cgroup/seccomp restriction.  LLM-generated code
+can make outbound HTTP calls, read environment variables (excluding `OPENAI_API_KEY`
+which is only in the server process, not passed to subprocesses), or write files
+outside the target repo (though the factory's scope-checking gates reject writes
+to paths outside `allowed_files`).
+
+*Why this is acceptable*: the demo runs on a single disposable instance.
+Enterprise sandboxing (nsjail, Firecracker, gVisor) is out of scope for a
+solo-dev proof of concept.
+
+### Arbitrary user prompts
+
+The UI accepts free-text prompts which drive LLM code generation.  There are no
+content filters on the prompt itself.  The structural enforcement gates
+(preconditions, postconditions, acceptance tests, file-scope checks, hash
+verification) constrain what the LLM *can successfully commit*, but the LLM can
+still *attempt* arbitrary code during verify/acceptance execution.
+
+### Rate limiting
+
+- IP-based daily limits (configurable via `LLMCH_RATE_LIMIT_PER_IP`).
+- Global daily limit (configurable via `LLMCH_RATE_LIMIT_GLOBAL`).
+- Backed by SQLite — single-process only; will not scale across multiple server
+  instances without migrating to Redis or DynamoDB.
+- Easily circumvented by rotating source IPs.  Acceptable for a demo; not
+  suitable as a billing or abuse-prevention mechanism.
+
+### Concurrency
+
+Only one pipeline runs at a time (enforced by a semaphore in `LocalRunner`).
+Submitting a second run while one is in progress returns HTTP 429.  This is by
+design for a single-instance demo — horizontal scaling is out of scope.
+
+### Secrets
+
+- `OPENAI_API_KEY` is read from the environment and never written to artifacts,
+  event logs, or API responses.
+- The `.env` file is gitignored.  See `.env.example` for the full variable list.
+- Git push credentials use the server's SSH agent or git credential helper —
+  no credentials are embedded in code or config.
+
+### Artifact storage
+
+All run data is stored locally under `artifacts/` with ULID-based subdirectories.
+This is sufficient for a single-instance demo.  For multi-instance AWS deployment,
+the `FileStore` and `RunStore` protocol interfaces are designed to be swapped for
+S3/DynamoDB-backed implementations without changing the API layer or UI.
