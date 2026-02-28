@@ -7,6 +7,7 @@ per-run EventLog and updates RunStore metadata at each stage transition.
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import subprocess
@@ -53,6 +54,64 @@ def execute_pipeline(
         log.emit("console", text=traceback.format_exc(), level="error")
     finally:
         log.close()
+        _write_manifest(run_id, run_store)
+
+
+# ---------------------------------------------------------------------------
+# Manifest — provenance record written after every pipeline run
+# ---------------------------------------------------------------------------
+
+def _sha256_file(path: str) -> str | None:
+    """Return hex SHA-256 of a file, or None if unreadable."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _write_manifest(run_id: str, run_store: RunStore) -> None:
+    """Write manifest.json with provenance data for the completed pipeline run."""
+    try:
+        meta = run_store.get(run_id)
+    except FileNotFoundError:
+        return
+
+    run_dir = os.path.join(config.ARTIFACTS_DIR, "pipeline", run_id)
+    spec_path = os.path.join(run_dir, "spec.txt")
+
+    manifest: dict = {
+        "pipeline_run_id": run_id,
+        "planner_run_id": meta.planner_run_id,
+        "factory_run_ids": meta.factory_run_ids,
+        "status": meta.status,
+        "started_at": meta.started_at,
+        "finished_at": meta.finished_at,
+        "work_order_count": meta.work_order_count,
+        "verdicts": meta.work_order_verdicts,
+        "prompt_sha256": _sha256_file(spec_path),
+    }
+
+    if meta.push_remote:
+        manifest["push"] = {
+            "remote": meta.push_remote,
+            "branch": meta.push_branch,
+            "commit_sha": meta.push_commit_sha,
+            "url": meta.push_url,
+        }
+
+    if meta.error:
+        manifest["error"] = meta.error
+
+    manifest_path = os.path.join(run_dir, "manifest.json")
+    try:
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, ensure_ascii=False)
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------------------
