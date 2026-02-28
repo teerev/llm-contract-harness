@@ -41,15 +41,40 @@ def complete(
     *timeout* is the per-request timeout in seconds.  Defaults to 120 s.
     """
     client = _get_client(timeout=timeout)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+        )
+    except Exception as exc:
+        raise RuntimeError(_friendly_llm_error(exc)) from exc
     content = response.choices[0].message.content
     if content is None:
         raise RuntimeError("LLM returned None content in response")
     return content
+
+
+def _friendly_llm_error(exc: Exception) -> str:
+    """Convert openai SDK exceptions into user-friendly messages."""
+    exc_type = type(exc).__name__
+    msg = str(exc)
+    lower = msg.lower()
+
+    if "insufficient_quota" in lower or "exceeded your current quota" in lower:
+        return (
+            "OpenAI API quota exceeded. The API credits for this demo have been "
+            "exhausted. Please try again later or contact the administrator."
+        )
+    if "rate_limit" in exc_type.lower() or "rate limit" in lower:
+        return (
+            "OpenAI API rate limit reached. Too many requests are being made. "
+            "Please wait a moment and try again."
+        )
+    if "authentication" in lower or "invalid_api_key" in lower or "401" in msg:
+        return "OpenAI API key is invalid or expired. Please contact the administrator."
+
+    return f"OpenAI API error: {msg[:500]}"
 
 
 def parse_proposal_json(raw: str) -> dict:

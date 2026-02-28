@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from web.server.interfaces import VALID_ROOTS
 from web.server.rate_limit import check_quota, try_consume
@@ -18,8 +18,11 @@ router = APIRouter(prefix="/api/v1")
 # Request models
 # ---------------------------------------------------------------------------
 
+_MAX_PROMPT_LENGTH = 10_000
+
+
 class CreateRunRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(..., max_length=_MAX_PROMPT_LENGTH)
     push_to_demo: bool = False
 
 
@@ -85,8 +88,19 @@ async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
         push_to_demo=body.push_to_demo,
         branch_name=branch_name,
     )
+
+    if _runner.busy:
+        return JSONResponse(
+            {"error": "A pipeline is already running. Please wait for it to finish."},
+            status_code=429,
+        )
+
     run_id = _run_store.create(body.prompt.strip(), opts)
-    _runner.start(run_id, body.prompt.strip(), opts)
+    try:
+        _runner.start(run_id, body.prompt.strip(), opts)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=429)
+
     return JSONResponse(
         {"run_id": run_id, "branch_name": branch_name, "quota": quota},
         status_code=202,
