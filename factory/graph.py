@@ -148,6 +148,16 @@ def _finalize_node(state: dict) -> dict:
         }
         if failure_brief:
             ev_data["failure_stage"] = failure_brief.get("stage", "unknown")
+            cmd = failure_brief.get("command")
+            if cmd:
+                ev_data["failed_command"] = cmd
+            excerpt = failure_brief.get("primary_error_excerpt", "")
+            if excerpt:
+                # Truncate to keep SSE payload manageable
+                lines = excerpt.strip().splitlines()
+                if len(lines) > 20:
+                    lines = lines[:20] + [f"... ({len(lines) - 20} more lines)"]
+                ev_data["error_excerpt"] = "\n".join(lines)
         event_log.emit("wo_status", **ev_data)
 
     # --- Rollback on failure (safe even when no writes were applied) ---

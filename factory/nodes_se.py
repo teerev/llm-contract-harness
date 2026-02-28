@@ -284,4 +284,14 @@ def se_node(state: dict) -> dict:
         proposal.model_dump(), os.path.join(attempt_dir, ARTIFACT_PROPOSED_WRITES)
     )
 
+    if event_log is not None:
+        file_targets = [w.path for w in proposal.writes] if proposal.writes else []
+        event_log.emit(
+            "wo_proposal",
+            wo_id=work_order.id,
+            attempt=attempt_index,
+            summary=proposal.summary or "",
+            files=file_targets,
+        )
+
     return {"proposal": proposal.model_dump(), "write_ok": False, "failure_brief": None}

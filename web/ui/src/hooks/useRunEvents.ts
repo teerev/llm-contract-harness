@@ -193,11 +193,23 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               const n = status.replace("attempt_", "");
               extra = `  Attempt ${n}...\n`;
             } else if (status === "pass") {
-              extra = `  ✓ ${woId} passed\n\n`;
+              extra = `  ✓ ${woId} passed (attempt ${event.attempt ?? "?"})\n\n`;
             } else if (status === "fail") {
-              const reason = event.failure_stage ? ` (${event.failure_stage})` : "";
-              const errMsg = event.error ? `: ${event.error}` : "";
-              extra = `  ✗ ${woId} failed${reason}${errMsg}\n\n`;
+              const stage = event.failure_stage as string | undefined;
+              const cmd = event.failed_command as string | undefined;
+              const excerpt = event.error_excerpt as string | undefined;
+              const attempt = event.attempt as number | undefined;
+
+              extra = `  ✗ Attempt ${attempt ?? "?"} failed`;
+              if (stage) extra += ` at ${stage}`;
+              extra += "\n";
+              if (cmd) extra += `    Command: ${cmd}\n`;
+              if (excerpt) {
+                const lines = excerpt.split("\n");
+                const indented = lines.map((l: string) => `    │ ${l}`).join("\n");
+                extra += `${indented}\n`;
+              }
+              extra += "\n";
             }
 
             return {
@@ -207,6 +219,19 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               woFailCount,
               streamText: extra ? prev.streamText + extra : prev.streamText,
             };
+          }
+
+          case "wo_proposal": {
+            const summary = event.summary as string;
+            const files = event.files as string[];
+            const attempt = event.attempt as number;
+            let extra = `  LLM proposal (attempt ${attempt})`;
+            if (summary) extra += `: ${summary}`;
+            extra += "\n";
+            if (files && files.length > 0) {
+              extra += files.map((f: string) => `    → ${f}`).join("\n") + "\n";
+            }
+            return { ...prev, streamText: prev.streamText + extra };
           }
 
           case "file_written": {
@@ -275,6 +300,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
     es.addEventListener("planner_reasoning_status", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("work_orders_created", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("wo_status", (e) => handleEvent(JSON.parse(e.data)));
+    es.addEventListener("wo_proposal", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("file_written", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("artifact_written", (e) => handleEvent(JSON.parse(e.data)));
     es.addEventListener("console", (e) => handleEvent(JSON.parse(e.data)));
