@@ -185,6 +185,21 @@ def tr_node(state: dict) -> dict:
         {"write_ok": True, "touched_files": touched_files, "errors": []},
         os.path.join(attempt_dir, ARTIFACT_WRITE_RESULT),
     )
+
+    event_log = state.get("event_log")
+    if event_log is not None:
+        wo_id = work_order.id
+        files_info = []
+        for f in touched_files:
+            abs_path = os.path.join(repo_root, f)
+            try:
+                with open(abs_path, "rb") as fh:
+                    lc = sum(1 for _ in fh)
+            except OSError:
+                lc = 0
+            files_info.append({"path": f, "line_count": lc})
+        event_log.emit("file_written", wo_id=wo_id, files=files_info)
+
     return {
         "write_ok": True,
         "touched_files": touched_files,

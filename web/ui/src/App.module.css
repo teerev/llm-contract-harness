@@ -1,0 +1,210 @@
+/* ── Root layout: scrollable stacked panels ── */
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 900px;
+}
+
+/* ── Error banner ── */
+
+.errorBannerSlot {
+  /* Always in DOM so sticky header starts after it */
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(248, 113, 113, 0.1);
+  border-bottom: 1px solid var(--red);
+  color: var(--red);
+  font-size: 13px;
+}
+
+.reconnectBtn {
+  background: none;
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  color: var(--red);
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reconnectBtn:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+
+/* ── Header (sticky) ── */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.promptRow {
+  display: flex;
+  gap: 10px;
+}
+
+.promptInput {
+  flex: 1;
+  resize: none;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.promptInput::placeholder {
+  color: var(--text-dim);
+}
+
+.promptInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.runBtn {
+  padding: 8px 24px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  align-self: stretch;
+}
+
+.runBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.runBtnGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.kbdHint {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: inherit;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.optionsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.quotaInfo {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.quotaExhausted {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkLabel.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.branchInput {
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  width: 220px;
+}
+
+.branchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Panel label (shared) ── */
+
+.panelLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+/* ── Stream panel ── */
+
+.streamPanel {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  height: 500px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ── Node diagram ── */
+
+.diagramPanel {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+/* ── File explorer ── */
+
+.explorerPanel {
+  border-bottom: 1px solid var(--border);
+  height: 700px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ── Responsive adjustments ── */
+
+@media (min-width: 1600px) {
+  .layout {
+    max-width: 1920px;
+    margin: 0 auto;
+  }
+}

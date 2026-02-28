@@ -40,6 +40,41 @@ from planner.defaults import (  # noqa: F401 — re-exported for backward compat
 DUMP_DIR: Optional[str] = None  # set by compiler before calling
 
 
+# ---------------------------------------------------------------------------
+# User-friendly error messages for common OpenAI API errors
+# ---------------------------------------------------------------------------
+
+def _friendly_api_error(status_code: int, response_text: str) -> str:
+    """Parse OpenAI error response and return a user-friendly message."""
+    try:
+        data = json.loads(response_text)
+        error = data.get("error", {})
+        code = error.get("code", "")
+        message = error.get("message", "")
+        
+        if code == "insufficient_quota":
+            return (
+                "OpenAI API quota exceeded. The API credits for this demo have been "
+                "exhausted. Please try again later or contact the administrator."
+            )
+        if code == "rate_limit_exceeded" or "rate limit" in message.lower():
+            return (
+                "OpenAI API rate limit reached. Too many requests are being made. "
+                "Please wait a moment and try again."
+            )
+        if code == "invalid_api_key":
+            return "OpenAI API key is invalid or expired. Please contact the administrator."
+        if code == "model_not_found":
+            return f"OpenAI model not found: {message}"
+        
+        if message:
+            return f"OpenAI API error: {message}"
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    
+    return f"OpenAI API error {status_code}: {response_text[:500]}"
+
+
 def _log(msg: str) -> None:
     """Log an OpenAI transport message to stderr.
 
@@ -106,6 +141,7 @@ def _log_reasoning_end() -> None:
 # ---------------------------------------------------------------------------
 
 _STREAM_STATUS_CB: Optional[Callable[[str], None]] = None
+_EVENT_LOG: Optional[Any] = None  # shared.event_log.EventLog when set
 
 
 def set_stream_status_callback(cb: Optional[Callable[[str], None]]) -> None:
@@ -122,6 +158,16 @@ def set_stream_status_callback(cb: Optional[Callable[[str], None]]) -> None:
     """
     global _STREAM_STATUS_CB
     _STREAM_STATUS_CB = cb
+
+
+def set_event_log(log: Optional[Any]) -> None:
+    """Attach an EventLog for emitting ``planner_chunk`` / ``planner_reasoning_status`` events.
+
+    Set to ``None`` to detach.  The CLI never calls this — it is used by
+    the web pipeline runner (WP2).
+    """
+    global _EVENT_LOG
+    _EVENT_LOG = log
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +246,8 @@ class OpenAIResponsesClient:
             status = data.get("status", "unknown")
             resp_id = data.get("id", "?")
 
-            usage = data.get("usage", {})
-            reasoning_tok = usage.get("output_tokens_details", {}).get("reasoning_tokens", 0)
+            usage = data.get("usage") or {}
+            reasoning_tok = (usage.get("output_tokens_details") or {}).get("reasoning_tokens", 0)
             output_tok = usage.get("output_tokens", 0)
             _log(f"Response {resp_id}: status={status} "
                  f"output_tokens={output_tok} reasoning_tokens={reasoning_tok}")
@@ -290,9 +336,7 @@ class OpenAIResponsesClient:
             ) as resp:
                 if resp.status_code != 200:
                     resp.read()
-                    raise RuntimeError(
-                        f"API error {resp.status_code}: {resp.text[:1000]}"
-                    )
+                    raise RuntimeError(_friendly_api_error(resp.status_code, resp.text))
 
                 for line in resp.iter_lines():
                     if not line.startswith("data: "):
@@ -316,15 +360,21 @@ class OpenAIResponsesClient:
                                 _reasoning_started = True
                                 if _STREAM_STATUS_CB:
                                     _STREAM_STATUS_CB("reasoning_start")
+                                if _EVENT_LOG:
+                                    _EVENT_LOG.emit("planner_reasoning_status", status="start")
                                 _log_reasoning_start()
                             _log_reasoning_delta(delta)
                             reasoning_parts.append(delta)
+                            if _EVENT_LOG:
+                                _EVENT_LOG.emit("planner_chunk", text=delta)
 
                     elif etype == "response.reasoning_summary_text.done":
                         if _reasoning_started:
                             _log_reasoning_end()
                             if _STREAM_STATUS_CB:
                                 _STREAM_STATUS_CB("reasoning_end")
+                            if _EVENT_LOG:
+                                _EVENT_LOG.emit("planner_reasoning_status", status="end")
 
                     # --- Output text deltas (accumulated silently) ---
                     elif etype == "response.output_text.delta":
@@ -437,17 +487,12 @@ class OpenAIResponsesClient:
                     _log(f"{method} {r.status_code}. Retry in {delay:.0f}s "
                          f"(attempt {attempt}/{MAX_TRANSPORT_RETRIES})")
                     if attempt >= MAX_TRANSPORT_RETRIES:
-                        raise RuntimeError(
-                            f"API returned {r.status_code} after "
-                            f"{MAX_TRANSPORT_RETRIES} attempts: {r.text[:500]}"
-                        )
+                        raise RuntimeError(_friendly_api_error(r.status_code, r.text))
                     time.sleep(delay)
                     continue
 
                 if r.status_code < 200 or r.status_code >= 300:
-                    raise RuntimeError(
-                        f"API error {r.status_code}: {r.text[:1000]}"
-                    )
+                    raise RuntimeError(_friendly_api_error(r.status_code, r.text))
                 return r.json()
 
             except (

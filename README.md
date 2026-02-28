@@ -236,3 +236,47 @@ shared/
 - **The `forbidden` field is prompt guidance, not enforcement.** If a file is in both `allowed_files` and `forbidden`, the LLM can write to it.
 
 See [docs/INVARIANTS.md](docs/INVARIANTS.md) for the complete list of enforced system constraints.
+
+---
+
+## Web UI (localhost)
+
+A single-page web interface that runs the planner→factory pipeline,
+streams reasoning live, and lets you browse all generated artifacts.
+
+### Extra prerequisites
+
+- **Node.js 20+** and **npm** (for the frontend dev server)
+- Install with: `pip install -e ".[web]"`
+
+### Quick start (two terminals)
+
+**Terminal 1 — Backend** (FastAPI on :8000):
+
+```bash
+python -m web.server.main
+```
+
+**Terminal 2 — Frontend** (Vite dev server on :5173):
+
+```bash
+cd web/ui && npm install && npm run dev
+```
+
+Open **http://localhost:5173**. The Vite dev server proxies `/api` requests to the backend.
+
+### Production build
+
+```bash
+cd web/ui && npm run build    # outputs to web/ui/dist/
+python -m web.server.main     # serves the built UI at http://localhost:8000
+```
+
+### Web-specific environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLMCH_HOST` | `127.0.0.1` | Backend bind address |
+| `LLMCH_PORT` | `8000` | Backend bind port |
+| `LLMCH_ARTIFACTS_DIR` | `./artifacts` | Artifacts root — all data lives here |
+| `LLMCH_DEMO_REMOTE_URL` | *(none)* | Git remote URL for the demo push feature |

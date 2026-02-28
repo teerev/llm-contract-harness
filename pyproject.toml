@@ -18,9 +18,14 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+]
 
 [project.scripts]
 llmch = "llmch.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["planner*", "factory*", "shared*", "llmch*"]
+include = ["planner*", "factory*", "shared*", "llmch*", "web*"]
+exclude = ["web/ui*"]
