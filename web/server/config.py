@@ -17,7 +17,7 @@ ARTIFACTS_DIR: str = os.path.realpath(
 )
 DEMO_REMOTE_URL: str = os.environ.get("LLMCH_DEMO_REMOTE_URL", "").strip()
 
-RATE_LIMIT_PER_IP: int = int(_env("LLMCH_RATE_LIMIT_PER_IP", "3"))
+RATE_LIMIT_PER_IP: int = int(_env("LLMCH_RATE_LIMIT_PER_IP", "100"))
 RATE_LIMIT_GLOBAL: int = int(_env("LLMCH_RATE_LIMIT_GLOBAL", "100"))
 
 STATIC_DIR: str | None = None

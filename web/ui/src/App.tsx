@@ -177,9 +177,9 @@ export default function App() {
           </label>
           {quota && (
             <span className={`${styles.quotaInfo} ${quotaExhausted ? styles.quotaExhausted : ""}`}>
-              Your runs: {quota.ip_remaining}/{quota.ip_limit} remaining
+              Your runs: {quota.ip_remaining}/{quota.ip_limit} remaining today
               {" · "}
-              Global: {quota.global_remaining}/{quota.global_limit} remaining
+              Global: {quota.global_remaining}/{quota.global_limit} remaining today
             </span>
           )}
         </div>
