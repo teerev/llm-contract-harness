@@ -1,0 +1,2 @@
+Create a single Python file called hello.py that prints "Hello, world!" when run.
+Include a test file tests/test_hello.py that imports hello and asserts the output.

@@ -56,7 +56,7 @@ endef
 
 # ── Targets ──────────────────────────────────────────────────────────
 
-.PHONY: help bootstrap demo-repo plan run demo clean
+.PHONY: help bootstrap demo-repo plan run demo web-build web-dev smoke clean
 
 help: ## Show this help
 	@echo ""
@@ -146,6 +146,59 @@ demo: ## Full demo: bootstrap → demo-repo → plan → run
 	@echo "       cd $(REPO) && git log --oneline"
 	@echo "       ls artifacts/"
 	@echo ""
+
+web-build: ## Build the React frontend (production)
+	$(call banner,web-build)
+	@command -v npm >/dev/null 2>&1 || \
+		{ echo "  ✘  npm not found. Install Node.js 20+."; exit 1; }
+	@cd web/ui && npm install --ignore-scripts -q 2>/dev/null && npm run build
+	@echo ""
+	@echo "  ✔  Built → web/ui/dist/"
+	@echo ""
+
+web-dev: ## Start backend + frontend dev servers
+	$(call check_api_key)
+	$(call banner,web-dev)
+	@echo "  Starting FastAPI backend (port $(or $(LLMCH_PORT),8000))..."
+	@echo "  Starting Vite dev server..."
+	@echo ""
+	@echo "  Tip: press Ctrl-C to stop both."
+	@echo ""
+	@trap 'kill 0' INT; \
+		$(PY) -m web.server.main & \
+		cd web/ui && npm run dev & \
+		wait
+
+smoke: ## Smoke test: run a trivial spec end-to-end (requires running web server)
+	$(call check_api_key)
+	$(call banner,smoke)
+	@echo "  Spec: examples/smoke.txt"
+	@echo "  Submitting to http://127.0.0.1:$${LLMCH_PORT:-8000} ..."
+	@echo ""
+	@PROMPT=$$(cat examples/smoke.txt) && \
+	RUN_ID=$$(curl -sf -X POST "http://127.0.0.1:$${LLMCH_PORT:-8000}/api/v1/runs" \
+		-H "Content-Type: application/json" \
+		-d "{\"prompt\": \"$$PROMPT\"}" \
+		| $(PY) -c "import sys,json; print(json.load(sys.stdin)['run_id'])") && \
+	echo "  run_id: $$RUN_ID" && \
+	echo "  Polling for completion (up to 10 min)..." && \
+	for i in $$(seq 1 120); do \
+		STATUS=$$(curl -sf "http://127.0.0.1:$${LLMCH_PORT:-8000}/api/v1/runs/$$RUN_ID" \
+			| $(PY) -c "import sys,json; print(json.load(sys.stdin)['status'])"); \
+		if [ "$$STATUS" = "complete" ]; then \
+			echo "  status: complete"; \
+			echo ""; \
+			echo "  ✔  Smoke test passed."; echo ""; \
+			exit 0; \
+		elif [ "$$STATUS" = "failed" ]; then \
+			echo "  status: failed"; \
+			echo ""; \
+			echo "  ✘  Pipeline failed."; echo ""; \
+			exit 1; \
+		fi; \
+		sleep 5; \
+	done; \
+	echo "  ✘  Timed out after 10 minutes."; exit 1
 
 clean: ## Remove demo artifacts (wo/, artifacts/, my-project/)
 	$(call banner,clean)
