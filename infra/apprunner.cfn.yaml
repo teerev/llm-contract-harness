@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  llm-contract-harness — App Runner service.
+  Deploys a single-instance container from ECR with health checks,
+  env var injection, and auto-scaling pinned to 1 instance.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: ECR image URI (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/llmch:latest)
+
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API key
+
+  DemoRemoteUrl:
+    Type: String
+    Default: "https://github.com/teerev/llmch-demo.git"
+    Description: Git remote URL for demo push (HTTPS)
+
+  DemoRemoteToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: GitHub PAT for HTTPS push (leave empty to disable push)
+
+  RateLimitPerIp:
+    Type: String
+    Default: "3"
+    Description: Max pipeline runs per IP per day
+
+  RateLimitGlobal:
+    Type: String
+    Default: "100"
+    Description: Max pipeline runs globally per day
+
+Resources:
+  AccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ecr-access"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-instance"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+
+  Service:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Ref AWS::StackName
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AccessRole.Arn
+        AutoDeploymentsEnabled: false
+        ImageRepository:
+          ImageIdentifier: !Ref ImageUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8000"
+            RuntimeEnvironmentVariables:
+              - Name: OPENAI_API_KEY
+                Value: !Ref OpenAIApiKey
+              - Name: LLMCH_DEMO_REMOTE_URL
+                Value: !Ref DemoRemoteUrl
+              - Name: LLMCH_DEMO_REMOTE_TOKEN
+                Value: !Ref DemoRemoteToken
+              - Name: LLMCH_RATE_LIMIT_PER_IP
+                Value: !Ref RateLimitPerIp
+              - Name: LLMCH_RATE_LIMIT_GLOBAL
+                Value: !Ref RateLimitGlobal
+              - Name: LLMCH_HOST
+                Value: "0.0.0.0"
+      InstanceConfiguration:
+        Cpu: "2048"      # 2 vCPU — factory + planner are CPU-hungry
+        Memory: "4096"   # 4 GB — LangGraph + openai SDK + venv overhead
+        InstanceRoleArn: !GetAtt InstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /api/v1/health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 3
+      AutoScalingConfigurationArn: !GetAtt ScalingConfig.AutoScalingConfigurationArn
+
+  ScalingConfig:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub "${AWS::StackName}-single"
+      MaxConcurrency: 10
+      MaxSize: 1
+      MinSize: 1
+
+Outputs:
+  ServiceUrl:
+    Description: Public URL of the App Runner service
+    Value: !Sub "https://${Service.ServiceUrl}"
+  ServiceArn:
+    Description: ARN of the App Runner service
+    Value: !GetAtt Service.ServiceArn
