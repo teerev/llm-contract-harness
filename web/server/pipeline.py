@@ -55,6 +55,7 @@ def execute_pipeline(
     finally:
         log.close()
         _write_manifest(run_id, run_store)
+        _upload_to_s3(run_id, run_store)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +113,23 @@ def _write_manifest(run_id: str, run_store: RunStore) -> None:
             json.dump(manifest, fh, indent=2, ensure_ascii=False)
     except OSError:
         pass
+
+
+def _upload_to_s3(run_id: str, run_store: RunStore) -> None:
+    """Upload run artifacts to S3 if configured. Non-fatal on error."""
+    from web.server.s3_upload import upload_run_artifacts, S3_BUCKET
+    if not S3_BUCKET:
+        return
+    try:
+        meta = run_store.get(run_id)
+    except FileNotFoundError:
+        return
+    upload_run_artifacts(
+        run_id=run_id,
+        artifacts_dir=config.ARTIFACTS_DIR,
+        planner_run_id=meta.planner_run_id,
+        factory_run_ids=meta.factory_run_ids,
+    )
 
 
 # ---------------------------------------------------------------------------
