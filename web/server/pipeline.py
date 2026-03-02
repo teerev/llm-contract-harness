@@ -250,8 +250,9 @@ def _push_to_demo(
     run_store: RunStore,
 ) -> None:
     """Push the repo to the demo remote. This is a post-step; failure doesn't fail the pipeline."""
-    demo_remote = config.DEMO_REMOTE_URL
-    if not demo_remote:
+    push_url = config.DEMO_REMOTE_URL
+    safe_url = config.DEMO_REMOTE_URL_SAFE  # credentials scrubbed — safe for logs/events
+    if not push_url:
         log.emit("console", text="Demo remote not configured, skipping push", level="warning")
         run_store.update(run_id, status="complete", finished_at=_ts())
         log.emit("pipeline_status", status="complete")
@@ -262,7 +263,7 @@ def _push_to_demo(
 
     repo_dir = os.path.join(run_dir, "repo")
 
-    log.emit("git_push_started", remote=demo_remote, branch=branch_name)
+    log.emit("git_push_started", remote=safe_url, branch=branch_name)
 
     try:
         # Add demo remote (remove first if exists)
@@ -271,7 +272,7 @@ def _push_to_demo(
             cwd=repo_dir, capture_output=True, timeout=_GIT_TIMEOUT,
         )
         subprocess.run(
-            ["git", "remote", "add", "demo", demo_remote],
+            ["git", "remote", "add", "demo", push_url],
             cwd=repo_dir, check=True, capture_output=True, timeout=_GIT_TIMEOUT,
         )
 
@@ -293,26 +294,25 @@ def _push_to_demo(
             log.emit(
                 "git_push_done",
                 ok=False,
-                remote=demo_remote,
+                remote=safe_url,
                 branch=branch_name,
                 error=error,
             )
             log.emit("console", text=f"Push failed: {error}", level="error")
         else:
-            # Try to construct a web URL from the remote
-            web_url = _remote_to_web_url(demo_remote, branch_name)
+            web_url = _remote_to_web_url(safe_url, branch_name)
             log.emit(
                 "git_push_done",
                 ok=True,
-                remote=demo_remote,
+                remote=safe_url,
                 branch=branch_name,
                 commit_sha=commit_sha,
                 url=web_url,
             )
-            log.emit("console", text=f"Pushed to {demo_remote} @ {branch_name} ({commit_sha})", level="info")
+            log.emit("console", text=f"Pushed to {safe_url} @ {branch_name} ({commit_sha})", level="info")
             run_store.update(
                 run_id,
-                push_remote=demo_remote,
+                push_remote=safe_url,
                 push_branch=branch_name,
                 push_commit_sha=commit_sha,
                 push_url=web_url,
@@ -323,7 +323,7 @@ def _push_to_demo(
         log.emit(
             "git_push_done",
             ok=False,
-            remote=demo_remote,
+            remote=safe_url,
             branch=branch_name,
             error=error,
         )
@@ -333,7 +333,7 @@ def _push_to_demo(
         log.emit(
             "git_push_done",
             ok=False,
-            remote=demo_remote,
+            remote=safe_url,
             branch=branch_name,
             error=error,
         )
@@ -342,7 +342,7 @@ def _push_to_demo(
         log.emit(
             "git_push_done",
             ok=False,
-            remote=demo_remote,
+            remote=safe_url,
             branch=branch_name,
             error=str(exc),
         )
@@ -359,9 +359,9 @@ def _remote_to_web_url(remote: str, branch: str) -> str | None:
     if remote.startswith("git@github.com:"):
         path = remote.replace("git@github.com:", "").rstrip(".git")
         return f"https://github.com/{path}/tree/{branch}"
-    # https://github.com/org/repo.git -> https://github.com/org/repo/tree/branch
-    if remote.startswith("https://github.com/"):
-        path = remote.replace("https://github.com/", "").rstrip(".git")
+    # https://[credentials@]github.com/org/repo.git -> web URL
+    if "github.com/" in remote and remote.startswith("https://"):
+        path = remote.split("github.com/", 1)[1].rstrip(".git")
         return f"https://github.com/{path}/tree/{branch}"
     return None
 
