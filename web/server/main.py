@@ -22,7 +22,13 @@ app.add_middleware(
 )
 
 # --- Wire dependencies ---
-_run_store = LocalRunStore()
+# Use DynamoDB for run metadata when configured, otherwise local JSON files.
+from web.server.store_dynamo import DYNAMO_TABLE
+if DYNAMO_TABLE:
+    from web.server.store_dynamo import DynamoRunStore
+    _run_store = DynamoRunStore()
+else:
+    _run_store = LocalRunStore()
 _file_store = LocalFileStore(run_store=_run_store)
 _runner = LocalRunner(run_store=_run_store)
 init_routes(_run_store, _file_store, _runner)
