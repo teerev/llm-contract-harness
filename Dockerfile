@@ -31,7 +31,10 @@ COPY web/server/ web/server/
 COPY examples/ examples/
 
 # Install the package itself (non-editable, uses already-installed deps)
-RUN pip install --no-cache-dir --no-deps .
+# Also install pytest so factory verify/acceptance commands work without
+# creating a per-repo venv (avoids runtime pip install + network dependency)
+RUN pip install --no-cache-dir --no-deps . && \
+    pip install --no-cache-dir pytest
 
 # Copy built frontend from stage 1
 COPY --from=ui-build /build/dist/ web/ui/dist/
@@ -39,6 +42,9 @@ COPY --from=ui-build /build/dist/ web/ui/dist/
 # Default artifacts directory
 RUN mkdir -p /app/artifacts
 ENV LLMCH_ARTIFACTS_DIR=/app/artifacts
+
+# Skip per-repo venv creation — pytest is already in the container
+ENV LLMCH_SKIP_REPO_VENV=1
 
 # Bind to all interfaces so the container is reachable
 ENV LLMCH_HOST=0.0.0.0
