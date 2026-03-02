@@ -10,7 +10,7 @@ def _env(key: str, default: str) -> str:
 
 
 HOST: str = _env("LLMCH_HOST", "127.0.0.1")
-PORT: int = int(_env("LLMCH_PORT", "8000"))
+PORT: int = int(os.environ.get("PORT", "").strip() or _env("LLMCH_PORT", "8000"))
 
 ARTIFACTS_DIR: str = os.path.realpath(
     _env("LLMCH_ARTIFACTS_DIR", os.environ.get("ARTIFACTS_DIR", "").strip() or "./artifacts")

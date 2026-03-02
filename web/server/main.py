@@ -50,12 +50,23 @@ if config.STATIC_DIR:
 
 
 def main() -> None:
+    """Entry point for local development (with hot-reload)."""
     uvicorn.run(
         "web.server.main:app",
         host=config.HOST,
         port=config.PORT,
         reload=True,
         reload_excludes=["artifacts/*", "my-project/*", "wo/*", "runs/*"],
+    )
+
+
+def serve() -> None:
+    """Entry point for production (no reload, single worker)."""
+    uvicorn.run(
+        app,
+        host=config.HOST,
+        port=config.PORT,
+        log_level="info",
     )
 
 

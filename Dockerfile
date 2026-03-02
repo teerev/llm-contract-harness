@@ -42,8 +42,6 @@ ENV LLMCH_ARTIFACTS_DIR=/app/artifacts
 
 # Bind to all interfaces so the container is reachable
 ENV LLMCH_HOST=0.0.0.0
-ENV LLMCH_PORT=8000
-
 EXPOSE 8000
 
-CMD ["python", "-m", "web.server.main"]
+CMD ["python", "-c", "from web.server.main import serve; serve()"]
