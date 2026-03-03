@@ -262,13 +262,14 @@ class LocalFileStore:
             if not full:
                 raise FileNotFoundError(f"File not found: artifacts/{path}")
             full = os.path.realpath(full)
-            # Security: ensure it's within artifacts_dir
-            if not full.startswith(os.path.realpath(self._artifacts_dir)):
+            base_real = os.path.realpath(self._artifacts_dir)
+            if not (full == base_real or full.startswith(base_real + os.sep)):
                 raise PermissionError("Path escapes root")
         else:
             base = self._resolve_base(run_id, root)
             full = os.path.realpath(os.path.join(base, path))
-            if not full.startswith(os.path.realpath(base)):
+            base_real = os.path.realpath(base)
+            if not (full == base_real or full.startswith(base_real + os.sep)):
                 raise PermissionError("Path escapes root")
         
         if not os.path.isfile(full):
@@ -283,11 +284,13 @@ class LocalFileStore:
                 if not full:
                     return False
                 full = os.path.realpath(full)
-                return full.startswith(os.path.realpath(self._artifacts_dir)) and os.path.exists(full)
+                base_real = os.path.realpath(self._artifacts_dir)
+                return (full == base_real or full.startswith(base_real + os.sep)) and os.path.exists(full)
             else:
                 base = self._resolve_base(run_id, root)
                 full = os.path.realpath(os.path.join(base, path))
-                return full.startswith(os.path.realpath(base)) and os.path.exists(full)
+                base_real = os.path.realpath(base)
+                return (full == base_real or full.startswith(base_real + os.sep)) and os.path.exists(full)
         except (ValueError, FileNotFoundError):
             return False
 
