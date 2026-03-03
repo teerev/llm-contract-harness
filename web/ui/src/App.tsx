@@ -15,16 +15,27 @@ interface Quota {
   global_limit: number;
 }
 
+const SESSION_KEY = "llmch_current_run_id";
+
 export default function App() {
   const [prompt, setPrompt] = useState("");
   const [pushDemo, setPushDemo] = useState(true);
   const [uiStatus, setUiStatus] = useState<UIStatus>("idle");
-  const [runId, setRunId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(() => {
+    return sessionStorage.getItem(SESSION_KEY);
+  });
   const [demoRemoteConfigured, setDemoRemoteConfigured] = useState<boolean | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
 
   const runState = useRunEvents(runId);
+
+  // Persist runId to sessionStorage
+  useEffect(() => {
+    if (runId) {
+      sessionStorage.setItem(SESSION_KEY, runId);
+    }
+  }, [runId]);
 
   const fetchQuota = useCallback(() => {
     fetch("/api/v1/quota")
@@ -148,7 +159,7 @@ export default function App() {
         <div className={styles.promptRow}>
           <textarea
             className={styles.promptInput}
-            placeholder="Describe the project you want to build..."
+            placeholder="Describe a mini project you want to build in Python..."
             rows={2}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
