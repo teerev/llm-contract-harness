@@ -15,10 +15,19 @@ router = APIRouter(prefix="/api/v1")
 
 
 def _client_ip(request: Request) -> str:
-    """Extract the real client IP, respecting X-Forwarded-For behind a load balancer."""
+    """Extract the real client IP from X-Forwarded-For.
+
+    Behind a single trusted proxy (App Runner), the proxy appends the true
+    client IP as the rightmost entry.  We take the second-to-last entry
+    when there are multiple hops, or the only entry if there's just one.
+    Ignores any entries the client may have injected at the front.
+    """
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        parts = [p.strip() for p in forwarded.split(",")]
+        # Single proxy: rightmost is proxy-appended client IP
+        # Multiple hops: second-to-last is the one our proxy saw
+        return parts[-2] if len(parts) >= 2 else parts[0]
     return request.client.host if request.client else "unknown"
 
 
