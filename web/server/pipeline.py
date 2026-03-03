@@ -270,6 +270,11 @@ def _push_to_demo(
     """Push the repo to the demo remote. This is a post-step; failure doesn't fail the pipeline."""
     push_url = config.DEMO_REMOTE_URL
     safe_url = config.DEMO_REMOTE_URL_SAFE  # credentials scrubbed — safe for logs/events
+
+    def _scrub(text: str) -> str:
+        """Remove credential-laden URL from error messages before they reach the browser."""
+        return text.replace(push_url, safe_url) if push_url else text
+
     if not push_url:
         log.emit("console", text="Demo remote not configured, skipping push", level="warning")
         run_store.update(run_id, status="complete", finished_at=_ts())
@@ -308,7 +313,7 @@ def _push_to_demo(
         )
 
         if push_result.returncode != 0:
-            error = push_result.stderr.strip() or push_result.stdout.strip() or "push failed"
+            error = _scrub(push_result.stderr.strip() or push_result.stdout.strip() or "push failed")
             log.emit(
                 "git_push_done",
                 ok=False,
@@ -347,7 +352,7 @@ def _push_to_demo(
         )
         log.emit("console", text=error, level="error")
     except subprocess.CalledProcessError as exc:
-        error = exc.stderr if hasattr(exc, "stderr") and exc.stderr else str(exc)
+        error = _scrub(exc.stderr if hasattr(exc, "stderr") and exc.stderr else str(exc))
         log.emit(
             "git_push_done",
             ok=False,
@@ -357,14 +362,15 @@ def _push_to_demo(
         )
         log.emit("console", text=f"Push error: {error}", level="error")
     except Exception as exc:
+        error = _scrub(str(exc))
         log.emit(
             "git_push_done",
             ok=False,
             remote=safe_url,
             branch=branch_name,
-            error=str(exc),
+            error=error,
         )
-        log.emit("console", text=f"Push error: {exc}", level="error")
+        log.emit("console", text=f"Push error: {error}", level="error")
 
     # Always mark complete after push attempt (push failure is not pipeline failure)
     run_store.update(run_id, status="complete", finished_at=_ts())
