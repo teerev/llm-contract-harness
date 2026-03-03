@@ -240,49 +240,84 @@ See [docs/INVARIANTS.md](docs/INVARIANTS.md) for the complete list of enforced s
 
 ---
 
-## Web UI (localhost)
+## Web UI
 
-A single-page web interface that runs the planner→factory pipeline,
-streams reasoning live, and lets you browse all generated artifacts.
+A single-page web interface that runs the planner→factory pipeline, streams
+reasoning live, shows a pipeline node diagram, and lets you browse all
+generated artifacts. Completed repos are optionally pushed to a demo GitHub
+remote with a unique branch name per run.
 
-### Extra prerequisites
+### Local development
 
-- **Node.js 20+** and **npm** (for the frontend dev server)
-- Install with: `pip install -c requirements.lock -e ".[web]"`
-
-### Quick start (two terminals)
-
-**Terminal 1 — Backend** (FastAPI on :8000):
+**Prerequisites:** Python 3.11+, Node.js 20+, npm, git, and `OPENAI_API_KEY`.
 
 ```bash
-python -m web.server.main
-```
+# Install Python dependencies
+python -m venv .venv && source .venv/bin/activate
+pip install -c requirements.lock -e ".[web]"
 
-**Terminal 2 — Frontend** (Vite dev server on :5173):
+# Configure environment
+cp .env.example .env   # fill in OPENAI_API_KEY
+set -a && source .env && set +a
 
-```bash
-cd web/ui && npm install && npm run dev
-```
+# Option A: two terminals (hot-reload on both)
+python -m web.server.main              # Terminal 1 — backend on :8000
+cd web/ui && npm install && npm run dev  # Terminal 2 — Vite on :5173
 
-Open **http://localhost:5173**. The Vite dev server proxies `/api` requests to the backend.
-
-### Production build
-
-```bash
+# Option B: production build (single process)
 cd web/ui && npm run build    # outputs to web/ui/dist/
-python -m web.server.main     # serves the built UI at http://localhost:8000
+python -m web.server.main     # serves UI + API at http://localhost:8000
 ```
 
-### Web-specific environment variables
+### AWS deployment
+
+The web app is deployable to **AWS App Runner** via a single CloudFormation
+stack that provisions everything automatically:
+
+- **App Runner** — containerised FastAPI + React app (4 vCPU, 8 GB, up to 5 concurrent pipelines)
+- **DynamoDB** — run metadata and distributed rate limiting (PAY_PER_REQUEST)
+- **S3** — artifact persistence with 30-day lifecycle expiry
+- **SSM Parameter Store** — secrets (`OPENAI_API_KEY`, GitHub PAT) stored as SecureString
+- **ECR** — Docker image registry
+
+```bash
+# One-command deploy (builds, pushes, and deploys)
+./infra/deploy.sh
+```
+
+The deploy script:
+1. Stores secrets in SSM Parameter Store (never on the command line)
+2. Builds a `linux/amd64` Docker image and pushes to ECR
+3. Deploys/updates the CloudFormation stack (`infra/apprunner.cfn.yaml`)
+4. Outputs the public HTTPS URL
+
+The container runs as a non-root user (`llmch`) to limit the blast radius
+of LLM-generated code. Git credential URLs are scrubbed from all error
+messages before they reach the browser.
+
+**Teardown:**
+
+```bash
+aws cloudformation delete-stack --stack-name llmch-demo --region us-east-1
+```
+
+See `INSTRUCTIONS.md` for a detailed deployment walkthrough.
+
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLMCH_HOST` | `127.0.0.1` | Backend bind address |
+| `OPENAI_API_KEY` | *(required)* | OpenAI API key |
+| `LLMCH_HOST` | `127.0.0.1` | Backend bind address (`0.0.0.0` in production) |
 | `LLMCH_PORT` | `8000` | Backend bind port |
-| `LLMCH_ARTIFACTS_DIR` | `./artifacts` | Artifacts root — all data lives here |
-| `LLMCH_DEMO_REMOTE_URL` | *(none)* | Git remote URL for the demo push feature |
+| `LLMCH_ARTIFACTS_DIR` | `./artifacts` | Artifacts root (`/tmp/artifacts` on App Runner) |
+| `LLMCH_DEMO_REMOTE_URL` | *(none)* | Git remote URL for demo push (HTTPS) |
+| `LLMCH_DEMO_REMOTE_TOKEN` | *(none)* | GitHub PAT for push authentication |
 | `LLMCH_RATE_LIMIT_PER_IP` | `100` | Max pipeline runs per IP per day |
 | `LLMCH_RATE_LIMIT_GLOBAL` | `100` | Max pipeline runs globally per day |
+| `LLMCH_DYNAMO_TABLE` | *(none)* | DynamoDB table name (enables distributed storage) |
+| `LLMCH_S3_BUCKET` | *(none)* | S3 bucket name (enables artifact upload) |
+| `LLMCH_SKIP_REPO_VENV` | `0` | Set to `1` in Docker (pytest pre-installed) |
 
 ---
 
@@ -293,13 +328,11 @@ The following trade-offs are intentional and documented here for transparency.
 
 ### Execution sandbox
 
-Verify and acceptance commands (e.g. `bash scripts/verify.sh`, `python -m pytest`)
-run **unsandboxed** with the server process's privileges.  There is no network
-isolation, filesystem jail, or cgroup/seccomp restriction.  LLM-generated code
-can make outbound HTTP calls, read environment variables (excluding `OPENAI_API_KEY`
-which is only in the server process, not passed to subprocesses), or write files
-outside the target repo (though the factory's scope-checking gates reject writes
-to paths outside `allowed_files`).
+Verify and acceptance commands (e.g. `python -m pytest`) run with the server
+process's privileges. The Docker container runs as a non-root user (`llmch`)
+which limits the blast radius, but there is no network isolation, filesystem
+jail, or cgroup/seccomp restriction. LLM-generated code can make outbound HTTP
+calls or read non-secret environment variables.
 
 *Why this is acceptable*: the demo runs on a single disposable instance.
 Enterprise sandboxing (nsjail, Firecracker, gVisor) is out of scope for a
@@ -307,38 +340,42 @@ solo-dev proof of concept.
 
 ### Arbitrary user prompts
 
-The UI accepts free-text prompts which drive LLM code generation.  There are no
-content filters on the prompt itself.  The structural enforcement gates
-(preconditions, postconditions, acceptance tests, file-scope checks, hash
-verification) constrain what the LLM *can successfully commit*, but the LLM can
-still *attempt* arbitrary code during verify/acceptance execution.
+The UI accepts free-text prompts which drive LLM code generation. There are no
+content filters on the prompt itself (prompt length is capped at 10,000 characters).
+The structural enforcement gates (preconditions, postconditions, acceptance
+tests, file-scope checks, hash verification) constrain what the LLM *can
+successfully commit*, but the LLM can still *attempt* arbitrary code during
+verify/acceptance execution.
 
 ### Rate limiting
 
 - IP-based daily limits (configurable via `LLMCH_RATE_LIMIT_PER_IP`).
 - Global daily limit (configurable via `LLMCH_RATE_LIMIT_GLOBAL`).
-- Backed by SQLite — single-process only; will not scale across multiple server
-  instances without migrating to Redis or DynamoDB.
-- Easily circumvented by rotating source IPs.  Acceptable for a demo; not
-  suitable as a billing or abuse-prevention mechanism.
+- Backed by DynamoDB when `LLMCH_DYNAMO_TABLE` is set (atomic
+  `ConditionExpression`-based enforcement), otherwise local SQLite.
+- IP extracted from `X-Forwarded-For` (proxy-appended, not client-set).
 
 ### Concurrency
 
-Only one pipeline runs at a time (enforced by a semaphore in `LocalRunner`).
-Submitting a second run while one is in progress returns HTTP 429.  This is by
-design for a single-instance demo — horizontal scaling is out of scope.
+Up to 5 pipelines run concurrently (enforced by a semaphore in `LocalRunner`).
+Submitting beyond the limit returns HTTP 429. The App Runner service is pinned
+to a single instance to keep SSE streaming and local artifacts consistent.
 
 ### Secrets
 
 - `OPENAI_API_KEY` is read from the environment and never written to artifacts,
   event logs, or API responses.
-- The `.env` file is gitignored.  See `.env.example` for the full variable list.
-- Git push credentials use the server's SSH agent or git credential helper —
-  no credentials are embedded in code or config.
+- On AWS, secrets are stored in SSM Parameter Store (SecureString) and injected
+  via App Runner's `RuntimeEnvironmentSecrets` — never passed as CloudFormation
+  parameters or command-line arguments.
+- Git push credential URLs are scrubbed from all error messages before they
+  reach the browser via SSE.
+- The `.env` file is gitignored. See `.env.example` for the full variable list.
 
 ### Artifact storage
 
-All run data is stored locally under `artifacts/` with ULID-based subdirectories.
-This is sufficient for a single-instance demo.  For multi-instance AWS deployment,
-the `FileStore` and `RunStore` protocol interfaces are designed to be swapped for
-S3/DynamoDB-backed implementations without changing the API layer or UI.
+Run data is stored locally under `artifacts/` during pipeline execution.
+When `LLMCH_S3_BUCKET` is set, artifacts are uploaded to S3 after each run
+for durability. The S3 bucket is configured with explicit public access
+blocking, AES256 encryption, and a 30-day lifecycle expiry. Run metadata is
+persisted to DynamoDB when `LLMCH_DYNAMO_TABLE` is set.
