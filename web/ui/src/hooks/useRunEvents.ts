@@ -303,18 +303,26 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       });
     };
 
-    es.addEventListener("pipeline_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_chunk", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_reasoning_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("work_orders_created", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("wo_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("wo_proposal", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("file_written", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("artifact_written", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("console", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("git_push_started", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("git_push_done", (e) => handleEvent(JSON.parse(e.data)));
+    function safeParse(e: Event): Record<string, unknown> | null {
+      try { return JSON.parse((e as MessageEvent).data); } catch { return null; }
+    }
+    function onEvent(e: Event) {
+      const data = safeParse(e);
+      if (data) handleEvent(data);
+    }
+
+    es.addEventListener("pipeline_status", onEvent);
+    es.addEventListener("planner_status", onEvent);
+    es.addEventListener("planner_chunk", onEvent);
+    es.addEventListener("planner_reasoning_status", onEvent);
+    es.addEventListener("work_orders_created", onEvent);
+    es.addEventListener("wo_status", onEvent);
+    es.addEventListener("wo_proposal", onEvent);
+    es.addEventListener("file_written", onEvent);
+    es.addEventListener("artifact_written", onEvent);
+    es.addEventListener("console", onEvent);
+    es.addEventListener("git_push_started", onEvent);
+    es.addEventListener("git_push_done", onEvent);
     es.addEventListener("ping", () => {});
     es.addEventListener("done", () => {
       es.close();
