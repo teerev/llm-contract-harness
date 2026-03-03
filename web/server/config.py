@@ -17,6 +17,8 @@ ARTIFACTS_DIR: str = os.path.realpath(
 )
 _demo_raw: str = os.environ.get("LLMCH_DEMO_REMOTE_URL", "").strip()
 _demo_token: str = os.environ.get("LLMCH_DEMO_REMOTE_TOKEN", "").strip()
+if _demo_token == "DISABLED":
+    _demo_token = ""
 
 def _build_demo_url(raw: str, token: str) -> tuple[str, str]:
     """Return (push_url, safe_url) — safe_url has credentials scrubbed for logging."""

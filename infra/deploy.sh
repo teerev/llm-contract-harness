@@ -7,11 +7,10 @@ set -euo pipefail
 # Prerequisites:
 #   - AWS CLI configured (aws sts get-caller-identity)
 #   - Docker running
-#   - ECR repository created (see below)
+#   - OPENAI_API_KEY set in environment
 #
 # Usage:
-#   export OPENAI_API_KEY="sk-..."
-#   export LLMCH_DEMO_REMOTE_TOKEN="ghp_..."   # optional
+#   set -a && source .env && set +a
 #   ./infra/deploy.sh
 # ──────────────────────────────────────────────────────────────────────
 
@@ -19,21 +18,53 @@ STACK_NAME="${LLMCH_STACK_NAME:-llmch-demo}"
 REGION="${AWS_REGION:-us-east-1}"
 ECR_REPO="${LLMCH_ECR_REPO:-llmch}"
 IMAGE_TAG="${LLMCH_IMAGE_TAG:-latest}"
+SSM_PREFIX="/${STACK_NAME}"
+
+# ── Preflight: require OPENAI_API_KEY ────────────────────────────────
+
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "  ✘  OPENAI_API_KEY is not set." >&2
+  echo "     Run: set -a && source .env && set +a" >&2
+  exit 1
+fi
 
 echo ""
 echo "  ── llmch deploy ──────────────────────────────────────────────"
 echo ""
-echo "  Stack:  ${STACK_NAME}"
-echo "  Region: ${REGION}"
-echo "  ECR:    ${ECR_REPO}:${IMAGE_TAG}"
+echo "  Stack:      ${STACK_NAME}"
+echo "  Region:     ${REGION}"
+echo "  ECR:        ${ECR_REPO}:${IMAGE_TAG}"
+echo "  SSM prefix: ${SSM_PREFIX}"
 echo ""
 
-# ── 1. Get AWS account ID and ECR login ──────────────────────────────
+# ── 1. Store secrets in SSM Parameter Store ──────────────────────────
+
+echo "  [1/5] Storing secrets in SSM Parameter Store..."
+
+aws ssm put-parameter \
+  --name "${SSM_PREFIX}/openai-api-key" \
+  --value "${OPENAI_API_KEY}" \
+  --type SecureString \
+  --overwrite \
+  --region "${REGION}" >/dev/null
+
+# GitHub token — store DISABLED if empty (SSM requires non-empty value)
+_TOKEN="${LLMCH_DEMO_REMOTE_TOKEN:-DISABLED}"
+aws ssm put-parameter \
+  --name "${SSM_PREFIX}/demo-remote-token" \
+  --value "${_TOKEN}" \
+  --type SecureString \
+  --overwrite \
+  --region "${REGION}" >/dev/null
+
+echo "  ✓  SSM parameters stored (values not printed)"
+
+# ── 2. Get AWS account ID and ECR login ──────────────────────────────
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ECR_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}"
 
-echo "  [1/4] Logging in to ECR..."
+echo "  [2/5] Logging in to ECR..."
 aws ecr get-login-password --region "${REGION}" \
   | docker login --username AWS --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
@@ -41,18 +72,19 @@ aws ecr get-login-password --region "${REGION}" \
 aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGION}" >/dev/null 2>&1 \
   || aws ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}" >/dev/null
 
-# ── 2. Build and push Docker image ──────────────────────────────────
+# ── 3. Build and push Docker image ──────────────────────────────────
 
-echo "  [2/4] Building Docker image..."
+echo "  [3/5] Building Docker image..."
 docker build -t "${ECR_REPO}:${IMAGE_TAG}" .
 
-echo "  [3/4] Pushing to ECR..."
+echo "  [4/5] Pushing to ECR..."
 docker tag "${ECR_REPO}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"
 docker push "${ECR_URI}:${IMAGE_TAG}"
 
-# ── 3. Deploy CloudFormation stack ───────────────────────────────────
+# ── 4. Deploy CloudFormation stack ───────────────────────────────────
+# No secrets on the command line — only the SSM prefix and non-secret config.
 
-echo "  [4/4] Deploying CloudFormation stack..."
+echo "  [5/5] Deploying CloudFormation stack..."
 aws cloudformation deploy \
   --template-file infra/apprunner.cfn.yaml \
   --stack-name "${STACK_NAME}" \
@@ -60,13 +92,12 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
     "ImageUri=${ECR_URI}:${IMAGE_TAG}" \
-    "OpenAIApiKey=${OPENAI_API_KEY}" \
+    "SsmPrefix=${SSM_PREFIX}" \
     "DemoRemoteUrl=${LLMCH_DEMO_REMOTE_URL:-https://github.com/teerev/llmch-demo.git}" \
-    "DemoRemoteToken=${LLMCH_DEMO_REMOTE_TOKEN:-}" \
     "RateLimitPerIp=${LLMCH_RATE_LIMIT_PER_IP:-3}" \
     "RateLimitGlobal=${LLMCH_RATE_LIMIT_GLOBAL:-100}"
 
-# ── 4. Print service URL ────────────────────────────────────────────
+# ── 5. Print service URL ────────────────────────────────────────────
 
 SERVICE_URL=$(aws cloudformation describe-stacks \
   --stack-name "${STACK_NAME}" \
