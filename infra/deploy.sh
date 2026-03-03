@@ -74,8 +74,8 @@ aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGIO
 
 # ── 3. Build and push Docker image ──────────────────────────────────
 
-echo "  [3/5] Building Docker image..."
-docker build -t "${ECR_REPO}:${IMAGE_TAG}" .
+echo "  [3/5] Building Docker image (linux/amd64)..."
+docker build --platform=linux/amd64 -t "${ECR_REPO}:${IMAGE_TAG}" .
 
 echo "  [4/5] Pushing to ECR..."
 docker tag "${ECR_REPO}:${IMAGE_TAG}" "${ECR_URI}:${IMAGE_TAG}"

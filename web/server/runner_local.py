@@ -11,14 +11,14 @@ from web.server.pipeline import execute_pipeline
 class LocalRunner:
     """Starts pipeline execution in a daemon thread.
 
-    Only one pipeline runs at a time.  ``start()`` raises
-    ``RuntimeError`` if a run is already in progress — the API layer
+    Up to 5 pipelines run concurrently.  ``start()`` raises
+    ``RuntimeError`` if all slots are in use — the API layer
     should translate this into a 429.
     """
 
     def __init__(self, run_store: RunStore) -> None:
         self._run_store = run_store
-        self._semaphore = threading.Semaphore(1)
+        self._semaphore = threading.Semaphore(5)
 
     @property
     def busy(self) -> bool:
@@ -31,7 +31,7 @@ class LocalRunner:
 
     def start(self, run_id: str, prompt: str, opts: RunOptions) -> None:
         if not self._semaphore.acquire(blocking=False):
-            raise RuntimeError("A pipeline is already running. Please wait for it to finish.")
+            raise RuntimeError("All pipeline slots are in use. Please try again in a minute.")
 
         def _run() -> None:
             try:

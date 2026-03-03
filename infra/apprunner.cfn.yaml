@@ -21,12 +21,12 @@ Parameters:
 
   RateLimitPerIp:
     Type: String
-    Default: "3"
+    Default: "100"
     Description: Max pipeline runs per IP per day
 
   RateLimitGlobal:
     Type: String
-    Default: "100"
+    Default: "1000"
     Description: Max pipeline runs globally per day
 
 Resources:
@@ -62,9 +62,18 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - ssm:GetParameter
                   - ssm:GetParameters
                 Resource:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
 
   Service:
     Type: AWS::AppRunner::Service
@@ -88,14 +97,16 @@ Resources:
                 Value: !Ref RateLimitGlobal
               - Name: LLMCH_HOST
                 Value: "0.0.0.0"
+              - Name: LLMCH_ARTIFACTS_DIR
+                Value: "/tmp/artifacts"
             RuntimeEnvironmentSecrets:
               - Name: OPENAI_API_KEY
                 Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/openai-api-key"
               - Name: LLMCH_DEMO_REMOTE_TOKEN
                 Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/demo-remote-token"
       InstanceConfiguration:
-        Cpu: "2048"      # 2 vCPU — factory + planner are CPU-hungry
-        Memory: "4096"   # 4 GB — LangGraph + openai SDK + venv overhead
+        Cpu: "4096"      # 4 vCPU — up to 5 concurrent pipelines
+        Memory: "8192"   # 8 GB — headroom for concurrent LangGraph + openai SDK
         InstanceRoleArn: !GetAtt InstanceRole.Arn
       HealthCheckConfiguration:
         Protocol: HTTP

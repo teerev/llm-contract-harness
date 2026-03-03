@@ -39,6 +39,6 @@
 .lineContent {
   padding: 0 16px 0 4px;
   color: var(--text);
-  white-space: pre;
+  white-space: pre-wrap;
   word-break: break-all;
 }

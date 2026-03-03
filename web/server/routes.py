@@ -91,7 +91,7 @@ async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
 
     if _runner.busy:
         return JSONResponse(
-            {"error": "A pipeline is already running. Please wait for it to finish."},
+            {"error": "All pipeline slots are in use. Please try again in a minute."},
             status_code=429,
         )
 

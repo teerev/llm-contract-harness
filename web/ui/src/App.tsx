@@ -116,6 +116,11 @@ export default function App() {
 
   return (
     <div className={styles.layout}>
+      {/* ── Mobile warning banner ── */}
+      <div className={styles.mobileBanner}>
+        This demo is best viewed on a desktop browser.
+      </div>
+
       {/* ── Error banner ── */}
       <div className={styles.errorBannerSlot}>
         {(submitError || showDisconnectBanner) && (

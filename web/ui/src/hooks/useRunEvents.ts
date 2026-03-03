@@ -104,7 +104,9 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               newState.error = String(event.error);
             }
             let extra = "";
-            if (status === "building") {
+            if (status === "planning") {
+              extra = "Reasoning starting. This can take a couple of minutes. Progress will be streamed below.\n\n";
+            } else if (status === "building") {
               extra = "\n\n━━━ Factory: building work orders ━━━\n\n";
             } else if (status === "pushing") {
               extra = "\n━━━ Pushing to demo remote ━━━\n\n";

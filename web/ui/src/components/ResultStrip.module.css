@@ -11,6 +11,7 @@
   align-items: center;
   gap: 12px;
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
 .successIcon {
