@@ -193,34 +193,64 @@ def _dynamo_check_quota(ip: str) -> dict:
 
 
 def _dynamo_try_consume(ip: str) -> tuple[bool, dict]:
+    """Atomically increment counters with ConditionExpression to enforce limits."""
+    from botocore.exceptions import ClientError
+
     day = _today()
     try:
         table = _dynamo_table()
-        ip_used = _dynamo_get_count(table, _ip_key(ip, day))
-        global_used = _dynamo_get_count(table, _global_key(day))
-
-        if ip_used >= config.RATE_LIMIT_PER_IP:
-            return False, _quota_dict(ip_used, global_used, reason="ip")
-        if global_used >= config.RATE_LIMIT_GLOBAL:
-            return False, _quota_dict(ip_used, global_used, reason="global")
-
         ttl = _ttl_epoch()
 
-        # Atomically increment both counters
-        table.update_item(
-            Key={"run_id": _ip_key(ip, day)},
-            UpdateExpression="ADD runs :one SET #t = :ttl",
-            ExpressionAttributeNames={"#t": "ttl"},
-            ExpressionAttributeValues={":one": 1, ":ttl": ttl},
-        )
-        table.update_item(
-            Key={"run_id": _global_key(day)},
-            UpdateExpression="ADD runs :one SET #t = :ttl",
-            ExpressionAttributeNames={"#t": "ttl"},
-            ExpressionAttributeValues={":one": 1, ":ttl": ttl},
-        )
+        # Atomically increment IP counter, rejecting if at or over limit
+        try:
+            resp = table.update_item(
+                Key={"run_id": _ip_key(ip, day)},
+                UpdateExpression="ADD runs :one SET #t = :ttl",
+                ConditionExpression="attribute_not_exists(runs) OR runs < :limit",
+                ExpressionAttributeNames={"#t": "ttl"},
+                ExpressionAttributeValues={
+                    ":one": 1,
+                    ":ttl": ttl,
+                    ":limit": config.RATE_LIMIT_PER_IP,
+                },
+                ReturnValues="ALL_NEW",
+            )
+            ip_used = int(resp["Attributes"]["runs"])
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                ip_used = _dynamo_get_count(table, _ip_key(ip, day))
+                global_used = _dynamo_get_count(table, _global_key(day))
+                return False, _quota_dict(ip_used, global_used, reason="ip")
+            raise
 
-        return True, _quota_dict(ip_used + 1, global_used + 1)
+        # Atomically increment global counter, rejecting if at or over limit
+        try:
+            resp = table.update_item(
+                Key={"run_id": _global_key(day)},
+                UpdateExpression="ADD runs :one SET #t = :ttl",
+                ConditionExpression="attribute_not_exists(runs) OR runs < :limit",
+                ExpressionAttributeNames={"#t": "ttl"},
+                ExpressionAttributeValues={
+                    ":one": 1,
+                    ":ttl": ttl,
+                    ":limit": config.RATE_LIMIT_GLOBAL,
+                },
+                ReturnValues="ALL_NEW",
+            )
+            global_used = int(resp["Attributes"]["runs"])
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                # Roll back IP counter since global limit was hit
+                table.update_item(
+                    Key={"run_id": _ip_key(ip, day)},
+                    UpdateExpression="ADD runs :neg",
+                    ExpressionAttributeValues={":neg": -1},
+                )
+                global_used = _dynamo_get_count(table, _global_key(day))
+                return False, _quota_dict(ip_used, global_used, reason="global")
+            raise
+
+        return True, _quota_dict(ip_used, global_used)
 
     except Exception:
         logger.exception("DynamoDB try_consume failed — rejecting request for safety")
