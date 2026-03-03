@@ -56,18 +56,24 @@ const INITIAL_STATE: RunState = {
 
 type EventHandler = (event: Record<string, unknown>) => void;
 
+const MAX_AUTO_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
 export function useRunEvents(runId: string | null): RunState & { reset: () => void; reconnect: () => void } {
   const [state, setState] = useState<RunState>(INITIAL_STATE);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastSeqRef = useRef<number>(0);
   const [connectEpoch, setConnectEpoch] = useState(0);
+  const retriesRef = useRef(0);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
     lastSeqRef.current = 0;
+    retriesRef.current = 0;
   }, []);
 
   const reconnect = useCallback(() => {
+    retriesRef.current = 0;
     setConnectEpoch((n) => n + 1);
   }, []);
 
@@ -84,6 +90,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
     eventSourceRef.current = es;
 
     es.onopen = () => {
+      retriesRef.current = 0;
       setState((prev) => ({ ...prev, sseConnected: true, error: undefined }));
     };
 
@@ -316,14 +323,20 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       try {
         const data = JSON.parse((e as MessageEvent).data);
         handleEvent(data);
+        es.close();
       } catch {
-        setState((prev) => ({
-          ...prev,
-          error: "SSE connection lost. The pipeline may still be running.",
-          sseConnected: false,
-        }));
+        es.close();
+        if (retriesRef.current < MAX_AUTO_RETRIES) {
+          retriesRef.current += 1;
+          setTimeout(() => setConnectEpoch((n) => n + 1), RETRY_DELAY_MS);
+        } else {
+          setState((prev) => ({
+            ...prev,
+            error: "SSE connection lost. The pipeline may still be running.",
+            sseConnected: false,
+          }));
+        }
       }
-      es.close();
     });
 
     return () => {

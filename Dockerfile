@@ -34,7 +34,7 @@ COPY examples/ examples/
 # Also install pytest so factory verify/acceptance commands work without
 # creating a per-repo venv (avoids runtime pip install + network dependency)
 RUN pip install --no-cache-dir --no-deps . && \
-    pip install --no-cache-dir pytest
+    pip install --no-cache-dir pytest boto3
 
 # Copy built frontend from stage 1
 COPY --from=ui-build /build/dist/ web/ui/dist/

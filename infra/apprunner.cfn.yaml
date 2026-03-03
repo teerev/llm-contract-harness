@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  llm-contract-harness — App Runner service.
+  llm-contract-harness — App Runner service with DynamoDB + S3.
   Deploys a single-instance container from ECR with health checks,
   env var injection via SSM SecureString, and auto-scaling pinned to 1 instance.
 
@@ -30,6 +30,33 @@ Parameters:
     Description: Max pipeline runs globally per day
 
 Resources:
+  # ── DynamoDB table for run metadata + rate limiting ──────────────────
+  RunTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-runs"
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ── S3 bucket for artifact persistence ───────────────────────────────
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
   AccessRole:
     Type: AWS::IAM::Role
     Properties:
@@ -74,6 +101,30 @@ Resources:
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub "ssm.${AWS::Region}.amazonaws.com"
+        - PolicyName: dynamodb-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt RunTable.Arn
+        - PolicyName: s3-artifacts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !Sub "${ArtifactsBucket.Arn}/*"
 
   Service:
     Type: AWS::AppRunner::Service
@@ -99,6 +150,10 @@ Resources:
                 Value: "0.0.0.0"
               - Name: LLMCH_ARTIFACTS_DIR
                 Value: "/tmp/artifacts"
+              - Name: LLMCH_DYNAMO_TABLE
+                Value: !Ref RunTable
+              - Name: LLMCH_S3_BUCKET
+                Value: !Ref ArtifactsBucket
             RuntimeEnvironmentSecrets:
               - Name: OPENAI_API_KEY
                 Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/openai-api-key"
@@ -132,3 +187,9 @@ Outputs:
   ServiceArn:
     Description: ARN of the App Runner service
     Value: !GetAtt Service.ServiceArn
+  DynamoTableName:
+    Description: DynamoDB table for run metadata and rate limiting
+    Value: !Ref RunTable
+  ArtifactsBucketName:
+    Description: S3 bucket for artifact persistence
+    Value: !Ref ArtifactsBucket

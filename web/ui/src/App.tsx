@@ -37,6 +37,23 @@ export default function App() {
     }
   }, [runId]);
 
+  // Validate restored runId — clear if server doesn't recognise it
+  useEffect(() => {
+    const stored = sessionStorage.getItem(SESSION_KEY);
+    if (!stored) return;
+    fetch(`/api/v1/runs/${stored}`)
+      .then((res) => {
+        if (!res.ok) {
+          sessionStorage.removeItem(SESSION_KEY);
+          setRunId(null);
+        }
+      })
+      .catch(() => {
+        sessionStorage.removeItem(SESSION_KEY);
+        setRunId(null);
+      });
+  }, []);
+
   const fetchQuota = useCallback(() => {
     fetch("/api/v1/quota")
       .then((r) => r.json())
