@@ -14,6 +14,14 @@ from web.server.store_local import MAX_FILE_READ_BYTES
 router = APIRouter(prefix="/api/v1")
 
 
+def _client_ip(request: Request) -> str:
+    """Extract the real client IP, respecting X-Forwarded-For behind a load balancer."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -48,7 +56,7 @@ def init_routes(run_store, file_store, runner) -> None:  # noqa: ANN001
 
 @router.get("/quota")
 async def get_quota(request: Request):
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     return check_quota(ip)
 
 
@@ -57,7 +65,7 @@ async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
     if not body.prompt.strip():
         raise HTTPException(400, "prompt is required")
 
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     allowed, quota = try_consume(ip)
     if not allowed:
         reason = quota.get("reason", "")
