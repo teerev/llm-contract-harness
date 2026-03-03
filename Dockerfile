@@ -39,8 +39,13 @@ RUN pip install --no-cache-dir --no-deps . && \
 # Copy built frontend from stage 1
 COPY --from=ui-build /build/dist/ web/ui/dist/
 
-# Default artifacts directory
-RUN mkdir -p /app/artifacts
+# Create non-root user for running the app and LLM-generated code
+RUN useradd -m -s /bin/bash llmch && \
+    git config --system user.name "llmch" && \
+    git config --system user.email "llmch@localhost"
+
+# Default artifacts directory (writable by llmch)
+RUN mkdir -p /app/artifacts && chown llmch:llmch /app/artifacts
 ENV LLMCH_ARTIFACTS_DIR=/app/artifacts
 
 # Skip per-repo venv creation — pytest is already in the container
@@ -49,5 +54,8 @@ ENV LLMCH_SKIP_REPO_VENV=1
 # Bind to all interfaces so the container is reachable
 ENV LLMCH_HOST=0.0.0.0
 EXPOSE 8000
+
+# Run as non-root — limits blast radius of LLM-generated code
+USER llmch
 
 CMD ["python", "-c", "from web.server.main import serve; serve()"]
