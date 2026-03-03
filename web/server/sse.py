@@ -12,7 +12,7 @@ import os
 from typing import AsyncGenerator
 
 TAIL_POLL_INTERVAL = 0.25  # seconds between file-tail polls
-KEEPALIVE_INTERVAL = 15.0  # seconds between ping events
+KEEPALIVE_INTERVAL = 10.0  # seconds between ping events
 TERMINAL_TYPES = {"pipeline_status"}
 TERMINAL_STATUSES = {"complete", "failed"}
 

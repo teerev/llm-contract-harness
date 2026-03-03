@@ -43,20 +43,28 @@ def ensure_repo_venv(
     *,
     install_pytest: bool = True,
     python: str | None = None,
-) -> Path:
+) -> Path | None:
     """Ensure a usable venv exists at ``repo_root/.llmch_venv``.
 
     Creates the venv if missing, upgrades pip, and installs ``pytest``
     (unless *install_pytest* is False — used in tests to avoid network).
 
+    If ``LLMCH_SKIP_REPO_VENV=1`` is set (e.g. inside a Docker container
+    where pytest is pre-installed), skips venv creation entirely and
+    returns ``None``.  Callers should pass ``_sandboxed_env()`` directly
+    when the return value is ``None``.
+
     *python* overrides the base interpreter; defaults to ``sys.executable``
     (the harness Python).  The ``--python`` CLI flag surfaces this.
 
-    Returns the venv root path.
+    Returns the venv root path, or ``None`` if skipped.
 
     Raises ``RuntimeError`` on any failure so the factory can fail fast
     with an actionable message.
     """
+    if os.environ.get("LLMCH_SKIP_REPO_VENV", "").strip() == "1":
+        return None
+
     venv_root = Path(repo_root) / LLMCH_VENV_DIR
     venv_python = _venv_python(venv_root)
 
@@ -125,8 +133,11 @@ def ensure_repo_venv(
     return venv_root
 
 
-def venv_env(venv_root: str | Path, base_env: dict[str, str]) -> dict[str, str]:
+def venv_env(venv_root: str | Path | None, base_env: dict[str, str]) -> dict[str, str]:
     """Return a subprocess env dict that activates the venv at *venv_root*.
+
+    If *venv_root* is ``None`` (venv was skipped), returns *base_env* as-is
+    so the system Python is used directly.
 
     - ``PATH`` is prefixed with the venv's ``bin/`` (POSIX) or ``Scripts/``
       (Windows) so that ``python``, ``pytest``, etc. resolve there first.
@@ -137,6 +148,8 @@ def venv_env(venv_root: str | Path, base_env: dict[str, str]) -> dict[str, str]:
 
     Cross-platform: uses ``Scripts`` on Windows, ``bin`` elsewhere.
     """
+    if venv_root is None:
+        return dict(base_env)
     venv_root = Path(venv_root)
     if sys.platform == "win32":
         bin_dir = str(venv_root / "Scripts")

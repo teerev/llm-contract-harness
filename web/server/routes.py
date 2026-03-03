@@ -14,6 +14,23 @@ from web.server.store_local import MAX_FILE_READ_BYTES
 router = APIRouter(prefix="/api/v1")
 
 
+def _client_ip(request: Request) -> str:
+    """Extract the real client IP from X-Forwarded-For.
+
+    Behind a single trusted proxy (App Runner), the proxy appends the true
+    client IP as the rightmost entry.  We take the second-to-last entry
+    when there are multiple hops, or the only entry if there's just one.
+    Ignores any entries the client may have injected at the front.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        parts = [p.strip() for p in forwarded.split(",")]
+        # Single proxy: rightmost is proxy-appended client IP
+        # Multiple hops: second-to-last is the one our proxy saw
+        return parts[-2] if len(parts) >= 2 else parts[0]
+    return request.client.host if request.client else "unknown"
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -48,7 +65,7 @@ def init_routes(run_store, file_store, runner) -> None:  # noqa: ANN001
 
 @router.get("/quota")
 async def get_quota(request: Request):
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     return check_quota(ip)
 
 
@@ -57,7 +74,7 @@ async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
     if not body.prompt.strip():
         raise HTTPException(400, "prompt is required")
 
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     allowed, quota = try_consume(ip)
     if not allowed:
         reason = quota.get("reason", "")
@@ -91,7 +108,7 @@ async def create_run(body: CreateRunRequest, request: Request) -> JSONResponse:
 
     if _runner.busy:
         return JSONResponse(
-            {"error": "A pipeline is already running. Please wait for it to finish."},
+            {"error": "All pipeline slots are in use. Please try again in a minute."},
             status_code=429,
         )
 

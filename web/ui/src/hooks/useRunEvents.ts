@@ -1,5 +1,16 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
+const MAX_STREAM_LENGTH = 512_000; // ~500 KB cap to prevent tab OOM
+const TRUNCATION_MARKER = "\n[…earlier output truncated…]\n\n";
+
+function appendStream(prev: string, chunk: string): string {
+  const next = prev + chunk;
+  if (next.length <= MAX_STREAM_LENGTH) return next;
+  const keep = next.slice(next.length - MAX_STREAM_LENGTH + TRUNCATION_MARKER.length);
+  const newlineIdx = keep.indexOf("\n");
+  return TRUNCATION_MARKER + (newlineIdx >= 0 ? keep.slice(newlineIdx + 1) : keep);
+}
+
 export type PipelineStatus = "idle" | "planning" | "building" | "pushing" | "complete" | "failed";
 export type NodeStatus = "idle" | "running" | "pass" | "fail";
 
@@ -56,18 +67,24 @@ const INITIAL_STATE: RunState = {
 
 type EventHandler = (event: Record<string, unknown>) => void;
 
+const MAX_AUTO_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
 export function useRunEvents(runId: string | null): RunState & { reset: () => void; reconnect: () => void } {
   const [state, setState] = useState<RunState>(INITIAL_STATE);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastSeqRef = useRef<number>(0);
   const [connectEpoch, setConnectEpoch] = useState(0);
+  const retriesRef = useRef(0);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
     lastSeqRef.current = 0;
+    retriesRef.current = 0;
   }, []);
 
   const reconnect = useCallback(() => {
+    retriesRef.current = 0;
     setConnectEpoch((n) => n + 1);
   }, []);
 
@@ -84,6 +101,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
     eventSourceRef.current = es;
 
     es.onopen = () => {
+      retriesRef.current = 0;
       setState((prev) => ({ ...prev, sseConnected: true, error: undefined }));
     };
 
@@ -104,7 +122,9 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               newState.error = String(event.error);
             }
             let extra = "";
-            if (status === "building") {
+            if (status === "planning") {
+              extra = "Reasoning starting. This can take a couple of minutes. Progress will be streamed below.\n\n";
+            } else if (status === "building") {
               extra = "\n\n━━━ Factory: building work orders ━━━\n\n";
             } else if (status === "pushing") {
               extra = "\n━━━ Pushing to demo remote ━━━\n\n";
@@ -113,7 +133,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             } else if (status === "failed") {
               extra = `\n━━━ Pipeline failed${event.error ? ": " + String(event.error) : ""} ━━━\n`;
             }
-            if (extra) newState.streamText = prev.streamText + extra;
+            if (extra) newState.streamText = appendStream(prev.streamText, extra);
             return { ...prev, ...newState };
           }
 
@@ -132,7 +152,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
 
           case "planner_chunk": {
             const text = event.text as string;
-            return { ...prev, streamText: prev.streamText + text };
+            return { ...prev, streamText: appendStream(prev.streamText, text) };
           }
 
           case "planner_reasoning_status": {
@@ -150,7 +170,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               .map((wo) => `  ${wo.id}: ${wo.title}`)
               .join("\n");
             const extra = `\n━━━ Planner created ${woList.length} work orders ━━━\n${summary}\n`;
-            return { ...prev, workOrders, streamText: prev.streamText + extra };
+            return { ...prev, workOrders, streamText: appendStream(prev.streamText, extra) };
           }
 
           case "wo_status": {
@@ -217,7 +237,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               workOrders,
               woPassCount,
               woFailCount,
-              streamText: extra ? prev.streamText + extra : prev.streamText,
+              streamText: extra ? appendStream(prev.streamText, extra) : prev.streamText,
             };
           }
 
@@ -231,7 +251,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
             if (files && files.length > 0) {
               extra += files.map((f: string) => `    → ${f}`).join("\n") + "\n";
             }
-            return { ...prev, streamText: prev.streamText + extra };
+            return { ...prev, streamText: appendStream(prev.streamText, extra) };
           }
 
           case "file_written": {
@@ -249,7 +269,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
               ...prev,
               filesWritten: [...prev.filesWritten, ...newFiles],
               fileCount: prev.fileCount + newFiles.length,
-              streamText: prev.streamText + fileLines + "\n",
+              streamText: appendStream(prev.streamText, fileLines + "\n"),
             };
           }
 
@@ -263,7 +283,7 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
 
           case "console": {
             const text = event.text as string;
-            return { ...prev, streamText: prev.streamText + text + "\n" };
+            return { ...prev, streamText: appendStream(prev.streamText, text + "\n") };
           }
 
           case "git_push_started": {
@@ -294,18 +314,26 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       });
     };
 
-    es.addEventListener("pipeline_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_chunk", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("planner_reasoning_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("work_orders_created", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("wo_status", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("wo_proposal", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("file_written", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("artifact_written", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("console", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("git_push_started", (e) => handleEvent(JSON.parse(e.data)));
-    es.addEventListener("git_push_done", (e) => handleEvent(JSON.parse(e.data)));
+    function safeParse(e: Event): Record<string, unknown> | null {
+      try { return JSON.parse((e as MessageEvent).data); } catch { return null; }
+    }
+    function onEvent(e: Event) {
+      const data = safeParse(e);
+      if (data) handleEvent(data);
+    }
+
+    es.addEventListener("pipeline_status", onEvent);
+    es.addEventListener("planner_status", onEvent);
+    es.addEventListener("planner_chunk", onEvent);
+    es.addEventListener("planner_reasoning_status", onEvent);
+    es.addEventListener("work_orders_created", onEvent);
+    es.addEventListener("wo_status", onEvent);
+    es.addEventListener("wo_proposal", onEvent);
+    es.addEventListener("file_written", onEvent);
+    es.addEventListener("artifact_written", onEvent);
+    es.addEventListener("console", onEvent);
+    es.addEventListener("git_push_started", onEvent);
+    es.addEventListener("git_push_done", onEvent);
     es.addEventListener("ping", () => {});
     es.addEventListener("done", () => {
       es.close();
@@ -314,14 +342,20 @@ export function useRunEvents(runId: string | null): RunState & { reset: () => vo
       try {
         const data = JSON.parse((e as MessageEvent).data);
         handleEvent(data);
+        es.close();
       } catch {
-        setState((prev) => ({
-          ...prev,
-          error: "SSE connection lost. The pipeline may still be running.",
-          sseConnected: false,
-        }));
+        es.close();
+        if (retriesRef.current < MAX_AUTO_RETRIES) {
+          retriesRef.current += 1;
+          setTimeout(() => setConnectEpoch((n) => n + 1), RETRY_DELAY_MS);
+        } else {
+          setState((prev) => ({
+            ...prev,
+            error: "SSE connection lost. The pipeline may still be running.",
+            sseConnected: false,
+          }));
+        }
       }
-      es.close();
     });
 
     return () => {

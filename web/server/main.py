@@ -22,7 +22,13 @@ app.add_middleware(
 )
 
 # --- Wire dependencies ---
-_run_store = LocalRunStore()
+# Use DynamoDB for run metadata when configured, otherwise local JSON files.
+from web.server.store_dynamo import DYNAMO_TABLE
+if DYNAMO_TABLE:
+    from web.server.store_dynamo import DynamoRunStore
+    _run_store = DynamoRunStore()
+else:
+    _run_store = LocalRunStore()
 _file_store = LocalFileStore(run_store=_run_store)
 _runner = LocalRunner(run_store=_run_store)
 init_routes(_run_store, _file_store, _runner)
@@ -50,12 +56,23 @@ if config.STATIC_DIR:
 
 
 def main() -> None:
+    """Entry point for local development (with hot-reload)."""
     uvicorn.run(
         "web.server.main:app",
         host=config.HOST,
         port=config.PORT,
         reload=True,
         reload_excludes=["artifacts/*", "my-project/*", "wo/*", "runs/*"],
+    )
+
+
+def serve() -> None:
+    """Entry point for production (no reload, single worker)."""
+    uvicorn.run(
+        app,
+        host=config.HOST,
+        port=config.PORT,
+        log_level="info",
     )
 
 

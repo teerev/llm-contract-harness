@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  llm-contract-harness — App Runner service with DynamoDB + S3.
+  Deploys a single-instance container from ECR with health checks,
+  env var injection via SSM SecureString, and auto-scaling pinned to 1 instance.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: ECR image URI (e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/llmch:latest)
+
+  SsmPrefix:
+    Type: String
+    Default: "/llmch-demo"
+    Description: SSM Parameter Store prefix where secrets are stored
+
+  DemoRemoteUrl:
+    Type: String
+    Default: "https://github.com/teerev/llmch-demo.git"
+    Description: Git remote URL for demo push (HTTPS)
+
+  RateLimitPerIp:
+    Type: String
+    Default: "100"
+    Description: Max pipeline runs per IP per day
+
+  RateLimitGlobal:
+    Type: String
+    Default: "1000"
+    Description: Max pipeline runs globally per day
+
+Resources:
+  # ── DynamoDB table for run metadata + rate limiting ──────────────────
+  RunTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-runs"
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ── S3 bucket for artifact persistence ───────────────────────────────
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-artifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  AccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ecr-access"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-instance"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ssm-read-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/ssm"
+        - PolicyName: dynamodb-access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt RunTable.Arn
+        - PolicyName: s3-artifacts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ArtifactsBucket.Arn
+                  - !Sub "${ArtifactsBucket.Arn}/*"
+
+  Service:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Ref AWS::StackName
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AccessRole.Arn
+        AutoDeploymentsEnabled: false
+        ImageRepository:
+          ImageIdentifier: !Ref ImageUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8000"
+            RuntimeEnvironmentVariables:
+              - Name: LLMCH_DEMO_REMOTE_URL
+                Value: !Ref DemoRemoteUrl
+              - Name: LLMCH_RATE_LIMIT_PER_IP
+                Value: !Ref RateLimitPerIp
+              - Name: LLMCH_RATE_LIMIT_GLOBAL
+                Value: !Ref RateLimitGlobal
+              - Name: LLMCH_HOST
+                Value: "0.0.0.0"
+              - Name: LLMCH_ARTIFACTS_DIR
+                Value: "/tmp/artifacts"
+              - Name: LLMCH_DYNAMO_TABLE
+                Value: !Ref RunTable
+              - Name: LLMCH_S3_BUCKET
+                Value: !Ref ArtifactsBucket
+            RuntimeEnvironmentSecrets:
+              - Name: OPENAI_API_KEY
+                Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/openai-api-key"
+              - Name: LLMCH_DEMO_REMOTE_TOKEN
+                Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmPrefix}/demo-remote-token"
+      InstanceConfiguration:
+        Cpu: "4096"      # 4 vCPU — up to 5 concurrent pipelines
+        Memory: "8192"   # 8 GB — headroom for concurrent LangGraph + openai SDK
+        InstanceRoleArn: !GetAtt InstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /api/v1/health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 3
+      AutoScalingConfigurationArn: !GetAtt ScalingConfig.AutoScalingConfigurationArn
+
+  ScalingConfig:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub "${AWS::StackName}-single"
+      MaxConcurrency: 10
+      MaxSize: 1
+      MinSize: 1
+
+Outputs:
+  ServiceUrl:
+    Description: Public URL of the App Runner service
+    Value: !Sub "https://${Service.ServiceUrl}"
+  ServiceArn:
+    Description: ARN of the App Runner service
+    Value: !GetAtt Service.ServiceArn
+  DynamoTableName:
+    Description: DynamoDB table for run metadata and rate limiting
+    Value: !Ref RunTable
+  ArtifactsBucketName:
+    Description: S3 bucket for artifact persistence
+    Value: !Ref ArtifactsBucket
